@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>WebDAV – Unit Tests</title>
+  <style>
+    body { font-family: monospace; background: #0d0d12; color: #ccc; margin: 0; padding: 20px; }
+    h1   { color: #fff; font-size: 1.1rem; margin-bottom: 16px; }
+    .suite { margin-bottom: 20px; }
+    .suite-title { color: #7eb8f7; font-size: .9rem; margin-bottom: 6px; font-weight: bold; }
+    .pass { color: #4caf7d; }
+    .fail { color: #f76e6e; }
+    .result { font-size: .82rem; margin: 2px 0 2px 12px; }
+    #summary { margin-top: 24px; font-size: 1rem; font-weight: bold; padding: 10px; border-radius: 6px; }
+    .all-pass { background: #1a3a28; color: #4caf7d; }
+    .has-fail  { background: #3a1a1a; color: #f76e6e; }
+  </style>
+</head>
+<body>
+<h1>WebDAV – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script type="module">
+import { createWebDavClient } from '../src/webdav.js';
+
+/* ── Mini Test-Runner ───────────────────────────────────────── */
+const results = [];
+let currentSuite = '';
+function suite(name) { currentSuite = name; }
+async function test(name, fn) {
+  try { await fn(); results.push({ suite: currentSuite, name, ok: true }); }
+  catch (e) { results.push({ suite: currentSuite, name, ok: false, err: e.message }); }
+}
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg || 'Assertion fehlgeschlagen'); }
+function assertEqual(a, b, msg) {
+  if (a !== b) throw new Error((msg||'') + ` — erwartet: ${JSON.stringify(b)}, bekommen: ${JSON.stringify(a)}`); }
+
+/* ── fetch-Mock-Helfer ──────────────────────────────────────── */
+function mockFetch(status, body, contentType = 'application/json') {
+  return async (url, opts) => ({
+    ok:     status >= 200 && status < 300,
+    status,
+    text:   async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+    json:   async () => (typeof body === 'string' ? JSON.parse(body) : body),
+    headers: { get: (h) => h === 'content-type' ? contentType : null },
+  });
+}
+
+const CREDS = { url: 'https://cloud.example.com', user: 'martin', pass: 'secret' };
+
+/* ── Tests: readJson ────────────────────────────────────────── */
+
+suite('readJson — Erfolg');
+
+await test('gibt { ok: true, data } zurück wenn Server 200 liefert', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(200, { hallo: 'welt' }));
+  const r = await client.readJson('/LifeguardOrders/artikel.json');
+  assert(r.ok, 'ok muss true sein');
+  assertEqual(r.data.hallo, 'welt');
+});
+
+await test('data enthält geparsten JSON-Inhalt', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(200, [1, 2, 3]));
+  const r = await client.readJson('/test.json');
+  assertEqual(r.data.length, 3);
+});
+
+suite('readJson — Fehler');
+
+await test('401 → { ok: false, error enthält "Authentifizierung" }', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(401, 'Unauthorized'));
+  const r = await client.readJson('/test.json');
+  assert(!r.ok, 'ok muss false sein');
+  assert(r.error.toLowerCase().includes('authentifizierung'), `Fehlermeldung passt nicht: "${r.error}"`);
+});
+
+await test('404 → { ok: false, error enthält "nicht gefunden" }', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(404, 'Not Found'));
+  const r = await client.readJson('/test.json');
+  assert(!r.ok);
+  assert(r.error.toLowerCase().includes('nicht gefunden'), `Fehlermeldung passt nicht: "${r.error}"`);
+});
+
+await test('Netzwerkfehler (fetch wirft) → { ok: false, error }', async () => {
+  const failFetch = async () => { throw new Error('Netzwerk nicht erreichbar'); };
+  const client = createWebDavClient(CREDS, failFetch);
+  const r = await client.readJson('/test.json');
+  assert(!r.ok);
+  assert(r.error.length > 0);
+});
+
+/* ── Tests: writeJson ───────────────────────────────────────── */
+
+suite('writeJson — Erfolg');
+
+await test('gibt { ok: true } zurück bei 201', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(201, ''));
+  const r = await client.writeJson('/LifeguardOrders/artikel.json', []);
+  assert(r.ok);
+});
+
+await test('gibt { ok: true } zurück bei 204', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(204, ''));
+  const r = await client.writeJson('/test.json', { a: 1 });
+  assert(r.ok);
+});
+
+await test('sendet Content-Type application/json', async () => {
+  let capturedOpts;
+  const captureFetch = async (url, opts) => {
+    capturedOpts = opts;
+    return { ok: true, status: 201, text: async () => '' };
+  };
+  const client = createWebDavClient(CREDS, captureFetch);
+  await client.writeJson('/test.json', { x: 1 });
+  assertEqual(capturedOpts.headers['Content-Type'], 'application/json');
+});
+
+await test('sendet Daten als JSON-String im Body', async () => {
+  let capturedBody;
+  const captureFetch = async (url, opts) => {
+    capturedBody = opts.body;
+    return { ok: true, status: 201, text: async () => '' };
+  };
+  const client = createWebDavClient(CREDS, captureFetch);
+  await client.writeJson('/test.json', { name: 'Test' });
+  assertEqual(capturedBody, JSON.stringify({ name: 'Test' }));
+});
+
+await test('verwendet PUT-Methode', async () => {
+  let method;
+  const captureFetch = async (url, opts) => { method = opts.method; return { ok: true, status: 201, text: async () => '' }; };
+  const client = createWebDavClient(CREDS, captureFetch);
+  await client.writeJson('/test.json', {});
+  assertEqual(method, 'PUT');
+});
+
+suite('writeJson — Fehler');
+
+await test('503 → { ok: false, error }', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(503, 'Service Unavailable'));
+  const r = await client.writeJson('/test.json', {});
+  assert(!r.ok);
+  assert(r.error.length > 0);
+});
+
+/* ── Tests: listFiles ───────────────────────────────────────── */
+
+suite('listFiles — Erfolg');
+
+const PROPFIND_RESPONSE = `<?xml version="1.0"?>
+<d:multistatus xmlns:d="DAV:">
+  <d:response><d:href>/remote.php/dav/files/martin/LifeguardClock/</d:href></d:response>
+  <d:response><d:href>/remote.php/dav/files/martin/LifeguardClock/lgc_2026-03-21.json</d:href></d:response>
+  <d:response><d:href>/remote.php/dav/files/martin/LifeguardClock/lgc_2026-03-22.json</d:href></d:response>
+</d:multistatus>`;
+
+await test('liefert Dateinamen ohne Verzeichnis-Eintrag', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(207, PROPFIND_RESPONSE, 'application/xml'));
+  const r = await client.listFiles('/LifeguardClock/');
+  assert(r.ok);
+  assert(!r.files.includes(''), 'kein leerer Eintrag');
+  assert(r.files.some(f => f.includes('lgc_2026-03-21.json')), 'Datei 1 vorhanden');
+  assert(r.files.some(f => f.includes('lgc_2026-03-22.json')), 'Datei 2 vorhanden');
+});
+
+await test('Verzeichnis-Eintrag selbst ist nicht in files[]', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(207, PROPFIND_RESPONSE, 'application/xml'));
+  const r = await client.listFiles('/LifeguardClock/');
+  const nurVerzeichnis = r.files.filter(f => f.endsWith('/'));
+  assertEqual(nurVerzeichnis.length, 0, 'keine Verzeichnis-Einträge in files[]');
+});
+
+suite('listFiles — Fehler');
+
+await test('401 → { ok: false }', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(401, 'Unauthorized'));
+  const r = await client.listFiles('/LifeguardClock/');
+  assert(!r.ok);
+});
+
+/* ── Tests: testConnection ──────────────────────────────────── */
+
+suite('testConnection');
+
+await test('{ ok: true } wenn Server 207 zurückgibt', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(207, '<xml/>', 'application/xml'));
+  const r = await client.testConnection();
+  assert(r.ok);
+});
+
+await test('{ ok: false } bei 401', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(401, 'Unauthorized'));
+  const r = await client.testConnection();
+  assert(!r.ok);
+  assert(r.error.length > 0);
+});
+
+await test('{ ok: false } bei Netzwerkfehler', async () => {
+  const failFetch = async () => { throw new Error('offline'); };
+  const client = createWebDavClient(CREDS, failFetch);
+  const r = await client.testConnection();
+  assert(!r.ok);
+});
+
+/* ── Tests: URL-Aufbau ──────────────────────────────────────── */
+
+suite('URL-Aufbau');
+
+await test('verwendet konfigurierte Nextcloud-URL als Basis', async () => {
+  let capturedUrl;
+  const captureFetch = async (url, opts) => { capturedUrl = url; return { ok: true, status: 200, text: async () => '{}' }; };
+  const client = createWebDavClient({ url: 'https://meine-cloud.de', user: 'u', pass: 'p' }, captureFetch);
+  await client.readJson('/LifeguardOrders/test.json');
+  assert(capturedUrl.startsWith('https://meine-cloud.de'), `URL beginnt nicht korrekt: ${capturedUrl}`);
+});
+
+await test('sendet Authorization-Header mit Base64-Credentials', async () => {
+  let capturedAuth;
+  const captureFetch = async (url, opts) => {
+    capturedAuth = opts.headers['Authorization'];
+    return { ok: true, status: 200, text: async () => '{}' };
+  };
+  const client = createWebDavClient({ url: 'https://cloud.example.com', user: 'martin', pass: 'geheim' }, captureFetch);
+  await client.readJson('/test.json');
+  assert(capturedAuth && capturedAuth.startsWith('Basic '), `Kein Basic-Auth-Header: ${capturedAuth}`);
+  const decoded = atob(capturedAuth.slice(6));
+  assertEqual(decoded, 'martin:geheim');
+});
+
+/* ── Render ─────────────────────────────────────────────────── */
+const out = document.getElementById('output');
+let html = '';
+let lastSuite = '';
+results.forEach(r => {
+  if (r.suite !== lastSuite) {
+    if (lastSuite) html += '</div>';
+    html += `<div class="suite"><div class="suite-title">${r.suite}</div>`;
+    lastSuite = r.suite;
+  }
+  const icon = r.ok ? '✓' : '✗';
+  const cls  = r.ok ? 'pass' : 'fail';
+  html += `<div class="result ${cls}">${icon} ${r.name}${r.ok ? '' : '<br><span style="color:#f99;margin-left:1.5em">'+r.err+'</span>'}</div>`;
+});
+if (lastSuite) html += '</div>';
+out.innerHTML = html;
+
+const total  = results.length;
+const passed = results.filter(r => r.ok).length;
+const failed = total - passed;
+const sumEl  = document.getElementById('summary');
+sumEl.textContent = `${passed}/${total} bestanden${failed ? ' — ' + failed + ' fehlgeschlagen' : ''}`;
+sumEl.className   = failed ? 'has-fail' : 'all-pass';
+</script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Artikelkatalog – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .artikel-nr { color: var(--text-2); font-size: .8rem; font-family: monospace; }
+    .preis      { text-align: right; font-variant-numeric: tabular-nums; }
+    .foerder    { text-align: right; font-variant-numeric: tabular-nums; font-size: .82rem; color: var(--text-2); }
+    .og-chip    { font-size: .75rem; background: #1a2a4a; color: var(--blue);
+                  padding: 2px 8px; border-radius: 20px; white-space: nowrap; }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.6);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      width: min(560px, 95vw);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal h2 { margin-bottom: 16px; font-size: 1rem; }
+
+    .import-area { display: none; }
+    .import-area.open { display: block; }
+
+    #import-vorschau table { margin-top: 12px; }
+    #import-vorschau td input { padding: 4px 6px; font-size: .82rem; }
+
+    .leer-hinweis {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--text-2);
+    }
+    .leer-hinweis p { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="index.html">LifeguardOrders</a>
+  <a href="bestellungen.html">Bestellungen</a>
+  <a href="artikel.html" class="active">Artikel</a>
+  <a href="rechnungen.html">Rechnungen</a>
+  <a href="kassenwart.html">Kassenwart</a>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="einstellungen.html">Einstellungen</a>
+</nav>
+
+<div class="container">
+  <div class="flex gap-8" style="align-items:center; margin-bottom:20px">
+    <h1 style="margin:0;flex:1">Artikelkatalog</h1>
+    <button class="btn btn-ghost btn-sm" id="btn-import-toggle">Aus Materialstelle importieren</button>
+    <button class="btn btn-primary btn-sm" id="btn-neu">+ Artikel anlegen</button>
+  </div>
+
+  <!-- Import-Bereich -->
+  <div class="card import-area" id="import-bereich">
+    <h2>Import aus Auftragsbestätigung</h2>
+    <p class="text-sm" style="margin-bottom:10px">
+      Kopiere den Tabelleninhalt der Auftragsbestätigung von der DLRG-Materialstelle
+      und füge ihn hier ein. Artikel mit Menge 0, Versandkosten und Eilauftrag werden
+      automatisch erkannt.
+    </p>
+    <textarea id="import-text" style="min-height:140px"
+      placeholder="Nr.	Artikel Nr.	Artikel	Bestellte Menge	Einzelpreis	..."></textarea>
+    <div class="flex gap-8 mt-8">
+      <button class="btn btn-ghost btn-sm" id="btn-parsen">Parsen</button>
+      <button class="btn btn-primary btn-sm" id="btn-uebernehmen" style="display:none">In Katalog übernehmen</button>
+      <span id="import-status"></span>
+    </div>
+    <div id="import-vorschau"></div>
+  </div>
+
+  <!-- Artikelliste -->
+  <div class="card" id="katalog-card">
+    <div id="katalog-inhalt">
+      <div class="leer-hinweis" id="leer-hinweis">
+        <p>Noch keine Artikel im Katalog.</p>
+        <p class="text-sm">Importiere Artikel aus einer Auftragsbestätigung oder lege sie manuell an.</p>
+        <button class="btn btn-ghost" onclick="document.getElementById('btn-import-toggle').click()">
+          Aus Materialstelle importieren
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Artikel anlegen / bearbeiten -->
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <h2 id="modal-titel">Artikel anlegen</h2>
+    <input type="hidden" id="modal-id">
+    <div class="form-grid">
+      <div class="field">
+        <label for="m-artikelnr">Artikel-Nr.</label>
+        <input type="text" id="m-artikelnr" placeholder="29510012">
+      </div>
+      <div class="field">
+        <label for="m-einzelpreis">Einzelpreis (brutto €)</label>
+        <input type="number" id="m-einzelpreis" step="0.01" min="0" placeholder="69.90">
+      </div>
+      <div class="field span2">
+        <label for="m-name">Bezeichnung</label>
+        <input type="text" id="m-name" placeholder="Einsatzhose Damen mit Reflex 2.0 (Gr. 44)">
+      </div>
+      <div class="field">
+        <label for="m-bv">BV-Förderung (€ / Stück)</label>
+        <input type="number" id="m-bv" step="0.01" min="0" value="0">
+      </div>
+      <div class="field">
+        <label for="m-lv">LV-Förderung (€ / Stück)</label>
+        <input type="number" id="m-lv" step="0.01" min="0" value="0">
+      </div>
+      <div class="field">
+        <label for="m-og">OG-Förderung (€ / Stück)</label>
+        <input type="number" id="m-og" step="0.01" min="0" value="0" id="m-og-betrag">
+      </div>
+      <div class="field" style="justify-content:flex-end">
+        <label style="visibility:hidden">_</label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="m-og-rest"> OG übernimmt Rest
+        </label>
+      </div>
+    </div>
+    <div class="flex gap-8 mt-16" style="justify-content:flex-end">
+      <button class="btn btn-ghost" id="modal-abbrechen">Abbrechen</button>
+      <button class="btn btn-primary" id="modal-speichern">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="src/artikel-app.js"></script>
+</body>
+</html>

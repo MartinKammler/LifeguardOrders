@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Einstellungen – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="index.html">LifeguardOrders</a>
+  <a href="bestellungen.html">Bestellungen</a>
+  <a href="artikel.html">Artikel</a>
+  <a href="rechnungen.html">Rechnungen</a>
+  <a href="kassenwart.html">Kassenwart</a>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="einstellungen.html" class="active">Einstellungen</a>
+</nav>
+
+<div class="container">
+  <h1>Einstellungen</h1>
+
+  <!-- Nextcloud-Verbindung -->
+  <div class="card">
+    <h2>Nextcloud-Verbindung</h2>
+    <div class="form-grid">
+      <div class="field span2">
+        <label for="nc-url">Nextcloud-URL</label>
+        <input type="url" id="nc-url" placeholder="https://cloud.goddyhome.de">
+      </div>
+      <div class="field">
+        <label for="nc-user">Benutzername</label>
+        <input type="text" id="nc-user" placeholder="martin">
+      </div>
+      <div class="field">
+        <label for="nc-pass">App-Passwort</label>
+        <input type="password" id="nc-pass" placeholder="••••••••••••••••••••">
+      </div>
+    </div>
+    <div class="flex gap-8 mt-16">
+      <button class="btn btn-ghost" id="btn-test">Verbindung testen</button>
+      <span id="verbindung-status"></span>
+    </div>
+  </div>
+
+  <!-- OG-Stammdaten -->
+  <div class="card">
+    <h2>OG-Stammdaten (für Rechnungen)</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="og-name">Ortsgruppe</label>
+        <input type="text" id="og-name" placeholder="OG-Schellbronn e.V.">
+      </div>
+      <div class="field">
+        <label for="og-lv">Landesverband</label>
+        <input type="text" id="og-lv" placeholder="Landesverband Baden">
+      </div>
+      <div class="field">
+        <label for="og-bv-name">Bezirk</label>
+        <input type="text" id="og-bv-name" placeholder="Bezirk Enz">
+      </div>
+      <div class="field">
+        <label for="og-strasse">Straße + Nr.</label>
+        <input type="text" id="og-strasse" placeholder="Nagoldstr. 47">
+      </div>
+      <div class="field">
+        <label for="og-plz">PLZ</label>
+        <input type="text" id="og-plz" placeholder="75242">
+      </div>
+      <div class="field">
+        <label for="og-ort">Ort</label>
+        <input type="text" id="og-ort" placeholder="Neuhausen">
+      </div>
+      <div class="field">
+        <label for="og-email">E-Mail</label>
+        <input type="text" id="og-email" placeholder="kasse@schellbronn.dlrg.de">
+      </div>
+      <div class="field">
+        <label for="og-web">Website</label>
+        <input type="text" id="og-web" placeholder="www.schellbronn.dlrg.de">
+      </div>
+    </div>
+
+    <hr class="divider">
+    <h2>Bankverbindung</h2>
+    <div class="form-grid triple">
+      <div class="field">
+        <label for="og-iban">IBAN</label>
+        <input type="text" id="og-iban" placeholder="DE57 6619 0000 0033 5861 08">
+      </div>
+      <div class="field">
+        <label for="og-bic">BIC</label>
+        <input type="text" id="og-bic" placeholder="GENODE61KA1">
+      </div>
+      <div class="field">
+        <label for="og-bank">Bank</label>
+        <input type="text" id="og-bank" placeholder="Volksbank pur eG">
+      </div>
+    </div>
+
+    <hr class="divider">
+    <h2>Rechtliches</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="og-amtsgericht">Amtsgericht + Nr.</label>
+        <input type="text" id="og-amtsgericht" placeholder="Mannheim 501097">
+      </div>
+      <div class="field">
+        <label for="og-steuernr">Steuernummer</label>
+        <input type="text" id="og-steuernr" placeholder="41435/55802">
+      </div>
+      <div class="field">
+        <label for="og-vorstand1">1. Vorsitzender</label>
+        <input type="text" id="og-vorstand1" placeholder="Martin Kammler">
+      </div>
+      <div class="field">
+        <label for="og-vorstand2">2. Vorsitzender</label>
+        <input type="text" id="og-vorstand2" placeholder="Yannick Rehberg">
+      </div>
+      <div class="field span2">
+        <label for="og-finanzen">Finanzen</label>
+        <input type="text" id="og-finanzen" placeholder="Dorit Storzum">
+      </div>
+    </div>
+  </div>
+
+  <!-- Einsatzstunden-Konfiguration -->
+  <div class="card">
+    <h2>Einsatzstunden-Abarbeitung</h2>
+    <div class="form-grid">
+      <div class="field">
+        <label for="stunden-rate-h">Stunden</label>
+        <input type="number" id="stunden-rate-h" min="1" max="100" value="3">
+      </div>
+      <div class="field">
+        <label for="stunden-rate-eur">entsprechen … €</label>
+        <input type="number" id="stunden-rate-eur" min="1" max="1000" value="10">
+      </div>
+    </div>
+    <p class="text-sm mt-8">Zählende Einsatztypen (kommagetrennt):</p>
+    <div class="field mt-4">
+      <input type="text" id="einsatztypen"
+        placeholder="wachdienst, sanitaetsdienst, helfer, verwaltung">
+    </div>
+  </div>
+
+  <!-- Mitgliederliste -->
+  <div class="card">
+    <h2>Mitgliederliste (aus Stempeluhr config.js)</h2>
+    <p class="text-sm" style="margin-bottom:12px">
+      Kopiere den Inhalt von <code>defaultUsers: [...]</code> aus der Stempeluhr-config.js
+      in das Textfeld und klicke "Importieren". Nur Name und ID werden übernommen — keine PINs.
+    </p>
+    <textarea id="mitglieder-input"
+      placeholder="{ id: 'martin_kammler', name: 'Martin Kammler', pin: '...', ... },&#10;{ id: 'dorit_storzum', name: 'Dorit Storzum', ... },&#10;..."></textarea>
+    <div class="flex gap-8 mt-8">
+      <button class="btn btn-ghost" id="btn-mitglieder-import">Importieren</button>
+      <span id="mitglieder-status"></span>
+    </div>
+    <div id="mitglieder-liste" class="mt-16"></div>
+  </div>
+
+  <!-- Speichern -->
+  <div class="flex gap-8 mt-16" style="justify-content: flex-end">
+    <span id="speichern-status"></span>
+    <button class="btn btn-primary" id="btn-speichern">Einstellungen speichern</button>
+  </div>
+
+</div>
+
+<script type="module" src="src/einstellungen-app.js"></script>
+</body>
+</html>

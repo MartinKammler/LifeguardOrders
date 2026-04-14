@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Parser – Unit Tests</title>
+  <style>
+    body { font-family: monospace; background: #0d0d12; color: #ccc; margin: 0; padding: 20px; }
+    h1   { color: #fff; font-size: 1.1rem; margin-bottom: 16px; }
+    .suite { margin-bottom: 20px; }
+    .suite-title { color: #7eb8f7; font-size: .9rem; margin-bottom: 6px; font-weight: bold; }
+    .pass { color: #4caf7d; }
+    .fail { color: #f76e6e; }
+    .result { font-size: .82rem; margin: 2px 0 2px 12px; }
+    #summary { margin-top: 24px; font-size: 1rem; font-weight: bold; padding: 10px; border-radius: 6px; }
+    .all-pass { background: #1a3a28; color: #4caf7d; }
+    .has-fail  { background: #3a1a1a; color: #f76e6e; }
+  </style>
+</head>
+<body>
+<h1>Parser – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script type="module">
+import { parseBestellung } from '../src/parser.js';
+
+/* ── Mini Test-Runner ───────────────────────────────────────── */
+const results = [];
+let currentSuite = '';
+
+function suite(name) { currentSuite = name; }
+async function test(name, fn) {
+  try { await fn(); results.push({ suite: currentSuite, name, ok: true }); }
+  catch (e) { results.push({ suite: currentSuite, name, ok: false, err: e.message }); }
+}
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg || 'Assertion fehlgeschlagen');
+}
+function assertEqual(a, b, msg) {
+  if (a !== b) throw new Error((msg || '') + ` — erwartet: ${JSON.stringify(b)}, bekommen: ${JSON.stringify(a)}`);
+}
+
+/* ── Testdaten ──────────────────────────────────────────────── */
+
+// Normaler Artikel mit BV + LV
+const TEXT_NORMAL = `Nr.\tArtikel Nr.\tArtikel\tBestellte Menge\tEinzelpreis\tGesamtbetrag exkl. MwSt.\tSumme
+1\t29510012\tEinsatzhose Damen mit Reflex 2.0 ( 44 )\t1\t69,90 €\t58,73 €\t69,90 €
+2\tMITTELVERW. BV\tMittelverwendung Bundesverband\t1\t-34,90 €\t-34,90 €\t-34,90 €
+3\tMITTELVERW. LV\tMittelverwendung Landesverbände\t1\t-17,50 €\t-17,50 €\t-17,50 €`;
+
+// Artikel mit Menge 0 (inkl. MITTELVERW.)
+const TEXT_MENGE0 = `Nr.\tArtikel Nr.\tArtikel\tBestellte Menge\tEinzelpreis\tGesamtbetrag exkl. MwSt.\tSumme
+1\t29510012\tEinsatzhose Damen mit Reflex 2.0 ( 40 )\t0\t69,90 €\t0,00 €\t0,00 €
+2\tMITTELVERW. BV\tMittelverwendung Bundesverband\t0\t-34,90 €\t0,00 €\t-0,00 €
+3\tMITTELVERW. LV\tMittelverwendung Landesverbände\t0\t-17,50 €\t0,00 €\t-0,00 €`;
+
+// Nur BV, keine LV
+const TEXT_NUR_BV = `Nr.\tArtikel Nr.\tArtikel\tBestellte Menge\tEinzelpreis\tGesamtbetrag exkl. MwSt.\tSumme
+1\t29509440\tDLRG Jakolette, rot (46)\t1\t15,90 €\t13,36 €\t15,90 €
+2\tMITTELVERW. BV\tMittelverwendung Bundesverband\t1\t-4,90 €\t-4,90 €\t-4,90 €`;
+
+// VERSANDKOSTEN
+const TEXT_VERSAND = `Nr.\tArtikel Nr.\tArtikel\tBestellte Menge\tEinzelpreis\tGesamtbetrag exkl. MwSt.\tSumme
+1\t12201521\tStoffabzeichen DSA Bronze\t5\t2,20 €\t9,24 €\t11,00 €
+2\tVERSANDKOSTEN\tVersandkosten\t1\t6,50 €\t5,46 €\t6,50 €`;
+
+// Zwei gleiche Artikel (verschiedene Größen)
+const TEXT_ZWEI_ARTIKEL = `Nr.\tArtikel Nr.\tArtikel\tBestellte Menge\tEinzelpreis\tGesamtbetrag exkl. MwSt.\tSumme
+1\t29510012\tEinsatzhose Damen mit Reflex 2.0 ( 44 )\t1\t69,90 €\t58,73 €\t69,90 €
+2\tMITTELVERW. BV\tMittelverwendung Bundesverband\t1\t-34,90 €\t-34,90 €\t-34,90 €
+3\tMITTELVERW. LV\tMittelverwendung Landesverbände\t1\t-17,50 €\t-17,50 €\t-17,50 €
+4\t29510012\tEinsatzhose Damen mit Reflex 2.0 ( 80 )\t1\t69,90 €\t58,74 €\t69,90 €
+5\tMITTELVERW. BV\tMittelverwendung Bundesverband\t1\t-34,90 €\t-34,90 €\t-34,90 €
+6\tMITTELVERW. LV\tMittelverwendung Landesverbände\t1\t-17,50 €\t-17,50 €\t-17,50 €`;
+
+// Menge > 1 (T-Shirt, 2 Stück)
+const TEXT_MENGE2 = `Nr.\tArtikel Nr.\tArtikel\tBestellte Menge\tEinzelpreis\tGesamtbetrag exkl. MwSt.\tSumme
+1\t18507110\tT-Shirt rot - DLRG Ausbildung - JAKO (6XL)\t2\t14,50 €\t24,37 €\t29,00 €
+2\tMITTELVERW. BV\tMittelverwendung Bundesverband\t2\t-4,60 €\t-9,20 €\t-9,20 €
+3\tMITTELVERW. LV\tMittelverwendung Landesverbände\t2\t-4,95 €\t-9,90 €\t-9,90 €`;
+
+// EILAUFTRAG
+const TEXT_EILAUFTRAG = `Nr.\tArtikel Nr.\tArtikel\tBestellte Menge\tEinzelpreis\tGesamtbetrag exkl. MwSt.\tSumme
+1\t12201521\tStoffabzeichen DSA Bronze\t5\t2,20 €\t9,24 €\t11,00 €
+2\tEILAUFTRAG\tKosten für Eilauftrag\t1\t5,95 €\t5,00 €\t5,95 €`;
+
+/* ── Tests ──────────────────────────────────────────────────── */
+
+suite('Normaler Artikel mit BV + LV');
+
+await test('liefert genau einen Artikel', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.artikel.length, 1);
+});
+
+await test('Artikel-Nr. korrekt geparst', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.artikel[0].artikelNr, '29510012');
+});
+
+await test('Name korrekt geparst', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.artikel[0].name, 'Einsatzhose Damen mit Reflex 2.0 ( 44 )');
+});
+
+await test('Einzelpreis korrekt geparst', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.artikel[0].einzelpreis, 69.90);
+});
+
+await test('Menge korrekt geparst', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.artikel[0].menge, 1);
+});
+
+await test('BV-Förderung korrekt geparst', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.artikel[0].bvFoerderung, 34.90);
+});
+
+await test('LV-Förderung korrekt geparst', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.artikel[0].lvFoerderung, 17.50);
+});
+
+await test('keine ogKosten bei normalem Artikel', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.ogKosten.length, 0);
+});
+
+await test('keine Fehler bei normalem Artikel', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.fehler.length, 0);
+});
+
+suite('Menge 0 → überspringen');
+
+await test('Artikel mit Menge 0 nicht in artikel[]', () => {
+  const r = parseBestellung(TEXT_MENGE0);
+  assertEqual(r.artikel.length, 0);
+});
+
+await test('Menge-0-Artikel erzeugt keinen Fehler', () => {
+  const r = parseBestellung(TEXT_MENGE0);
+  assertEqual(r.fehler.length, 0);
+});
+
+suite('Nur BV, keine LV');
+
+await test('Artikel vorhanden', () => {
+  const r = parseBestellung(TEXT_NUR_BV);
+  assertEqual(r.artikel.length, 1);
+});
+
+await test('LV-Förderung ist 0 wenn keine MITTELVERW. LV', () => {
+  const r = parseBestellung(TEXT_NUR_BV);
+  assertEqual(r.artikel[0].lvFoerderung, 0);
+});
+
+await test('BV-Förderung korrekt', () => {
+  const r = parseBestellung(TEXT_NUR_BV);
+  assertEqual(r.artikel[0].bvFoerderung, 4.90);
+});
+
+await test('kein Fehler wenn LV fehlt', () => {
+  const r = parseBestellung(TEXT_NUR_BV);
+  assertEqual(r.fehler.length, 0);
+});
+
+suite('VERSANDKOSTEN → ogKosten');
+
+await test('VERSANDKOSTEN nicht in artikel[]', () => {
+  const r = parseBestellung(TEXT_VERSAND);
+  assertEqual(r.artikel.length, 1);
+  assertEqual(r.artikel[0].artikelNr, '12201521');
+});
+
+await test('VERSANDKOSTEN in ogKosten[]', () => {
+  const r = parseBestellung(TEXT_VERSAND);
+  assertEqual(r.ogKosten.length, 1);
+  assertEqual(r.ogKosten[0].artikelNr, 'VERSANDKOSTEN');
+});
+
+await test('VERSANDKOSTEN Preis korrekt', () => {
+  const r = parseBestellung(TEXT_VERSAND);
+  assertEqual(r.ogKosten[0].einzelpreis, 6.50);
+});
+
+suite('EILAUFTRAG → ogKosten');
+
+await test('EILAUFTRAG in ogKosten[]', () => {
+  const r = parseBestellung(TEXT_EILAUFTRAG);
+  assertEqual(r.ogKosten.length, 1);
+  assertEqual(r.ogKosten[0].artikelNr, 'EILAUFTRAG');
+});
+
+suite('Zwei Artikel (verschiedene Größen)');
+
+await test('liefert zwei separate Einträge', () => {
+  const r = parseBestellung(TEXT_ZWEI_ARTIKEL);
+  assertEqual(r.artikel.length, 2);
+});
+
+await test('Förderung je Artikel korrekt zugeordnet', () => {
+  const r = parseBestellung(TEXT_ZWEI_ARTIKEL);
+  assertEqual(r.artikel[0].bvFoerderung, 34.90);
+  assertEqual(r.artikel[1].bvFoerderung, 34.90);
+});
+
+suite('Menge > 1');
+
+await test('Menge 2 korrekt geparst', () => {
+  const r = parseBestellung(TEXT_MENGE2);
+  assertEqual(r.artikel[0].menge, 2);
+});
+
+await test('BV-Förderung bei Menge 2 ist pro Stück', () => {
+  const r = parseBestellung(TEXT_MENGE2);
+  assertEqual(r.artikel[0].bvFoerderung, 4.60);
+});
+
+await test('LV-Förderung bei Menge 2 ist pro Stück', () => {
+  const r = parseBestellung(TEXT_MENGE2);
+  assertEqual(r.artikel[0].lvFoerderung, 4.95);
+});
+
+/* ── Render ─────────────────────────────────────────────────── */
+const out = document.getElementById('output');
+let html = '';
+let lastSuite = '';
+results.forEach(r => {
+  if (r.suite !== lastSuite) {
+    html += `<div class="suite"><div class="suite-title">${r.suite}</div>`;
+    lastSuite = r.suite;
+  }
+  const icon = r.ok ? '✓' : '✗';
+  const cls  = r.ok ? 'pass' : 'fail';
+  html += `<div class="result ${cls}">${icon} ${r.name}${r.ok ? '' : '<br><span style="color:#f99;margin-left:1.5em">'+r.err+'</span>'}</div>`;
+});
+html += '</div>';
+out.innerHTML = html;
+
+const total  = results.length;
+const passed = results.filter(r => r.ok).length;
+const failed = total - passed;
+const sumEl  = document.getElementById('summary');
+sumEl.textContent = `${passed}/${total} bestanden${failed ? ' — ' + failed + ' fehlgeschlagen' : ''}`;
+sumEl.className   = failed ? 'has-fail' : 'all-pass';
+</script>
+</body>
+</html>

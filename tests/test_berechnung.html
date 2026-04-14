@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Berechnung – Unit Tests</title>
+  <style>
+    body { font-family: monospace; background: #0d0d12; color: #ccc; margin: 0; padding: 20px; }
+    h1   { color: #fff; font-size: 1.1rem; margin-bottom: 16px; }
+    .suite { margin-bottom: 20px; }
+    .suite-title { color: #7eb8f7; font-size: .9rem; margin-bottom: 6px; font-weight: bold; }
+    .pass { color: #4caf7d; }
+    .fail { color: #f76e6e; }
+    .result { font-size: .82rem; margin: 2px 0 2px 12px; }
+    #summary { margin-top: 24px; font-size: 1rem; font-weight: bold; padding: 10px; border-radius: 6px; }
+    .all-pass { background: #1a3a28; color: #4caf7d; }
+    .has-fail  { background: #3a1a1a; color: #f76e6e; }
+  </style>
+</head>
+<body>
+<h1>Berechnung – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script type="module">
+import { berechneFoerderung, naechsteRechnungsnummer } from '../src/berechnung.js';
+
+/* ── Mini Test-Runner ───────────────────────────────────────── */
+const results = [];
+let currentSuite = '';
+function suite(name) { currentSuite = name; }
+async function test(name, fn) {
+  try { await fn(); results.push({ suite: currentSuite, name, ok: true }); }
+  catch (e) { results.push({ suite: currentSuite, name, ok: false, err: e.message }); }
+}
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg || 'Assertion fehlgeschlagen');
+}
+function assertEqual(a, b, msg) {
+  if (a !== b) throw new Error((msg || '') + ` — erwartet: ${JSON.stringify(b)}, bekommen: ${JSON.stringify(a)}`);
+}
+
+/* ── Testdaten ──────────────────────────────────────────────── */
+
+const HOSE = {
+  einzelpreis:      69.90,
+  bvFoerderung:     34.90,
+  lvFoerderung:     17.50,
+  ogFoerderung:      0,
+  ogUebernimmtRest: false,
+};
+
+const HOSE_OG_REST = {
+  einzelpreis:      69.90,
+  bvFoerderung:     34.90,
+  lvFoerderung:     17.50,
+  ogFoerderung:      0,
+  ogUebernimmtRest: true,   // OG übernimmt den Rest (69.90 - 34.90 - 17.50 = 17.50)
+};
+
+const SHIRT = {
+  einzelpreis:      14.50,
+  bvFoerderung:      4.60,
+  lvFoerderung:      4.95,
+  ogFoerderung:      0,
+  ogUebernimmtRest: false,
+};
+
+const OHNE_FOERDERUNG = {
+  einzelpreis:      25.00,
+  bvFoerderung:      0,
+  lvFoerderung:      0,
+  ogFoerderung:      0,
+  ogUebernimmtRest: false,
+};
+
+const MIT_OG_BETRAG = {
+  einzelpreis:      69.90,
+  bvFoerderung:     34.90,
+  lvFoerderung:     17.50,
+  ogFoerderung:     10.00,
+  ogUebernimmtRest: false,
+};
+
+/* ── Tests: berechneFoerderung ──────────────────────────────── */
+
+suite('berechneFoerderung — BV + LV, Menge 1');
+
+await test('bv korrekt', () => {
+  const r = berechneFoerderung(HOSE, 1);
+  assertEqual(r.bv, 34.90);
+});
+
+await test('lv korrekt', () => {
+  const r = berechneFoerderung(HOSE, 1);
+  assertEqual(r.lv, 17.50);
+});
+
+await test('og ist 0 wenn kein OG-Anteil', () => {
+  const r = berechneFoerderung(HOSE, 1);
+  assertEqual(r.og, 0);
+});
+
+await test('mitglied zahlt Differenz', () => {
+  const r = berechneFoerderung(HOSE, 1);
+  assertEqual(r.mitglied, 17.50);   // 69.90 - 34.90 - 17.50
+});
+
+await test('gesamt ist Einzelpreis × Menge', () => {
+  const r = berechneFoerderung(HOSE, 1);
+  assertEqual(r.gesamt, 69.90);
+});
+
+suite('berechneFoerderung — ogUebernimmtRest');
+
+await test('og übernimmt den Rest (69.90 - 34.90 - 17.50 = 17.50)', () => {
+  const r = berechneFoerderung(HOSE_OG_REST, 1);
+  assertEqual(r.og, 17.50);
+});
+
+await test('mitglied zahlt 0 wenn OG den Rest übernimmt', () => {
+  const r = berechneFoerderung(HOSE_OG_REST, 1);
+  assertEqual(r.mitglied, 0);
+});
+
+suite('berechneFoerderung — fixer OG-Betrag');
+
+await test('og ist fixer Betrag', () => {
+  const r = berechneFoerderung(MIT_OG_BETRAG, 1);
+  assertEqual(r.og, 10.00);
+});
+
+await test('mitglied zahlt Einzelpreis - bv - lv - og', () => {
+  const r = berechneFoerderung(MIT_OG_BETRAG, 1);
+  assertEqual(r.mitglied, 7.50);  // 69.90 - 34.90 - 17.50 - 10.00
+});
+
+suite('berechneFoerderung — Menge 2');
+
+await test('gesamt = Einzelpreis × 2', () => {
+  const r = berechneFoerderung(SHIRT, 2);
+  assertEqual(r.gesamt, 29.00);
+});
+
+await test('bv = bvFoerderung × 2', () => {
+  const r = berechneFoerderung(SHIRT, 2);
+  assertEqual(r.bv, 9.20);
+});
+
+await test('lv = lvFoerderung × 2', () => {
+  const r = berechneFoerderung(SHIRT, 2);
+  assertEqual(r.lv, 9.90);
+});
+
+await test('mitglied = (Einzelpreis - bv/St - lv/St) × 2', () => {
+  const r = berechneFoerderung(SHIRT, 2);
+  assertEqual(r.mitglied, 9.90);  // (14.50 - 4.60 - 4.95) × 2 = 4.95 × 2
+});
+
+suite('berechneFoerderung — keine Förderung');
+
+await test('mitglied zahlt vollen Preis', () => {
+  const r = berechneFoerderung(OHNE_FOERDERUNG, 1);
+  assertEqual(r.mitglied, 25.00);
+});
+
+await test('alle Förderfelder sind 0', () => {
+  const r = berechneFoerderung(OHNE_FOERDERUNG, 1);
+  assertEqual(r.bv, 0);
+  assertEqual(r.lv, 0);
+  assertEqual(r.og, 0);
+});
+
+suite('berechneFoerderung — Rundung');
+
+await test('kein Floating-Point-Fehler bei typischen Beträgen', () => {
+  // 14.50 - 4.60 - 4.95 = 4.95 (nicht 4.949999...)
+  const r = berechneFoerderung(SHIRT, 1);
+  assertEqual(r.mitglied, 4.95);
+});
+
+/* ── Tests: naechsteRechnungsnummer ─────────────────────────── */
+
+suite('naechsteRechnungsnummer — erste Rechnung');
+
+await test('erste Rechnung im Monat → 001', () => {
+  const r = naechsteRechnungsnummer([], new Date('2025-07-15'));
+  assertEqual(r, 'R_2025_07_001');
+});
+
+await test('anderer Monat → korrekte Monatsangabe', () => {
+  const r = naechsteRechnungsnummer([], new Date('2025-03-01'));
+  assertEqual(r, 'R_2025_03_001');
+});
+
+suite('naechsteRechnungsnummer — fortlaufend');
+
+await test('nach 001 kommt 002', () => {
+  const r = naechsteRechnungsnummer(
+    [{ nummer: 'R_2025_07_001' }],
+    new Date('2025-07-15')
+  );
+  assertEqual(r, 'R_2025_07_002');
+});
+
+await test('nach 009 kommt 010', () => {
+  const rechnungen = Array.from({ length: 9 }, (_, i) =>
+    ({ nummer: `R_2025_07_00${i + 1}` })
+  );
+  const r = naechsteRechnungsnummer(rechnungen, new Date('2025-07-15'));
+  assertEqual(r, 'R_2025_07_010');
+});
+
+suite('naechsteRechnungsnummer — Monatswechsel');
+
+await test('Rechnungen aus Vormonat zählen nicht für neuen Monat', () => {
+  const r = naechsteRechnungsnummer(
+    [{ nummer: 'R_2025_06_005' }],
+    new Date('2025-07-01')
+  );
+  assertEqual(r, 'R_2025_07_001');
+});
+
+await test('Rechnungen aus anderem Jahr zählen nicht', () => {
+  const r = naechsteRechnungsnummer(
+    [{ nummer: 'R_2024_07_003' }],
+    new Date('2025-07-01')
+  );
+  assertEqual(r, 'R_2025_07_001');
+});
+
+/* ── Render ─────────────────────────────────────────────────── */
+const out = document.getElementById('output');
+let html = '';
+let lastSuite = '';
+results.forEach(r => {
+  if (r.suite !== lastSuite) {
+    if (lastSuite) html += '</div>';
+    html += `<div class="suite"><div class="suite-title">${r.suite}</div>`;
+    lastSuite = r.suite;
+  }
+  const icon = r.ok ? '✓' : '✗';
+  const cls  = r.ok ? 'pass' : 'fail';
+  html += `<div class="result ${cls}">${icon} ${r.name}${r.ok ? '' : '<br><span style="color:#f99;margin-left:1.5em">' + r.err + '</span>'}</div>`;
+});
+if (lastSuite) html += '</div>';
+out.innerHTML = html;
+
+const total  = results.length;
+const passed = results.filter(r => r.ok).length;
+const failed = total - passed;
+const sumEl  = document.getElementById('summary');
+sumEl.textContent = `${passed}/${total} bestanden${failed ? ' — ' + failed + ' fehlgeschlagen' : ''}`;
+sumEl.className   = failed ? 'has-fail' : 'all-pass';
+</script>
+</body>
+</html>
