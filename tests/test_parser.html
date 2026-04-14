@@ -224,6 +224,180 @@ await test('LV-Förderung bei Menge 2 ist pro Stück', () => {
   assertEqual(r.artikel[0].lvFoerderung, 4.95);
 });
 
+/* ── Mehrzeiliges Format (echtes DLRG-Kopierformat) ─────────── */
+
+const ML_NORMAL = `Nr.    Artikel Nr.    Artikel    Bestellte Menge    Einzelpreis    Gesamtbetrag exkl. MwSt.    Summe
+1     29510012     Einsatzhose Damen mit Reflex 2.0 ( 44 )     1
+69,90 €
+
+58,73 €
+
+69,90 €
+
+2     MITTELVERW. BV     Mittelverwendung Bundesverband     1
+-34,90 €
+
+-34,90 €
+
+-34,90 €
+
+3     MITTELVERW. LV     Mittelverwendung Landesverbände     1
+-17,50 €
+
+-17,50 €
+
+-17,50 €`;
+
+const ML_MENGE0 = `1     29510012     Einsatzhose Damen mit Reflex 2.0 ( 40 )     0
+69,90 €
+
+0,00 €
+
+0,00 €
+
+2     MITTELVERW. BV     Mittelverwendung Bundesverband     0
+-34,90 €
+
+0,00 €
+
+-0,00 €`;
+
+const ML_NUR_BV = `1     29509440     DLRG Jakolette, rot (46)     1
+15,90 €
+
+13,36 €
+
+15,90 €
+
+2     MITTELVERW. BV     Mittelverwendung Bundesverband     1
+-4,90 €
+
+-4,90 €
+
+-4,90 €`;
+
+const ML_VERSAND = `1     12201521     Stoffabzeichen DSA Bronze     5
+2,20 €
+
+9,24 €
+
+11,00 €
+
+2     VERSANDKOSTEN     Versandkosten     1
+6,50 €
+
+5,46 €
+
+6,50 €`;
+
+const ML_ZWEI = `1     29510012     Einsatzhose Damen mit Reflex 2.0 ( 44 )     1
+69,90 €
+
+58,73 €
+
+69,90 €
+
+2     MITTELVERW. BV     Mittelverwendung Bundesverband     1
+-34,90 €
+
+-34,90 €
+
+-34,90 €
+
+3     MITTELVERW. LV     Mittelverwendung Landesverbände     1
+-17,50 €
+
+-17,50 €
+
+-17,50 €
+
+4     29510012     Einsatzhose Damen mit Reflex 2.0 ( 80 )     1
+69,90 €
+
+58,74 €
+
+69,90 €
+
+5     MITTELVERW. BV     Mittelverwendung Bundesverband     1
+-34,90 €
+
+-34,90 €
+
+-34,90 €
+
+6     MITTELVERW. LV     Mittelverwendung Landesverbände     1
+-17,50 €
+
+-17,50 €
+
+-17,50 €`;
+
+suite('Mehrzeiliges Format — normaler Artikel mit BV + LV');
+
+await test('liefert einen Artikel', () => {
+  assertEqual(parseBestellung(ML_NORMAL).artikel.length, 1);
+});
+await test('Einzelpreis korrekt', () => {
+  assertEqual(parseBestellung(ML_NORMAL).artikel[0].einzelpreis, 69.90);
+});
+await test('BV-Förderung korrekt', () => {
+  assertEqual(parseBestellung(ML_NORMAL).artikel[0].bvFoerderung, 34.90);
+});
+await test('LV-Förderung korrekt', () => {
+  assertEqual(parseBestellung(ML_NORMAL).artikel[0].lvFoerderung, 17.50);
+});
+await test('Artikel-Nr. korrekt', () => {
+  assertEqual(parseBestellung(ML_NORMAL).artikel[0].artikelNr, '29510012');
+});
+
+suite('Mehrzeiliges Format — Menge 0 überspringen');
+
+await test('Artikel mit Menge 0 nicht in artikel[]', () => {
+  assertEqual(parseBestellung(ML_MENGE0).artikel.length, 0);
+});
+await test('kein Fehler bei Menge 0', () => {
+  assertEqual(parseBestellung(ML_MENGE0).fehler.length, 0);
+});
+
+suite('Mehrzeiliges Format — nur BV');
+
+await test('LV-Förderung ist 0 wenn keine LV-Zeile', () => {
+  assertEqual(parseBestellung(ML_NUR_BV).artikel[0].lvFoerderung, 0);
+});
+await test('BV-Förderung korrekt', () => {
+  assertEqual(parseBestellung(ML_NUR_BV).artikel[0].bvFoerderung, 4.90);
+});
+
+suite('Mehrzeiliges Format — VERSANDKOSTEN');
+
+await test('VERSANDKOSTEN in ogKosten[]', () => {
+  const r = parseBestellung(ML_VERSAND);
+  assertEqual(r.ogKosten.length, 1);
+  assertEqual(r.ogKosten[0].artikelNr, 'VERSANDKOSTEN');
+});
+await test('VERSANDKOSTEN Preis korrekt', () => {
+  assertEqual(parseBestellung(ML_VERSAND).ogKosten[0].einzelpreis, 6.50);
+});
+await test('normaler Artikel bleibt erhalten', () => {
+  assertEqual(parseBestellung(ML_VERSAND).artikel.length, 1);
+});
+
+suite('Mehrzeiliges Format — zwei Artikel');
+
+await test('liefert zwei separate Einträge', () => {
+  assertEqual(parseBestellung(ML_ZWEI).artikel.length, 2);
+});
+await test('BV-Förderung je Artikel korrekt', () => {
+  const r = parseBestellung(ML_ZWEI);
+  assertEqual(r.artikel[0].bvFoerderung, 34.90);
+  assertEqual(r.artikel[1].bvFoerderung, 34.90);
+});
+await test('LV-Förderung je Artikel korrekt', () => {
+  const r = parseBestellung(ML_ZWEI);
+  assertEqual(r.artikel[0].lvFoerderung, 17.50);
+  assertEqual(r.artikel[1].lvFoerderung, 17.50);
+});
+
 /* ── Render ─────────────────────────────────────────────────── */
 const out = document.getElementById('output');
 let html = '';
