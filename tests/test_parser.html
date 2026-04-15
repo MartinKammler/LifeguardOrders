@@ -398,6 +398,22 @@ await test('LV-Förderung je Artikel korrekt', () => {
   assertEqual(r.artikel[1].lvFoerderung, 17.50);
 });
 
+/* ── Erweiterter Rückgabetyp: warnings und errors ───────────── */
+
+suite('Rückgabetyp: warnings und errors');
+
+await test('parseBestellung: gibt warnings-Array zurück', () => {
+  assert(Array.isArray(parseBestellung('beliebiger text ohne Artikelnummer').warnings));
+});
+
+await test('parseBestellung: gibt errors-Array zurück', () => {
+  assert(Array.isArray(parseBestellung('').errors));
+});
+
+await test('parseBestellung: leerer Text → errors enthält Hinweis', () => {
+  assert(parseBestellung('').errors.length > 0);
+});
+
 /* ── Render ─────────────────────────────────────────────────── */
 const out = document.getElementById('output');
 let html = '';

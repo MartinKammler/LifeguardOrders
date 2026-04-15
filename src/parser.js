@@ -61,7 +61,7 @@ function parseTabFormat(text) {
     letzterArtikel = neuerArtikel;
   }
 
-  return { artikel, ogKosten, fehler };
+  return { artikel, ogKosten, fehler, warnings: [], errors: [] };
 }
 
 /* ── Mehrzeiliges Format (echtes DLRG-Kopierformat) ──────────── */
@@ -166,7 +166,7 @@ function parseMultilineFormat(text) {
   }
 
   commitArtikel();
-  return { artikel, ogKosten, fehler };
+  return { artikel, ogKosten, fehler, warnings: [], errors: [] };
 }
 
 /* ── Produktseiten-Format (DLRG-Materialstelle Artikeldetail) ── */
@@ -207,7 +207,7 @@ function parseVarianten(text) {
 
 function parseProduktseite(text) {
   const nrMatch = text.match(/Artikelnummer:\s*(\d+)/);
-  if (!nrMatch) return { artikel: [], ogKosten: [], fehler: [] };
+  if (!nrMatch) return { artikel: [], ogKosten: [], fehler: [], warnings: [], errors: [] };
 
   const artikelNr = nrMatch[1];
 
@@ -239,6 +239,8 @@ function parseProduktseite(text) {
       artikel: [{ artikelNr, name, variante: '', menge: 1, einzelpreis, bvFoerderung, lvFoerderung }],
       ogKosten: [],
       fehler: [],
+      warnings: [],
+      errors: [],
     };
   }
 
@@ -248,6 +250,8 @@ function parseProduktseite(text) {
     })),
     ogKosten: [],
     fehler: [],
+    warnings: [],
+    errors: [],
   };
 }
 
@@ -261,6 +265,7 @@ function parseProduktseite(text) {
  * @returns {{ artikel[], ogKosten[], fehler[] }}
  */
 export function parseBestellung(text) {
+  if (!text || !text.trim()) return { artikel: [], ogKosten: [], warnings: [], errors: ['Kein Text übergeben'] };
   // Produktdetailseite: enthält "Artikelnummer: XXXXXXXX"
   if (/Artikelnummer:\s*\d+/.test(text)) return parseProduktseite(text);
   // Auftragsbestätigung mehrzeilig: Preis-Zeilen allein
