@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>Tests – validation</title></head>
+<body><pre id="out"></pre>
+<script type="module">
+import { validateWunsch, validatePosition, validateArtikel } from '../src/validation.js';
+let ok = 0, fail = 0;
+function assert(label, cond) {
+  document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
+  cond ? ok++ : fail++;
+}
+
+// validateWunsch
+assert('validateWunsch: ok bei gültigem Eintrag', validateWunsch({ mitgliedId: 'alice', artikelNr: '12345', menge: 2 }).ok === true);
+assert('validateWunsch: fehler bei fehlender mitgliedId', validateWunsch({ artikelNr: '12345', menge: 2 }).ok === false);
+assert('validateWunsch: fehler bei fehlender artikelNr', validateWunsch({ mitgliedId: 'alice', menge: 2 }).ok === false);
+assert('validateWunsch: fehler bei menge 0', validateWunsch({ mitgliedId: 'alice', artikelNr: '12345', menge: 0 }).ok === false);
+assert('validateWunsch: fehler bei negativer menge', validateWunsch({ mitgliedId: 'alice', artikelNr: '12345', menge: -1 }).ok === false);
+assert('validateWunsch: fehler bei Dezimalmenge', validateWunsch({ mitgliedId: 'alice', artikelNr: '12345', menge: 1.5 }).ok === false);
+
+// validatePosition
+assert('validatePosition: ok bei gültiger Position', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: 9.99 }).ok === true);
+assert('validatePosition: fehler bei menge 0', validatePosition({ artikelNr: '12345', menge: 0, einzelpreis: 9.99 }).ok === false);
+assert('validatePosition: fehler bei negativem Preis', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: -1 }).ok === false);
+assert('validatePosition: ok bei Preis 0', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: 0 }).ok === true);
+
+// validateArtikel
+assert('validateArtikel: ok bei vollständigem Artikel', validateArtikel({ artikelNr: '12345', name: 'T-Shirt', einzelpreis: 19.99 }).ok === true);
+assert('validateArtikel: fehler bei fehlendem Namen', validateArtikel({ artikelNr: '12345', einzelpreis: 19.99 }).ok === false);
+assert('validateArtikel: fehler bei negativem Preis', validateArtikel({ artikelNr: '12345', name: 'T-Shirt', einzelpreis: -5 }).ok === false);
+assert('validateArtikel: fehler bei fehlender artikelNr', validateArtikel({ name: 'T-Shirt', einzelpreis: 19.99 }).ok === false);
+
+document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;
+</script></body></html>
