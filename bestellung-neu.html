@@ -440,7 +440,8 @@ async function init() {
   document.getElementById('datum').value = heute();
 
   const e = load(STORAGE_KEY_E);
-  if (e?.nc?.url && e?.nc?.user && e?.nc?.pass) client = createWebDavClient(e.nc);
+  const ncPass = e?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
+  if (e?.nc?.url && e?.nc?.user && ncPass) client = createWebDavClient({ ...e.nc, pass: ncPass });
 
   // Mitglieder aus Einstellungen
   mitglieder = e?.mitglieder || [];

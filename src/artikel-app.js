@@ -309,8 +309,9 @@ document.getElementById('btn-download-artikel')?.addEventListener('click', () =>
 
 async function init() {
   const e = leseEinstellungen();
-  if (e?.nc?.url && e?.nc?.user && e?.nc?.pass) {
-    client = createWebDavClient(e.nc);
+  const ncPass = e?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
+  if (e?.nc?.url && e?.nc?.user && ncPass) {
+    client = createWebDavClient({ ...e.nc, pass: ncPass });
   }
   await ladeArtikel();
 }

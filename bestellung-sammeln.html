@@ -555,8 +555,9 @@ document.getElementById('btn-bestellt').addEventListener('click', async () => {
 async function init() {
   // Einstellungen + NC-Client
   const einstellungen = load(STORAGE_KEY_E);
-  if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
-    client = createWebDavClient(einstellungen.nc);
+  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
+  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
+    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
   }
 
   mitglieder   = einstellungen?.mitglieder || [];
