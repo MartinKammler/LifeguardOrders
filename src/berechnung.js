@@ -31,7 +31,7 @@ export function berechneFoerderung(artikel, menge) {
     og = runde((artikel.ogFoerderung || 0) * menge);
   }
 
-  const mitglied = runde(gesamt - bv - lv - og);
+  const mitglied = Math.max(0, runde(gesamt - bv - lv - og));
 
   return { bv, lv, og, mitglied, gesamt };
 }

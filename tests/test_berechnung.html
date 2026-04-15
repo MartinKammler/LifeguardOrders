@@ -228,6 +228,20 @@ await test('Rechnungen aus anderem Jahr zählen nicht', () => {
   assertEqual(r, 'R_2025_07_001');
 });
 
+suite('berechneFoerderung — Förderlogik clamping');
+
+await test('mitglied nie negativ wenn Förderung > Preis', () => {
+  const artikel = { einzelpreis: 5, bvFoerderung: 4, lvFoerderung: 4, ogFoerderung: 0, ogUebernimmtRest: false };
+  const res = berechneFoerderung(artikel, 1);
+  assert(res.mitglied >= 0, `mitglied darf nicht negativ sein, erhalten: ${res.mitglied}`);
+});
+
+await test('mitglied = 0 wenn Summe Förderungen = Preis', () => {
+  const artikel = { einzelpreis: 10, bvFoerderung: 5, lvFoerderung: 5, ogFoerderung: 0, ogUebernimmtRest: false };
+  const res = berechneFoerderung(artikel, 1);
+  assertEqual(res.mitglied, 0);
+});
+
 /* ── Render ─────────────────────────────────────────────────── */
 const out = document.getElementById('output');
 let html = '';
