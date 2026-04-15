@@ -80,7 +80,7 @@ export function verechneSchuld(mitgliedId, bestellungen, geleisteteStunden, eins
   }
 
   // Älteste zuerst
-  schulden.sort((a, b) => a.rechnungDatum.localeCompare(b.rechnungDatum));
+  schulden.sort((a, b) => new Date(a.rechnungDatum).getTime() - new Date(b.rechnungDatum).getTime());
 
   if (!schulden.length) {
     return { gesamtSchuldStunden: 0, restSchuldStunden: 0, verrechnungen: [] };

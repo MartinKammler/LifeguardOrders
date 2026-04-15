@@ -162,6 +162,17 @@ await test('mehrere Rechnungen: älteste zuerst tilgen', () => {
   assertEqual(r.verrechnungen[1].offenStunden, 3, 'jüngere noch offen');
 });
 
+await test('verechneSchuld: älteste Schuld zuerst getilgt (Datumsreihenfolge auch wenn Bestellungen nicht chronologisch)', () => {
+  const bestellungen = [
+    { datum: '2025-06-01', rechnungen: [{ id: 'r2', mitgliedId: 'alice', nummer: 'R_2025_06_001', datum: '2025-06-15', erwartetEinsatzstunden: 6 }] },
+    { datum: '2025-01-01', rechnungen: [{ id: 'r1', mitgliedId: 'alice', nummer: 'R_2025_01_001', datum: '2025-01-10', erwartetEinsatzstunden: 3 }] },
+  ];
+  const r = verechneSchuld('alice', bestellungen, 3, einstellungen);
+  // Älteste Rechnung (Januar) muss zuerst verrechnet sein und vollständig getilgt
+  assertEqual(r.verrechnungen[0].rechnungNummer, 'R_2025_01_001', 'älteste Rechnung ist erste');
+  assertEqual(r.verrechnungen[0].offenStunden, 0, 'älteste Rechnung vollständig getilgt');
+});
+
 /* ── ampelStatus ────────────────────────────────────────────── */
 
 suite('ampelStatus');
