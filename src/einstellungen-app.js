@@ -202,11 +202,16 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
   const lokal  = leseLokal() || {};
   const gesamt = { ...lokal, ...daten, mitglieder: lokal.mitglieder || [] };
 
-  schreibeLokal(gesamt);
+  // Passwort nicht persistent speichern
+  const pass = gesamt.nc?.pass || '';
+  if (pass) sessionStorage.setItem('lo_nc_pass', pass);
+  const gesamtOhnePass = { ...gesamt, nc: { ...gesamt.nc, pass: '' } };
+  schreibeLokal(gesamtOhnePass);
 
-  const client = createWebDavClient(daten.nc);
+  const ncPass = pass || sessionStorage.getItem('lo_nc_pass') || '';
+  const client = createWebDavClient({ ...daten.nc, pass: ncPass });
   zeigeStatus('speichern-status', 'Speichern…', 'info');
-  const r = await schreibeAufNc(client, gesamt);
+  const r = await schreibeAufNc(client, gesamtOhnePass);
   if (r.ok) {
     zeigeStatus('speichern-status', '✓ Gespeichert', 'ok');
   } else {
@@ -238,13 +243,26 @@ async function init() {
 
   if (lokal) {
     formularFuellen(lokal);
+    // Passwort aus sessionStorage (wird nicht persistent gespeichert)
+    const sessionPass = sessionStorage.getItem('lo_nc_pass');
+    if (sessionPass) {
+      const passField = document.getElementById('nc-pass');
+      if (passField) passField.value = sessionPass;
+    }
     // 3. NC-Sync falls Zugangsdaten vorhanden
-    if (lokal.nc?.url && lokal.nc?.user && lokal.nc?.pass) {
-      const client = ladeClient(lokal);
+    const ncPass = lokal.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
+    if (lokal.nc?.url && lokal.nc?.user && ncPass) {
+      const client = ladeClient({ ...lokal, nc: { ...lokal.nc, pass: ncPass } });
       const ncDaten = await leseVonNc(client);
       if (ncDaten) {
         formularFuellen(ncDaten);
-        schreibeLokal(ncDaten);
+        // Passwort aus sessionStorage nach NC-Sync erneut eintragen (ncDaten hat kein pass)
+        if (sessionPass) {
+          const passField = document.getElementById('nc-pass');
+          if (passField) passField.value = sessionPass;
+        }
+        const ncDatenOhnePass = { ...ncDaten, nc: { ...ncDaten.nc, pass: '' } };
+        schreibeLokal(ncDatenOhnePass);
       }
     }
   } else {
