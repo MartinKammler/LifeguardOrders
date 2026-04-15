@@ -3,8 +3,9 @@
  * Logik für artikel.html — Artikelkatalog verwalten und importieren.
  */
 
-import { createWebDavClient } from './webdav.js';
-import { parseBestellung }    from './parser.js';
+import { createWebDavClient }                   from './webdav.js';
+import { parseBestellung }                     from './parser.js';
+import { ladeDefaultArtikel, downloadAlsJson } from './defaults.js';
 
 const STORAGE_KEY_E  = 'lo_einstellungen';
 const STORAGE_KEY_A  = 'lo_artikel';
@@ -77,9 +78,19 @@ async function ladeArtikel() {
   if (lokal) {
     try { artikel = JSON.parse(lokal); } catch { artikel = []; }
   }
+
+  // Kein localStorage → data/artikel.json als Fallback
+  if (!artikel.length) {
+    const defaults = await ladeDefaultArtikel();
+    if (defaults.length) {
+      artikel = defaults;
+      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikel));
+    }
+  }
+
   if (client) {
     const r = await client.readJson(NC_PFAD_A);
-    if (r.ok && Array.isArray(r.data)) {
+    if (r.ok && Array.isArray(r.data) && r.data.length) {
       artikel = r.data;
       localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikel));
     }
@@ -297,6 +308,11 @@ document.getElementById('btn-uebernehmen').addEventListener('click', async () =>
 document.getElementById('btn-neu').addEventListener('click', () => oeffneModal(null));
 
 /* ── Init ───────────────────────────────────────────────────── */
+
+document.getElementById('btn-download-artikel')?.addEventListener('click', () => {
+  if (!artikel.length) { alert('Kein Katalog zum Exportieren.'); return; }
+  downloadAlsJson(artikel, 'artikel.json');
+});
 
 async function init() {
   const e = leseEinstellungen();

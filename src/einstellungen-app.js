@@ -3,8 +3,9 @@
  * Logik für einstellungen.html
  */
 
-import { createWebDavClient } from './webdav.js';
-import { parseMitglieder } from './mitglieder.js';
+import { createWebDavClient }                        from './webdav.js';
+import { parseMitglieder }                           from './mitglieder.js';
+import { ladeDefaultEinstellungen, downloadAlsJson } from './defaults.js';
 
 const STORAGE_KEY = 'lo_einstellungen';
 const NC_PFAD     = '/LifeguardOrders/einstellungen.json';
@@ -220,14 +221,31 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
   }
 });
 
+/* ── Download als data/einstellungen.json ───────────────────── */
+
+document.getElementById('btn-download-einstellungen')?.addEventListener('click', () => {
+  const lokal = leseLokal();
+  if (!lokal) { alert('Keine Einstellungen zum Exportieren.'); return; }
+  downloadAlsJson(lokal, 'einstellungen.json');
+});
+
 /* ── Init ───────────────────────────────────────────────────── */
 
 async function init() {
   // 1. Erst localStorage
-  const lokal = leseLokal();
+  let lokal = leseLokal();
+
+  // 2. Kein localStorage → data/einstellungen.json als Fallback
+  if (!lokal) {
+    lokal = await ladeDefaultEinstellungen();
+    if (lokal) {
+      schreibeLokal(lokal);
+    }
+  }
+
   if (lokal) {
     formularFuellen(lokal);
-    // 2. Dann NC (frischer Stand), falls Zugangsdaten vorhanden
+    // 3. NC-Sync falls Zugangsdaten vorhanden
     if (lokal.nc?.url && lokal.nc?.user && lokal.nc?.pass) {
       const client = ladeClient(lokal);
       const ncDaten = await leseVonNc(client);
@@ -237,7 +255,7 @@ async function init() {
       }
     }
   } else {
-    // Keine lokalen Daten — Defaults laden
+    // Keine Daten nirgends — Defaults aus Code laden
     formularFuellen(DEFAULTS);
   }
 }

@@ -80,6 +80,38 @@
       font-size: .78rem;
       color: var(--text-2);
     }
+
+    /* Artikel-Dropdown */
+    .artikel-field-wrap {
+      position: relative;
+    }
+    .artikel-dropdown {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: 100%;
+      min-width: 100%;
+      width: max-content;
+      max-width: 620px;
+      max-height: 300px;
+      overflow-y: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+      z-index: 300;
+      margin-top: 2px;
+    }
+    .artikel-dropdown.open { display: block; }
+    .artikel-option {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .artikel-option:last-child { border-bottom: none; }
+    .artikel-option:hover, .artikel-option.aktiv { background: var(--bg); }
+    .ao-name { font-size: .88rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .ao-meta { font-size: .76rem; color: var(--text-2); margin-top: 2px; }
   </style>
 </head>
 <body>
@@ -138,11 +170,10 @@
             <option value="">– bitte wählen –</option>
           </select>
         </div>
-        <div class="field" style="grid-column:span 1">
+        <div class="field artikel-field-wrap" style="grid-column:span 1">
           <label for="inp-artikel-suche">Artikel</label>
           <input type="text" id="inp-artikel-suche" placeholder="Suche…" autocomplete="off">
-          <select id="sel-artikel" size="5" style="margin-top:4px;display:none">
-          </select>
+          <div id="artikel-dropdown" class="artikel-dropdown"></div>
           <input type="hidden" id="sel-artikel-id">
         </div>
         <div class="field">
@@ -194,6 +225,7 @@
   <!-- Speichern -->
   <div class="flex gap-8 mt-16" style="justify-content:flex-end">
     <a class="btn btn-ghost" href="bestellungen.html">Abbrechen</a>
+    <button class="btn btn-ghost" id="btn-bestellt" style="display:none">Als bestellt markieren</button>
     <button class="btn btn-primary" id="btn-speichern">Speichern</button>
   </div>
 </div>
@@ -322,18 +354,52 @@ function renderWunschliste() {
 }
 
 /* ── Artikel-Suche ───────────────────────────────────────────── */
-function aktualisiereArtikelListe(suche) {
-  const selArtikel = document.getElementById('sel-artikel');
-  const suchLower  = suche.toLowerCase().trim();
-  const gefiltert  = suchLower
-    ? sortierteArtikel.filter(a =>
-        (a.name + ' ' + (a.variante || '')).toLowerCase().includes(suchLower))
-    : sortierteArtikel;
+function schliesseDropdown() {
+  document.getElementById('artikel-dropdown').classList.remove('open');
+}
 
-  selArtikel.innerHTML = gefiltert
-    .map(a => `<option value="${a.id}">${artikelLabel(a)}</option>`)
-    .join('');
-  selArtikel.style.display = gefiltert.length && suchLower ? '' : 'none';
+function waehleArtikel(id) {
+  const art = artikelListe.find(a => a.id === id);
+  if (!art) return;
+  document.getElementById('sel-artikel-id').value    = art.id;
+  document.getElementById('inp-artikel-suche').value = artikelLabel(art);
+  schliesseDropdown();
+}
+
+function aktualisiereArtikelListe(suche) {
+  const dropdown  = document.getElementById('artikel-dropdown');
+  const suchLower = suche.toLowerCase().trim();
+  const gefiltert = suchLower
+    ? sortierteArtikel.filter(a =>
+        (a.name + ' ' + (a.variante || '') + ' ' + (a.artikelNr || ''))
+          .toLowerCase().includes(suchLower))
+    : [];
+
+  if (!gefiltert.length) {
+    dropdown.innerHTML = '';
+    dropdown.classList.remove('open');
+    return;
+  }
+
+  dropdown.innerHTML = gefiltert.map(a => {
+    const varianteBadge = a.variante
+      ? `<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${a.variante}</span>`
+      : '';
+    const preis = a.einzelpreis != null ? eur(a.einzelpreis) : '';
+    return `<div class="artikel-option" data-id="${a.id}">
+      <div class="ao-name">${a.name}${varianteBadge}</div>
+      <div class="ao-meta">${a.artikelNr}${preis ? ' · ' + preis : ''}</div>
+    </div>`;
+  }).join('');
+
+  dropdown.querySelectorAll('.artikel-option').forEach(el => {
+    el.addEventListener('mousedown', e => {
+      e.preventDefault(); // blur verhindern damit Auswahl wirkt
+      waehleArtikel(el.dataset.id);
+    });
+  });
+
+  dropdown.classList.add('open');
 }
 
 document.getElementById('inp-artikel-suche').addEventListener('input', e => {
@@ -341,13 +407,9 @@ document.getElementById('inp-artikel-suche').addEventListener('input', e => {
   document.getElementById('sel-artikel-id').value = '';
 });
 
-document.getElementById('sel-artikel').addEventListener('change', e => {
-  const artikel = artikelListe.find(a => a.id === e.target.value);
-  if (artikel) {
-    document.getElementById('sel-artikel-id').value     = artikel.id;
-    document.getElementById('inp-artikel-suche').value  = artikelLabel(artikel);
-    document.getElementById('sel-artikel').style.display = 'none';
-  }
+document.getElementById('inp-artikel-suche').addEventListener('blur', () => {
+  // kleiner Delay damit mousedown-Handler zuerst feuert
+  setTimeout(schliesseDropdown, 150);
 });
 
 /* ── Selects befüllen ────────────────────────────────────────── */
@@ -422,10 +484,10 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
   renderWunschliste();
 
   // Formular zurücksetzen (Mitglied behalten, Menge auf 1)
-  document.getElementById('inp-artikel-suche').value   = '';
-  document.getElementById('sel-artikel-id').value      = '';
-  document.getElementById('sel-artikel').style.display = 'none';
-  document.getElementById('inp-menge').value           = 1;
+  document.getElementById('inp-artikel-suche').value = '';
+  document.getElementById('sel-artikel-id').value    = '';
+  schliesseDropdown();
+  document.getElementById('inp-menge').value         = 1;
 });
 
 /* ── CSV kopieren ────────────────────────────────────────────── */
@@ -478,6 +540,20 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
   location.href = 'bestellungen.html';
 });
 
+/* ── Als bestellt markieren ──────────────────────────────────── */
+document.getElementById('btn-bestellt').addEventListener('click', async () => {
+  if (!bestellungId) return;
+  const idx = bestellungen.findIndex(b => b.id === bestellungId);
+  if (idx < 0) return;
+  if (!confirm('Bestellung als "Bestellt" markieren? Sie wird dann zum Abgleich weitergeleitet.')) return;
+
+  bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt' };
+  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+
+  location.href = `bestellung-abgleich.html?id=${bestellungId}`;
+});
+
 /* ── Init ────────────────────────────────────────────────────── */
 async function init() {
   // Einstellungen + NC-Client
@@ -519,6 +595,8 @@ async function init() {
       document.getElementById('inp-datum').value            = bestehend.datum;
       document.getElementById('inp-bezeichnung').value      = bestehend.bezeichnung;
       wuensche = bestehend.wuensche || [];
+      // "Als bestellt markieren" nur bei existierender Bestellung
+      document.getElementById('btn-bestellt').style.display = '';
     } else {
       bestellungId = null; // ID ungültig, neue Bestellung erstellen
     }

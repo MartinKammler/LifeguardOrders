@@ -67,12 +67,6 @@ function statusBadge(status) {
   }
 }
 
-function oeffnenHref(b) {
-  if (b.status === 'abgeschlossen') {
-    return `bestellung-abgleich.html?id=${b.id}`;
-  }
-  return `bestellung-sammeln.html?id=${b.id}`;
-}
 
 function mengenInfo(b) {
   if (b.status === 'abgeschlossen') {
@@ -84,6 +78,19 @@ function mengenInfo(b) {
   const anzahl = (b.wuensche || []).length;
   return `<span style="color:var(--amber)">${anzahl}</span>
           <span class="meta"> Wunsch${anzahl !== 1 ? 'e' : ''}</span>`;
+}
+
+function aktionenHtml(b) {
+  switch (b.status) {
+    case 'sammlung':
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${b.id}">Bearbeiten</a>`;
+    case 'bestellt':
+      return `<a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${b.id}">Abgleich</a>`;
+    case 'abgeschlossen':
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-abgleich.html?id=${b.id}">Ansehen</a>`;
+    default:
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${b.id}">Bearbeiten</a>`;
+  }
 }
 
 function render() {
@@ -122,7 +129,7 @@ function render() {
             <td style="text-align:right">${mengenInfo(b)}</td>
             <td style="text-align:right">${summe > 0 ? eur(summe) : '<span class="meta">–</span>'}</td>
             <td style="text-align:right">
-              <a class="btn btn-ghost btn-sm" href="${oeffnenHref(b)}">Öffnen</a>
+              ${aktionenHtml(b)}
             </td>
           </tr>`;
         }).join('')}

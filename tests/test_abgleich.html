@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Abgleich – Unit Tests</title>
+  <style>
+    body { font-family: monospace; background: #0d0d12; color: #ccc; margin: 0; padding: 20px; }
+    h1   { color: #fff; font-size: 1.1rem; margin-bottom: 16px; }
+    .suite { margin-bottom: 20px; }
+    .suite-title { color: #7eb8f7; font-size: .9rem; margin-bottom: 6px; font-weight: bold; }
+    .pass { color: #4caf7d; }
+    .fail { color: #f76e6e; }
+    .result { font-size: .82rem; margin: 2px 0 2px 12px; }
+    #summary { margin-top: 24px; font-size: 1rem; font-weight: bold; padding: 10px; border-radius: 6px; }
+    .all-pass { background: #1a3a28; color: #4caf7d; }
+    .has-fail  { background: #3a1a1a; color: #f76e6e; }
+  </style>
+</head>
+<body>
+<h1>Abgleich – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script type="module">
+import { gleiche_ab } from '../src/abgleich.js';
+
+/* ── Mini Test-Runner ───────────────────────────────────────── */
+const results = [];
+let currentSuite = '';
+function suite(name) { currentSuite = name; }
+async function test(name, fn) {
+  try { await fn(); results.push({ suite: currentSuite, name, ok: true }); }
+  catch (e) { results.push({ suite: currentSuite, name, ok: false, err: e.message }); }
+}
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg || 'Assertion fehlgeschlagen');
+}
+function assertEqual(a, b, msg) {
+  if (a !== b) throw new Error((msg || '') + ` — erwartet: ${JSON.stringify(b)}, bekommen: ${JSON.stringify(a)}`);
+}
+function assertDeepEqual(a, b, msg) {
+  const as = JSON.stringify(a);
+  const bs = JSON.stringify(b);
+  if (as !== bs) throw new Error((msg || '') + ` — erwartet: ${bs}, bekommen: ${as}`);
+}
+
+/* ── Testdaten ──────────────────────────────────────────────── */
+
+const wXL   = { artikelNr: '18507110', variante: 'XL', name: 'T-Shirt JAKO', menge: 3 };
+const wM    = { artikelNr: '18507110', variante: 'M',  name: 'T-Shirt JAKO', menge: 1 };
+const wShoe = { artikelNr: '29509445', variante: '42', name: 'Sneaker JAKO', menge: 1 };
+
+const pXL   = { artikelNr: '18507110', variante: 'XL', name: 'T-Shirt JAKO', menge: 3 };
+const pM    = { artikelNr: '18507110', variante: 'M',  name: 'T-Shirt JAKO', menge: 1 };
+const pShoe = { artikelNr: '29509445', variante: '42', name: 'Sneaker JAKO', menge: 1 };
+
+/* ── Tests: exakte Matches ──────────────────────────────────── */
+
+suite('gleiche_ab — exakte Matches');
+
+await test('ein exakter Match → gematch.length === 1', () => {
+  const { gematch } = gleiche_ab([wXL], [pXL]);
+  assertEqual(gematch.length, 1);
+});
+
+await test('exakter Match enthält wunsch und position', () => {
+  const { gematch } = gleiche_ab([wXL], [pXL]);
+  assertEqual(gematch[0].wunsch.artikelNr, '18507110');
+  assertEqual(gematch[0].position.menge, 3);
+});
+
+await test('drei exakte Matches → gematch.length === 3', () => {
+  const { gematch, abweichungen } = gleiche_ab([wXL, wM, wShoe], [pXL, pM, pShoe]);
+  assertEqual(gematch.length, 3);
+  assertEqual(abweichungen.length, 0);
+});
+
+await test('leere Eingaben → alle Arrays leer', () => {
+  const r = gleiche_ab([], []);
+  assertEqual(r.gematch.length, 0);
+  assertEqual(r.abweichungen.length, 0);
+  assertEqual(r.og_kosten.length, 0);
+});
+
+/* ── Tests: Abweichung Menge ────────────────────────────────── */
+
+suite('gleiche_ab — Abweichung: menge');
+
+await test('gelieferte Menge zu wenig → abweichung typ menge', () => {
+  const pWenig = { artikelNr: '18507110', variante: 'XL', name: 'T-Shirt JAKO', menge: 2 };
+  const { abweichungen } = gleiche_ab([wXL], [pWenig]);
+  assertEqual(abweichungen.length, 1);
+  assertEqual(abweichungen[0].typ, 'menge');
+});
+
+await test('abweichung menge: erwartet und geliefert korrekt', () => {
+  const pWenig = { artikelNr: '18507110', variante: 'XL', name: 'T-Shirt JAKO', menge: 2 };
+  const { abweichungen } = gleiche_ab([wXL], [pWenig]);
+  assertEqual(abweichungen[0].erwartet, 3);
+  assertEqual(abweichungen[0].geliefert, 2);
+});
+
+await test('gelieferte Menge zu viel → abweichung typ menge', () => {
+  const pViel = { artikelNr: '18507110', variante: 'XL', name: 'T-Shirt JAKO', menge: 5 };
+  const { abweichungen } = gleiche_ab([wXL], [pViel]);
+  assertEqual(abweichungen[0].typ, 'menge');
+  assertEqual(abweichungen[0].erwartet, 3);
+  assertEqual(abweichungen[0].geliefert, 5);
+});
+
+await test('abweichung menge enthält wunsch und position', () => {
+  const pWenig = { artikelNr: '18507110', variante: 'XL', name: 'T-Shirt JAKO', menge: 2 };
+  const { abweichungen } = gleiche_ab([wXL], [pWenig]);
+  assert(abweichungen[0].wunsch !== undefined, 'wunsch fehlt');
+  assert(abweichungen[0].position !== undefined, 'position fehlt');
+});
+
+/* ── Tests: nicht geliefert ─────────────────────────────────── */
+
+suite('gleiche_ab — Abweichung: nicht_geliefert');
+
+await test('Wunsch ohne Position → abweichung typ nicht_geliefert', () => {
+  const { abweichungen } = gleiche_ab([wXL], []);
+  assertEqual(abweichungen.length, 1);
+  assertEqual(abweichungen[0].typ, 'nicht_geliefert');
+});
+
+await test('nicht_geliefert: erwartet korrekt', () => {
+  const { abweichungen } = gleiche_ab([wXL], []);
+  assertEqual(abweichungen[0].erwartet, 3);
+});
+
+await test('nicht_geliefert: wunsch vorhanden', () => {
+  const { abweichungen } = gleiche_ab([wXL], []);
+  assert(abweichungen[0].wunsch !== undefined, 'wunsch fehlt');
+  assertEqual(abweichungen[0].wunsch.artikelNr, '18507110');
+});
+
+await test('nicht_geliefert hat keine position', () => {
+  const { abweichungen } = gleiche_ab([wXL], []);
+  assertEqual(abweichungen[0].position, undefined);
+});
+
+/* ── Tests: nicht bestellt ──────────────────────────────────── */
+
+suite('gleiche_ab — Abweichung: nicht_bestellt');
+
+await test('Position ohne Wunsch → abweichung typ nicht_bestellt', () => {
+  const { abweichungen } = gleiche_ab([], [pXL]);
+  assertEqual(abweichungen.length, 1);
+  assertEqual(abweichungen[0].typ, 'nicht_bestellt');
+});
+
+await test('nicht_bestellt: geliefert korrekt', () => {
+  const { abweichungen } = gleiche_ab([], [pXL]);
+  assertEqual(abweichungen[0].geliefert, 3);
+});
+
+await test('nicht_bestellt: position vorhanden', () => {
+  const { abweichungen } = gleiche_ab([], [pXL]);
+  assert(abweichungen[0].position !== undefined, 'position fehlt');
+});
+
+await test('nicht_bestellt hat kein erwartet-Feld (nur geliefert)', () => {
+  const { abweichungen } = gleiche_ab([], [pXL]);
+  assertEqual(abweichungen[0].erwartet, undefined);
+});
+
+/* ── Tests: OG-Kosten ───────────────────────────────────────── */
+
+suite('gleiche_ab — OG-Kosten');
+
+await test('Position mit typ og-kosten landet in og_kosten, nicht abweichungen', () => {
+  const versand = { artikelNr: '', variante: '', name: 'VERSANDKOSTEN', menge: 1, typ: 'og-kosten', einzelpreis: 5.90 };
+  const { og_kosten, abweichungen } = gleiche_ab([], [versand]);
+  assertEqual(og_kosten.length, 1);
+  assertEqual(abweichungen.length, 0);
+});
+
+await test('og_kosten-Position landet nicht in gematch', () => {
+  const versand = { artikelNr: '', variante: '', name: 'VERSANDKOSTEN', menge: 1, typ: 'og-kosten' };
+  const { gematch } = gleiche_ab([], [versand]);
+  assertEqual(gematch.length, 0);
+});
+
+await test('Artikel + OG-Kosten gleichzeitig korrekt verarbeitet', () => {
+  const versand = { artikelNr: '', variante: '', name: 'VERSANDKOSTEN', menge: 1, typ: 'og-kosten' };
+  const { gematch, og_kosten, abweichungen } = gleiche_ab([wXL], [pXL, versand]);
+  assertEqual(gematch.length, 1);
+  assertEqual(og_kosten.length, 1);
+  assertEqual(abweichungen.length, 0);
+});
+
+/* ── Tests: Mix aus allem ───────────────────────────────────── */
+
+suite('gleiche_ab — gemischtes Szenario');
+
+await test('match + menge-Abweichung + nicht_geliefert + nicht_bestellt + og_kosten', () => {
+  const versand  = { artikelNr: '', variante: '', name: 'VERSANDKOSTEN', menge: 1, typ: 'og-kosten' };
+  const pXLWenig = { artikelNr: '18507110', variante: 'XL', name: 'T-Shirt JAKO', menge: 2 };  // 3 bestellt, 2 geliefert
+  const pExtra   = { artikelNr: '99999999', variante: 'S',  name: 'Unbekannt',    menge: 1 };  // nicht bestellt
+
+  // wXL (3), wM (1), wShoe (1) bestellt
+  // geliefert: XL nur 2, M korrekt, Schuh fehlt, Extra unbekannt, Versand
+  const { gematch, abweichungen, og_kosten } = gleiche_ab(
+    [wXL, wM, wShoe],
+    [pXLWenig, pM, pExtra, versand]
+  );
+
+  assertEqual(gematch.length, 1,          'genau 1 exakter Match (M)');
+  assertEqual(og_kosten.length, 1,        '1 OG-Kosten-Position');
+
+  const typMenge         = abweichungen.filter(a => a.typ === 'menge');
+  const typNichtGel      = abweichungen.filter(a => a.typ === 'nicht_geliefert');
+  const typNichtBestellt = abweichungen.filter(a => a.typ === 'nicht_bestellt');
+
+  assertEqual(typMenge.length,         1, '1 Mengen-Abweichung (XL)');
+  assertEqual(typNichtGel.length,      1, '1 nicht_geliefert (Schuh)');
+  assertEqual(typNichtBestellt.length, 1, '1 nicht_bestellt (Extra)');
+});
+
+/* ── Tests: Variante als Match-Schlüssel ────────────────────── */
+
+suite('gleiche_ab — Variante als Match-Schlüssel');
+
+await test('gleiche artikelNr, verschiedene Variante: getrennte Auswertung', () => {
+  const wL = { artikelNr: '18507110', variante: 'L', name: 'T-Shirt JAKO', menge: 2 };
+  const pL = { artikelNr: '18507110', variante: 'L', name: 'T-Shirt JAKO', menge: 2 };
+  const { gematch, abweichungen } = gleiche_ab([wXL, wL], [pXL, pL]);
+  assertEqual(gematch.length, 2);
+  assertEqual(abweichungen.length, 0);
+});
+
+await test('gleiche artikelNr, Variante weicht ab → nicht_geliefert + nicht_bestellt', () => {
+  const wL = { artikelNr: '18507110', variante: 'L', name: 'T-Shirt JAKO', menge: 1 };
+  const pS = { artikelNr: '18507110', variante: 'S', name: 'T-Shirt JAKO', menge: 1 };
+  const { abweichungen } = gleiche_ab([wL], [pS]);
+  const typen = abweichungen.map(a => a.typ).sort();
+  assertDeepEqual(typen, ['nicht_bestellt', 'nicht_geliefert']);
+});
+
+/* ── Render ─────────────────────────────────────────────────── */
+const out = document.getElementById('output');
+let html = '';
+let lastSuite = '';
+results.forEach(r => {
+  if (r.suite !== lastSuite) {
+    if (lastSuite) html += '</div>';
+    html += `<div class="suite"><div class="suite-title">${r.suite}</div>`;
+    lastSuite = r.suite;
+  }
+  const icon = r.ok ? '✓' : '✗';
+  const cls  = r.ok ? 'pass' : 'fail';
+  html += `<div class="result ${cls}">${icon} ${r.name}${r.ok ? '' : '<br><span style="color:#f99;margin-left:1.5em">' + r.err + '</span>'}</div>`;
+});
+if (lastSuite) html += '</div>';
+out.innerHTML = html;
+
+const total  = results.length;
+const passed = results.filter(r => r.ok).length;
+const failed = total - passed;
+const sumEl  = document.getElementById('summary');
+sumEl.textContent = `${passed}/${total} bestanden${failed ? ' — ' + failed + ' fehlgeschlagen' : ''}`;
+sumEl.className   = failed ? 'has-fail' : 'all-pass';
+</script>
+</body>
+</html>
