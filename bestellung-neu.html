@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bestellung – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .schritt-titel { font-size:.75rem; font-weight:700; letter-spacing:.08em;
+                     text-transform:uppercase; color:var(--text-2); margin-bottom:12px; }
+
+    /* Positionstabelle */
+    .pos-nr     { color:var(--text-2); font-size:.78rem; font-family:monospace; }
+    .pos-preis  { text-align:right; font-variant-numeric:tabular-nums; }
+    .pos-foerd  { text-align:right; font-variant-numeric:tabular-nums; font-size:.8rem; color:var(--text-2); }
+    .og-zeile td { color:var(--text-2); font-style:italic; }
+
+    /* Zuweisung */
+    .zuw-block  { display:flex; flex-direction:column; gap:6px; }
+    .zuw-zeile  { display:flex; gap:8px; align-items:center; }
+    .zuw-zeile select { flex:1; }
+    .zuw-zeile input[type=number] { width:70px; }
+    .zuw-add    { font-size:.78rem; color:var(--blue); cursor:pointer;
+                  background:none; border:none; padding:0; font-family:inherit; }
+    .zuw-del    { font-size:.78rem; color:var(--red); cursor:pointer;
+                  background:none; border:none; padding:0; font-family:inherit; }
+
+    .vollst     { color:var(--green) !important; }
+    .unvollst   { color:var(--amber) !important; }
+
+    .foerd-info { font-size:.75rem; color:var(--text-2); margin-top:2px; }
+    .foerd-info span { margin-right:8px; }
+
+    #speichern-btn { margin-top:8px; }
+  </style>
+</head>
+<body>
+<nav>
+  <a class="nav-brand" href="index.html">LifeguardOrders</a>
+  <a href="bestellungen.html" class="active">Bestellungen</a>
+  <a href="artikel.html">Artikel</a>
+  <a href="rechnungen.html">Rechnungen</a>
+  <a href="kassenwart.html">Kassenwart</a>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="einstellungen.html">Einstellungen</a>
+</nav>
+
+<div class="container">
+  <div class="flex gap-8" style="align-items:center;margin-bottom:20px">
+    <h1 style="margin:0;flex:1" id="seiten-titel">Neue Bestellung</h1>
+    <a class="btn btn-ghost btn-sm" href="bestellungen.html">← Zurück</a>
+  </div>
+
+  <!-- Schritt 1: Kopfdaten -->
+  <div class="card">
+    <div class="schritt-titel">Bestellung</div>
+    <div class="form-grid">
+      <div class="field">
+        <label for="datum">Datum</label>
+        <input type="date" id="datum">
+      </div>
+      <div class="field">
+        <label for="bezeichnung">Bezeichnung</label>
+        <input type="text" id="bezeichnung" placeholder="z. B. Frühjahrsbestellung 2025">
+      </div>
+    </div>
+  </div>
+
+  <!-- Schritt 2: Import -->
+  <div class="card" id="import-card">
+    <div class="schritt-titel">Positionen importieren</div>
+    <p class="text-sm" style="margin-bottom:10px">
+      Auftragsbestätigung oder Produktseite der DLRG-Materialstelle einfügen.
+    </p>
+    <textarea id="import-text" style="min-height:120px"
+      placeholder="Text aus Auftragsbestätigung oder Produktseite einfügen…"></textarea>
+    <div class="flex gap-8 mt-8" style="align-items:center">
+      <button class="btn btn-ghost btn-sm" id="btn-parsen">Parsen</button>
+      <button class="btn btn-primary btn-sm" id="btn-hinzufuegen" style="display:none">Zu Positionen hinzufügen</button>
+      <span id="import-status" style="font-size:.82rem"></span>
+    </div>
+    <div id="import-vorschau"></div>
+  </div>
+
+  <!-- Schritt 3: Positionen & Zuweisung -->
+  <div class="card" id="positionen-card" style="display:none">
+    <div class="flex gap-8" style="align-items:center;margin-bottom:12px">
+      <div class="schritt-titel" style="margin:0;flex:1">Positionen & Zuweisung</div>
+      <span id="zuw-zusammenfassung" style="font-size:.8rem;color:var(--text-2)"></span>
+    </div>
+    <div id="positionen-inhalt"></div>
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+      <div id="og-kosten-zeile" style="font-size:.82rem;color:var(--text-2);margin-bottom:12px"></div>
+      <div class="flex gap-8">
+        <button class="btn btn-primary" id="speichern-btn">Speichern</button>
+        <span id="speichern-status" style="font-size:.82rem;align-self:center"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { createWebDavClient } from './src/webdav.js';
+import { parseBestellung }    from './src/parser.js';
+import { berechneFoerderung } from './src/berechnung.js';
+
+const STORAGE_KEY_E = 'lo_einstellungen';
+const STORAGE_KEY_A = 'lo_artikel';
+const STORAGE_KEY_B = 'lo_bestellungen';
+const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+
+let client      = null;
+let bestellungen = [];
+let mitglieder  = [];
+let artikel     = [];
+
+// aktuelle Bestellung
+let bestellungId   = null;   // null = neu
+let positionen     = [];     // { id, artikelNr, name, menge, einzelpreis, bv, lv, og, typ, zuweisung[] }
+let ogKosten       = [];     // { artikelNr, name, menge, einzelpreis }
+let importPuffer   = null;   // geparste Vorschau
+
+/* ── Hilfsfunktionen ─────────────────────────────────────────── */
+
+function uuid() { return crypto.randomUUID(); }
+function eur(v) { return Number(v).toFixed(2).replace('.', ',') + ' €'; }
+function ladeJson(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } }
+
+function heute() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function mitgliedName(id) {
+  return mitglieder.find(m => m.id === id)?.name ?? id;
+}
+
+function foerderungFuerArtikel(artikelNr, name) {
+  // suche nach exaktem artikelNr+name, dann nur artikelNr
+  const treffer = artikel.find(a => a.artikelNr === artikelNr && a.name === name)
+                || artikel.find(a => a.artikelNr === artikelNr);
+  return treffer ?? null;
+}
+
+/* ── Positions-Logik ─────────────────────────────────────────── */
+
+export function erstellePosition(geparst, artikelEintrag) {
+  let ogFoerderung = 0;
+  if (artikelEintrag) {
+    const f = berechneFoerderung(artikelEintrag, 1);
+    ogFoerderung = f.og;
+  }
+  return {
+    id:           uuid(),
+    artikelNr:    geparst.artikelNr,
+    name:         geparst.name,
+    menge:        geparst.menge,
+    einzelpreis:  geparst.einzelpreis,
+    bvFoerderung: geparst.bvFoerderung ?? 0,
+    lvFoerderung: geparst.lvFoerderung ?? 0,
+    ogFoerderung,
+    typ:          'artikel',
+    zuweisung:    [],
+  };
+}
+
+export function validiereZuweisung(position, zuweisungen) {
+  const summe = zuweisungen.reduce((s, z) => s + (Number(z.menge) || 0), 0);
+  if (summe !== position.menge) {
+    return { ok: false, fehler: `Summe ${summe} ≠ Gesamtmenge ${position.menge}` };
+  }
+  return { ok: true };
+}
+
+/* ── Render: Import-Vorschau ─────────────────────────────────── */
+
+function renderImportVorschau(geparst) {
+  const el = document.getElementById('import-vorschau');
+  if (!geparst.artikel.length) {
+    el.innerHTML = '<p class="text-sm" style="margin-top:8px;color:var(--red)">Keine Artikel erkannt.</p>';
+    return;
+  }
+  el.innerHTML = `
+    <table style="margin-top:12px">
+      <thead><tr>
+        <th>Artikel-Nr.</th><th>Bezeichnung</th>
+        <th class="pos-preis">Einzelpreis</th><th class="pos-preis">BV</th><th class="pos-preis">LV</th>
+        <th style="text-align:right">Menge</th>
+      </tr></thead>
+      <tbody>
+        ${geparst.artikel.map(a => `
+          <tr>
+            <td class="pos-nr">${a.artikelNr}</td>
+            <td>${a.name}</td>
+            <td class="pos-preis">${eur(a.einzelpreis)}</td>
+            <td class="pos-foerd">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
+            <td class="pos-foerd">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
+            <td style="text-align:right">${a.menge}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    ${geparst.ogKosten.length
+      ? `<p class="text-sm" style="margin-top:6px;color:var(--text-2)">
+           OG-Kosten: ${geparst.ogKosten.map(k => k.name + ' ' + eur(k.einzelpreis)).join(', ')}
+         </p>` : ''}`;
+}
+
+/* ── Render: Positionen & Zuweisung ─────────────────────────── */
+
+function renderPositionen() {
+  const card = document.getElementById('positionen-card');
+  if (!positionen.length && !ogKosten.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const artikelPos = positionen.filter(p => p.typ === 'artikel');
+  const vollst = artikelPos.filter(p => {
+    const sum = p.zuweisung.reduce((s, z) => s + z.menge, 0);
+    return sum >= p.menge;
+  }).length;
+
+  document.getElementById('zuw-zusammenfassung').textContent =
+    `${vollst}/${artikelPos.length} vollständig zugewiesen`;
+
+  const ogZeile = document.getElementById('og-kosten-zeile');
+  if (ogKosten.length) {
+    ogZeile.innerHTML = 'OG-Kosten (nicht zuweisbar): ' +
+      ogKosten.map(k => `<strong>${k.name}</strong> ${eur(k.einzelpreis)}`).join(' · ');
+  } else {
+    ogZeile.textContent = '';
+  }
+
+  const inhalt = document.getElementById('positionen-inhalt');
+  inhalt.innerHTML = '';
+
+  positionen.forEach(pos => {
+    const zugewiesen = pos.zuweisung.reduce((s, z) => s + z.menge, 0);
+    const vollstaendig = zugewiesen >= pos.menge;
+    const div = document.createElement('div');
+    div.style.cssText = 'border-bottom:1px solid var(--border);padding:12px 0;';
+    div.dataset.posId = pos.id;
+
+    const zuweisungsHtml = pos.zuweisung.map((z, zi) => {
+      const f = berechneFoerderung(
+        { einzelpreis: pos.einzelpreis, bvFoerderung: pos.bvFoerderung,
+          lvFoerderung: pos.lvFoerderung, ogFoerderung: pos.ogFoerderung,
+          ogUebernimmtRest: false },
+        z.menge
+      );
+      return `
+        <div class="zuw-zeile" data-zi="${zi}">
+          <select class="zuw-mitglied" data-pos="${pos.id}" data-zi="${zi}">
+            <option value="">– Mitglied wählen –</option>
+            ${mitglieder.map(m =>
+              `<option value="${m.id}" ${m.id === z.mitgliedId ? 'selected' : ''}>${m.name}</option>`
+            ).join('')}
+          </select>
+          <input type="number" class="zuw-menge" data-pos="${pos.id}" data-zi="${zi}"
+            min="1" max="${pos.menge}" value="${z.menge}" style="width:70px">
+          <button class="zuw-del" data-pos="${pos.id}" data-zi="${zi}" title="Entfernen">✕</button>
+          <div class="foerd-info">
+            <span title="Mitglied zahlt">M: ${eur(f.mitglied)}</span>
+            <span title="BV">BV: ${eur(f.bv)}</span>
+            ${f.lv ? `<span title="LV">LV: ${eur(f.lv)}</span>` : ''}
+            <span title="OG">OG: ${eur(f.og)}</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    div.innerHTML = `
+      <div class="flex gap-8" style="align-items:baseline;margin-bottom:6px">
+        <span class="pos-nr">${pos.artikelNr}</span>
+        <strong style="flex:1">${pos.name}</strong>
+        <span style="font-size:.82rem">${eur(pos.einzelpreis)} × ${pos.menge} = ${eur(pos.einzelpreis * pos.menge)}</span>
+        <span class="${vollstaendig ? 'vollst' : 'unvollst'}" style="font-size:.8rem;font-weight:700">
+          ${zugewiesen}/${pos.menge}
+        </span>
+      </div>
+      <div class="zuw-block" id="zuw-${pos.id}">${zuweisungsHtml}</div>
+      <button class="zuw-add" data-pos="${pos.id}" style="margin-top:6px">+ Mitglied hinzufügen</button>`;
+
+    inhalt.appendChild(div);
+  });
+
+  // Events: Mitglied-Select
+  inhalt.querySelectorAll('.zuw-mitglied').forEach(sel => {
+    sel.addEventListener('change', e => {
+      const { pos, zi } = e.target.dataset;
+      const p = positionen.find(p => p.id === pos);
+      if (p) p.zuweisung[+zi].mitgliedId = e.target.value;
+    });
+  });
+
+  // Events: Menge-Input
+  inhalt.querySelectorAll('.zuw-menge').forEach(inp => {
+    inp.addEventListener('change', e => {
+      const { pos, zi } = e.target.dataset;
+      const p = positionen.find(p => p.id === pos);
+      if (p) {
+        p.zuweisung[+zi].menge = parseInt(e.target.value, 10) || 0;
+        renderPositionen();
+      }
+    });
+  });
+
+  // Events: Löschen
+  inhalt.querySelectorAll('.zuw-del').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const { pos, zi } = e.target.dataset;
+      const p = positionen.find(p => p.id === pos);
+      if (p) { p.zuweisung.splice(+zi, 1); renderPositionen(); }
+    });
+  });
+
+  // Events: Hinzufügen
+  inhalt.querySelectorAll('.zuw-add').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const posId = e.target.dataset.pos;
+      const p = positionen.find(p => p.id === posId);
+      if (!p) return;
+      const bereitsZugewiesen = p.zuweisung.reduce((s, z) => s + z.menge, 0);
+      const rest = p.menge - bereitsZugewiesen;
+      p.zuweisung.push({ mitgliedId: '', menge: Math.max(1, rest) });
+      renderPositionen();
+    });
+  });
+}
+
+/* ── Import-Buttons ──────────────────────────────────────────── */
+
+document.getElementById('btn-parsen').addEventListener('click', () => {
+  const text = document.getElementById('import-text').value;
+  if (!text.trim()) return;
+  importPuffer = parseBestellung(text);
+
+  const statusEl = document.getElementById('import-status');
+  const btn = document.getElementById('btn-hinzufuegen');
+
+  if (!importPuffer.artikel.length) {
+    statusEl.textContent = 'Keine Artikel erkannt';
+    statusEl.style.color = 'var(--red)';
+    btn.style.display = 'none';
+    document.getElementById('import-vorschau').innerHTML = '';
+    return;
+  }
+  statusEl.textContent = `${importPuffer.artikel.length} Artikel erkannt`;
+  statusEl.style.color = 'var(--green)';
+  btn.style.display = 'inline-flex';
+  renderImportVorschau(importPuffer);
+});
+
+document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
+  if (!importPuffer) return;
+
+  importPuffer.artikel.forEach(a => {
+    const kat = foerderungFuerArtikel(a.artikelNr, a.name);
+    const pos = erstellePosition(a, kat);
+    // OG aus Katalog übernehmen wenn vorhanden
+    if (kat) {
+      const f = berechneFoerderung(kat, 1);
+      pos.ogFoerderung = f.og;
+    }
+    positionen.push(pos);
+  });
+
+  importPuffer.ogKosten.forEach(k => {
+    if (!ogKosten.find(o => o.artikelNr === k.artikelNr)) ogKosten.push(k);
+  });
+
+  importPuffer = null;
+  document.getElementById('import-text').value = '';
+  document.getElementById('import-vorschau').innerHTML = '';
+  document.getElementById('import-status').textContent = '';
+  document.getElementById('btn-hinzufuegen').style.display = 'none';
+  renderPositionen();
+});
+
+/* ── Speichern ───────────────────────────────────────────────── */
+
+async function speichern() {
+  const datum       = document.getElementById('datum').value;
+  const bezeichnung = document.getElementById('bezeichnung').value.trim();
+
+  if (!datum || !bezeichnung) {
+    alert('Bitte Datum und Bezeichnung angeben.');
+    return;
+  }
+
+  // Validierung
+  const fehler = [];
+  positionen.filter(p => p.typ === 'artikel').forEach(p => {
+    const v = validiereZuweisung(p, p.zuweisung);
+    if (!v.ok) fehler.push(`${p.name}: ${v.fehler}`);
+  });
+  if (fehler.length) {
+    if (!confirm('Nicht alle Positionen vollständig zugewiesen:\n' + fehler.join('\n') + '\n\nTrotzdem speichern?')) return;
+  }
+
+  // OG-Kosten als Positionen anhängen
+  const allePos = [
+    ...positionen,
+    ...ogKosten.map(k => ({
+      id: uuid(), artikelNr: k.artikelNr, name: k.name,
+      menge: k.menge, einzelpreis: k.einzelpreis,
+      bvFoerderung: 0, lvFoerderung: 0, ogFoerderung: 0,
+      typ: 'og-kosten', zuweisung: [],
+    })),
+  ];
+
+  if (bestellungId) {
+    // bestehende aktualisieren
+    const idx = bestellungen.findIndex(b => b.id === bestellungId);
+    if (idx >= 0) {
+      bestellungen[idx] = { ...bestellungen[idx], datum, bezeichnung, positionen: allePos };
+    }
+  } else {
+    bestellungen.push({
+      id: uuid(), datum, bezeichnung, status: 'offen', positionen: allePos, rechnungen: [],
+    });
+  }
+
+  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  const statusEl = document.getElementById('speichern-status');
+
+  if (client) {
+    const r = await client.writeJson(NC_PFAD_B, bestellungen);
+    statusEl.textContent = r.ok ? 'Gespeichert' : 'Lokal gespeichert (NC-Fehler)';
+    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--amber)';
+  } else {
+    statusEl.textContent = 'Lokal gespeichert';
+    statusEl.style.color = 'var(--green)';
+  }
+
+  setTimeout(() => { window.location.href = 'bestellungen.html'; }, 800);
+}
+
+document.getElementById('speichern-btn').addEventListener('click', speichern);
+
+/* ── Init ────────────────────────────────────────────────────── */
+
+async function init() {
+  // Datum vorbelegen
+  document.getElementById('datum').value = heute();
+
+  const e = ladeJson(STORAGE_KEY_E);
+  if (e?.nc?.url && e?.nc?.user && e?.nc?.pass) client = createWebDavClient(e.nc);
+
+  // Mitglieder aus Einstellungen
+  mitglieder = e?.mitglieder || [];
+
+  // Artikelkatalog
+  artikel = ladeJson(STORAGE_KEY_A) || [];
+
+  // Bestellungen
+  const lokal = ladeJson(STORAGE_KEY_B);
+  if (lokal) bestellungen = lokal;
+  if (client) {
+    const r = await client.readJson(NC_PFAD_B);
+    if (r.ok && Array.isArray(r.data)) {
+      bestellungen = r.data;
+      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+    }
+  }
+
+  // Bestehende Bestellung laden?
+  const params = new URLSearchParams(location.search);
+  bestellungId = params.get('id');
+  if (bestellungId) {
+    const b = bestellungen.find(x => x.id === bestellungId);
+    if (b) {
+      document.getElementById('seiten-titel').textContent = 'Bestellung bearbeiten';
+      document.getElementById('datum').value       = b.datum;
+      document.getElementById('bezeichnung').value = b.bezeichnung;
+      positionen = b.positionen.filter(p => p.typ === 'artikel');
+      ogKosten   = b.positionen.filter(p => p.typ === 'og-kosten')
+                               .map(p => ({ artikelNr: p.artikelNr, name: p.name,
+                                            menge: p.menge, einzelpreis: p.einzelpreis }));
+      renderPositionen();
+    }
+  }
+}
+
+init();
+</script>
+</body>
+</html>

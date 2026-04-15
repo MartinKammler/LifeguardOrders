@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .hero {
+      text-align: center;
+      padding: 48px 24px 36px;
+    }
+    .hero h1 {
+      font-size: 1.8rem;
+      margin-bottom: 8px;
+    }
+    .hero p {
+      color: var(--text-2);
+      font-size: .95rem;
+    }
+
+    .kacheln {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 8px;
+    }
+    .kachel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color .15s, background .15s;
+    }
+    .kachel:hover {
+      border-color: var(--blue);
+      background: var(--surface2);
+    }
+    .kachel-icon {
+      font-size: 1.6rem;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .kachel-titel {
+      font-weight: 700;
+      font-size: .95rem;
+    }
+    .kachel-desc {
+      font-size: .8rem;
+      color: var(--text-2);
+      line-height: 1.4;
+    }
+
+    .kachel-stat {
+      margin-top: auto;
+      padding-top: 12px;
+      font-size: .78rem;
+      color: var(--text-2);
+      border-top: 1px solid var(--border);
+    }
+    .kachel-stat span {
+      color: var(--blue);
+      font-weight: 700;
+    }
+
+    .hinweis-setup {
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="index.html">LifeguardOrders</a>
+  <a href="bestellungen.html">Bestellungen</a>
+  <a href="artikel.html">Artikel</a>
+  <a href="rechnungen.html">Rechnungen</a>
+  <a href="kassenwart.html">Kassenwart</a>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="einstellungen.html">Einstellungen</a>
+</nav>
+
+<div class="container">
+
+  <div class="hero">
+    <h1>LifeguardOrders</h1>
+    <p>Materialverwaltung für die DLRG OG Schellbronn</p>
+  </div>
+
+  <div class="kacheln">
+
+    <a class="kachel" href="bestellungen.html">
+      <div class="kachel-icon">📋</div>
+      <div class="kachel-titel">Bestellungen</div>
+      <div class="kachel-desc">Sammelbestellungen anlegen, Artikel auf Mitglieder aufteilen und verwalten.</div>
+      <div class="kachel-stat" id="stat-bestellungen">Lade…</div>
+    </a>
+
+    <a class="kachel" href="artikel.html">
+      <div class="kachel-icon">🗂️</div>
+      <div class="kachel-titel">Artikelkatalog</div>
+      <div class="kachel-desc">Artikel mit Preisen und BV/LV/OG-Förderungen pflegen und importieren.</div>
+      <div class="kachel-stat" id="stat-artikel">Lade…</div>
+    </a>
+
+    <a class="kachel" href="rechnungen.html">
+      <div class="kachel-icon">🧾</div>
+      <div class="kachel-titel">Rechnungen</div>
+      <div class="kachel-desc">Rechnungen an Mitglieder erstellen und als PDF herunterladen.</div>
+      <div class="kachel-stat" id="stat-rechnungen">Lade…</div>
+    </a>
+
+    <a class="kachel" href="kassenwart.html">
+      <div class="kachel-icon">💰</div>
+      <div class="kachel-titel">Kassenwart</div>
+      <div class="kachel-desc">Übersicht aller offenen und bezahlten Beträge je Mitglied und Förderquelle.</div>
+      <div class="kachel-stat">Übersicht & CSV-Export</div>
+    </a>
+
+    <a class="kachel" href="dashboard.html">
+      <div class="kachel-icon">📊</div>
+      <div class="kachel-titel">Dashboard</div>
+      <div class="kachel-desc">Einsatzstunden-Fortschritt je Mitglied und Abarbeitungsstatus der Förderungen.</div>
+      <div class="kachel-stat">Einsatzstunden-Tracking</div>
+    </a>
+
+    <a class="kachel" href="einstellungen.html">
+      <div class="kachel-icon">⚙️</div>
+      <div class="kachel-titel">Einstellungen</div>
+      <div class="kachel-desc">Nextcloud-Verbindung, OG-Daten, Mitgliederliste und Fördersätze konfigurieren.</div>
+      <div class="kachel-stat">Nextcloud & OG-Konfiguration</div>
+    </a>
+
+  </div>
+
+  <div id="setup-hinweis"></div>
+
+</div>
+
+<script type="module">
+const STORAGE_KEY_E = 'lo_einstellungen';
+const STORAGE_KEY_A = 'lo_artikel';
+const STORAGE_KEY_B = 'lo_bestellungen';
+const STORAGE_KEY_R = 'lo_rechnungen';
+
+function ladeJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+
+function setStat(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.innerHTML = text;
+}
+
+// Kachel-Statistiken
+const artikel     = ladeJson(STORAGE_KEY_A) || [];
+const bestellungen = ladeJson(STORAGE_KEY_B) || [];
+const rechnungen  = ladeJson(STORAGE_KEY_R) || [];
+
+setStat('stat-artikel',
+  artikel.length
+    ? `<span>${artikel.length}</span> Artikel im Katalog`
+    : 'Noch keine Artikel');
+
+const offeneBestellungen = bestellungen.filter(b => b.status !== 'abgeschlossen').length;
+setStat('stat-bestellungen',
+  bestellungen.length
+    ? `<span>${offeneBestellungen}</span> offen von ${bestellungen.length}`
+    : 'Noch keine Bestellungen');
+
+const offeneRechnungen = rechnungen.filter(r => r.status !== 'bezahlt').length;
+setStat('stat-rechnungen',
+  rechnungen.length
+    ? `<span>${offeneRechnungen}</span> offen von ${rechnungen.length}`
+    : 'Noch keine Rechnungen');
+
+// Setup-Hinweis wenn NC noch nicht konfiguriert
+const einstellungen = ladeJson(STORAGE_KEY_E);
+if (!einstellungen?.nc?.url) {
+  document.getElementById('setup-hinweis').innerHTML = `
+    <div class="hinweis hinweis-info hinweis-setup">
+      Nextcloud noch nicht verbunden —
+      <a href="einstellungen.html" style="color:var(--blue)">Einstellungen öffnen</a>
+      um die Verbindung einzurichten.
+    </div>`;
+}
+</script>
+</body>
+</html>

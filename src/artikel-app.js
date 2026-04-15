@@ -44,7 +44,7 @@ function zeigeStatus(elId, text, art = 'info') {
 
 /* ── Artikel-Logik (rein, ohne DOM) ────────────────────────── */
 
-function artikelKey(a) { return a.artikelNr + '|' + a.name; }
+function artikelKey(a) { return a.artikelNr + '|' + (a.variante ?? a.name); }
 
 export function fuegeArtikelHinzu(katalog, neueArtikel) {
   const vorhanden   = new Set(katalog.map(artikelKey));
@@ -115,6 +115,7 @@ function renderKatalog() {
       <thead>
         <tr>
           <th>Artikel-Nr.</th>
+          <th>Größe</th>
           <th>Bezeichnung</th>
           <th class="preis">Einzelpreis</th>
           <th class="preis">BV</th>
@@ -127,6 +128,7 @@ function renderKatalog() {
         ${artikel.map(a => `
           <tr>
             <td class="artikel-nr">${a.artikelNr}</td>
+            <td class="artikel-nr">${a.variante || '–'}</td>
             <td>${a.name}</td>
             <td class="preis">${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
@@ -162,6 +164,7 @@ function renderImportVorschau(geparst) {
       <thead>
         <tr>
           <th>Artikel-Nr.</th>
+          <th>Größe</th>
           <th>Bezeichnung</th>
           <th class="preis">Einzelpreis</th>
           <th class="preis">BV</th>
@@ -173,6 +176,7 @@ function renderImportVorschau(geparst) {
         ${geparst.artikel.map((a, i) => `
           <tr>
             <td class="artikel-nr">${a.artikelNr}</td>
+            <td class="artikel-nr">${a.variante || '–'}</td>
             <td>${a.name}</td>
             <td class="preis">${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
@@ -192,6 +196,7 @@ window.oeffneModal = function(id) {
   document.getElementById('modal-titel').textContent = a ? 'Artikel bearbeiten' : 'Artikel anlegen';
   document.getElementById('modal-id').value        = a?.id        ?? '';
   document.getElementById('m-artikelnr').value     = a?.artikelNr ?? '';
+  document.getElementById('m-variante').value      = a?.variante  ?? '';
   document.getElementById('m-name').value          = a?.name      ?? '';
   document.getElementById('m-einzelpreis').value   = a?.einzelpreis   ?? '';
   document.getElementById('m-bv').value            = a?.bvFoerderung  ?? 0;
@@ -222,6 +227,7 @@ document.getElementById('modal-speichern').addEventListener('click', async () =>
   const geaendert = {
     id:              id || uuid(),
     artikelNr:       document.getElementById('m-artikelnr').value.trim(),
+    variante:        document.getElementById('m-variante').value.trim().toUpperCase(),
     name:            document.getElementById('m-name').value.trim(),
     einzelpreis:     parseFloat(document.getElementById('m-einzelpreis').value) || 0,
     bvFoerderung:    parseFloat(document.getElementById('m-bv').value) || 0,

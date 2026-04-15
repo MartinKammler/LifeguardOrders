@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bestellung sammeln – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .zurueck-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-2);
+      text-decoration: none;
+      font-size: .85rem;
+      margin-bottom: 16px;
+    }
+    .zurueck-link:hover { color: var(--text); }
+
+    .section-label {
+      font-size: .75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-2);
+      margin-bottom: 10px;
+    }
+
+    .wunsch-tabelle td:last-child { text-align: right; white-space: nowrap; }
+
+    .aggregiert-grid {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 0;
+      font-size: .85rem;
+    }
+    .aggregiert-grid .ag-header {
+      font-size: .75rem;
+      font-weight: 600;
+      color: var(--text-2);
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .aggregiert-grid .ag-zelle {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .aggregiert-grid .ag-right { text-align: right; }
+
+    .csv-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 12px;
+      font-family: monospace;
+      font-size: .82rem;
+      color: var(--text-2);
+      white-space: pre;
+      margin-bottom: 12px;
+      overflow-x: auto;
+    }
+
+    #kopier-bestaetigung {
+      display: none;
+      font-size: .82rem;
+    }
+    #kopier-bestaetigung.sichtbar { display: inline; }
+
+    .hinweis-leer {
+      text-align: center;
+      padding: 32px 24px;
+      color: var(--text-2);
+    }
+    .hinweis-leer p { margin-bottom: 10px; }
+
+    .card-hidden { display: none; }
+
+    .aggregiert-mitglieder {
+      font-size: .78rem;
+      color: var(--text-2);
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="index.html">LifeguardOrders</a>
+  <a href="bestellungen.html" class="active">Bestellungen</a>
+  <a href="artikel.html">Artikel</a>
+  <a href="rechnungen.html">Rechnungen</a>
+  <a href="kassenwart.html">Kassenwart</a>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="einstellungen.html">Einstellungen</a>
+</nav>
+
+<div class="container">
+  <a class="zurueck-link" href="bestellungen.html">&#8592; Zurück zur Übersicht</a>
+
+  <h1 id="seiten-titel">Neue Bestellung</h1>
+
+  <!-- Card: Kopfdaten -->
+  <div class="card">
+    <p class="section-label">Kopfdaten</p>
+    <div class="form-grid">
+      <div class="field">
+        <label for="inp-datum">Datum</label>
+        <input type="date" id="inp-datum">
+      </div>
+      <div class="field">
+        <label for="inp-bezeichnung">Bezeichnung</label>
+        <input type="text" id="inp-bezeichnung" placeholder="z. B. Frühjahrsbestellung 2026">
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: Wunsch hinzufügen -->
+  <div class="card">
+    <p class="section-label">Wunsch hinzufügen</p>
+
+    <!-- Hinweis: keine Mitglieder -->
+    <div id="hinweis-keine-mitglieder" class="hinweis hinweis-warn" style="display:none">
+      Keine Mitglieder gefunden.
+      <a href="einstellungen.html" style="color:inherit;text-decoration:underline">Bitte zuerst Mitglieder anlegen.</a>
+    </div>
+
+    <!-- Hinweis: kein Artikel -->
+    <div id="hinweis-kein-artikel" class="hinweis hinweis-warn" style="display:none">
+      Kein Artikel im Katalog gefunden.
+      <a href="artikel.html" style="color:inherit;text-decoration:underline">Bitte zuerst Artikel importieren.</a>
+    </div>
+
+    <div id="wunsch-formular">
+      <div class="form-grid triple">
+        <div class="field">
+          <label for="sel-mitglied">Mitglied</label>
+          <select id="sel-mitglied">
+            <option value="">– bitte wählen –</option>
+          </select>
+        </div>
+        <div class="field" style="grid-column:span 1">
+          <label for="inp-artikel-suche">Artikel</label>
+          <input type="text" id="inp-artikel-suche" placeholder="Suche…" autocomplete="off">
+          <select id="sel-artikel" size="5" style="margin-top:4px;display:none">
+          </select>
+          <input type="hidden" id="sel-artikel-id">
+        </div>
+        <div class="field">
+          <label for="inp-menge">Menge</label>
+          <input type="number" id="inp-menge" min="1" value="1">
+        </div>
+      </div>
+      <div class="mt-8">
+        <button class="btn btn-primary btn-sm" id="btn-hinzufuegen">+ Hinzufügen</button>
+        <span id="wunsch-fehler" class="text-sm" style="color:var(--red);margin-left:10px;display:none"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: Wunschliste -->
+  <div class="card card-hidden" id="card-wunschliste">
+    <p class="section-label">Wunschliste</p>
+
+    <div id="wunsch-tabelle-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Mitglied</th>
+            <th>Artikel</th>
+            <th>Variante</th>
+            <th style="text-align:right">Menge</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="wunsch-tbody"></tbody>
+      </table>
+    </div>
+
+    <hr class="divider">
+    <p class="section-label" style="margin-top:8px">Aggregierte Ansicht</p>
+    <div id="aggregiert-container"></div>
+  </div>
+
+  <!-- Card: CSV-Export -->
+  <div class="card card-hidden" id="card-csv">
+    <p class="section-label">CSV-Export</p>
+    <div class="csv-box" id="csv-vorschau"></div>
+    <div class="flex gap-8" style="align-items:center">
+      <button class="btn btn-ghost btn-sm" id="btn-csv-kopieren">CSV kopieren</button>
+      <span id="kopier-bestaetigung" class="badge badge-green">Kopiert!</span>
+    </div>
+  </div>
+
+  <!-- Speichern -->
+  <div class="flex gap-8 mt-16" style="justify-content:flex-end">
+    <a class="btn btn-ghost" href="bestellungen.html">Abbrechen</a>
+    <button class="btn btn-primary" id="btn-speichern">Speichern</button>
+  </div>
+</div>
+
+<script type="module">
+import { aggregiereWuensche, exportiereCSV, validiereWunsch } from './src/sammlung.js';
+import { createWebDavClient } from './src/webdav.js';
+
+/* ── Konstanten ──────────────────────────────────────────────── */
+const STORAGE_KEY_B = 'lo_bestellungen';
+const STORAGE_KEY_A = 'lo_artikel';
+const STORAGE_KEY_E = 'lo_einstellungen';
+const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+
+/* ── Zustand ─────────────────────────────────────────────────── */
+let bestellungen    = [];
+let wuensche        = [];   // aktuell bearbeitete Wünsche
+let bestellungId    = null; // null = neue Bestellung
+let client          = null;
+let artikelListe    = [];
+let mitglieder      = [];
+let sortierteArtikel = [];
+
+/* ── Hilfsfunktionen ──────────────────────────────────────────── */
+function ladeJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+
+function uuid() { return crypto.randomUUID(); }
+
+function heute() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function eur(v) {
+  return Number(v).toFixed(2).replace('.', ',') + ' €';
+}
+
+function mitgliedName(id) {
+  const m = mitglieder.find(m => m.id === id);
+  return m ? m.name : id;
+}
+
+function artikelLabel(a) {
+  const preis = a.einzelpreis != null ? ' — ' + eur(a.einzelpreis) : '';
+  const variante = a.variante ? ' ' + a.variante : '';
+  return `${a.name}${variante}${preis}`;
+}
+
+/* ── URL-Parameter ───────────────────────────────────────────── */
+function ladeUrlParam() {
+  const params = new URLSearchParams(location.search);
+  return params.get('id') || null;
+}
+
+/* ── Render: Wunschliste-Tabelle ─────────────────────────────── */
+function renderWunschliste() {
+  const cardWunsch = document.getElementById('card-wunschliste');
+  const cardCsv    = document.getElementById('card-csv');
+
+  if (!wuensche.length) {
+    cardWunsch.classList.add('card-hidden');
+    cardCsv.classList.add('card-hidden');
+    return;
+  }
+
+  cardWunsch.classList.remove('card-hidden');
+  cardCsv.classList.remove('card-hidden');
+
+  // Tabelle
+  const tbody = document.getElementById('wunsch-tbody');
+  tbody.innerHTML = wuensche.map(w => `
+    <tr>
+      <td>${mitgliedName(w.mitgliedId)}</td>
+      <td>${w.name}</td>
+      <td><span class="badge badge-blue">${w.variante || '–'}</span></td>
+      <td style="text-align:right">${w.menge}</td>
+      <td style="text-align:right">
+        <button class="btn btn-danger btn-sm" data-wunsch-id="${w.id}">Löschen</button>
+      </td>
+    </tr>`).join('');
+
+  // Löschen-Handler
+  tbody.querySelectorAll('[data-wunsch-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.wunschId;
+      wuensche = wuensche.filter(w => w.id !== id);
+      renderWunschliste();
+    });
+  });
+
+  // Aggregiert
+  const aggContainer = document.getElementById('aggregiert-container');
+  const agg = aggregiereWuensche(wuensche);
+
+  aggContainer.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Artikel + Variante</th>
+          <th style="text-align:right">Gesamt</th>
+          <th>Mitglieder</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${agg.map(zeile => {
+          const variante = zeile.variante ? ' <span class="badge badge-blue">' + zeile.variante + '</span>' : '';
+          // Mitglieder die diesen Wunsch haben
+          const betroffene = wuensche
+            .filter(w => w.artikelNr === zeile.artikelNr && w.variante === zeile.variante)
+            .map(w => mitgliedName(w.mitgliedId))
+            .join(', ');
+          return `
+            <tr>
+              <td>${zeile.name}${variante}</td>
+              <td style="text-align:right"><strong>${zeile.menge}</strong></td>
+              <td class="aggregiert-mitglieder">${betroffene}</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+
+  // CSV-Vorschau
+  const csvText = exportiereCSV(agg);
+  document.getElementById('csv-vorschau').textContent = csvText;
+}
+
+/* ── Artikel-Suche ───────────────────────────────────────────── */
+function aktualisiereArtikelListe(suche) {
+  const selArtikel = document.getElementById('sel-artikel');
+  const suchLower  = suche.toLowerCase().trim();
+  const gefiltert  = suchLower
+    ? sortierteArtikel.filter(a =>
+        (a.name + ' ' + (a.variante || '')).toLowerCase().includes(suchLower))
+    : sortierteArtikel;
+
+  selArtikel.innerHTML = gefiltert
+    .map(a => `<option value="${a.id}">${artikelLabel(a)}</option>`)
+    .join('');
+  selArtikel.style.display = gefiltert.length && suchLower ? '' : 'none';
+}
+
+document.getElementById('inp-artikel-suche').addEventListener('input', e => {
+  aktualisiereArtikelListe(e.target.value);
+  document.getElementById('sel-artikel-id').value = '';
+});
+
+document.getElementById('sel-artikel').addEventListener('change', e => {
+  const artikel = artikelListe.find(a => a.id === e.target.value);
+  if (artikel) {
+    document.getElementById('sel-artikel-id').value     = artikel.id;
+    document.getElementById('inp-artikel-suche').value  = artikelLabel(artikel);
+    document.getElementById('sel-artikel').style.display = 'none';
+  }
+});
+
+/* ── Selects befüllen ────────────────────────────────────────── */
+function befuelleSelects() {
+  const selMitglied = document.getElementById('sel-mitglied');
+
+  // Mitglieder
+  const hinweisMitglied = document.getElementById('hinweis-keine-mitglieder');
+  if (!mitglieder.length) {
+    hinweisMitglied.style.display = '';
+    document.getElementById('wunsch-formular').style.display = 'none';
+  } else {
+    hinweisMitglied.style.display = 'none';
+    selMitglied.innerHTML = '<option value="">– bitte wählen –</option>' +
+      mitglieder.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+  }
+
+  // Artikel
+  const hinweisArtikel = document.getElementById('hinweis-kein-artikel');
+  if (!artikelListe.length) {
+    hinweisArtikel.style.display = '';
+    document.getElementById('wunsch-formular').style.display = 'none';
+  } else {
+    hinweisArtikel.style.display = 'none';
+    sortierteArtikel = [...artikelListe].sort((a, b) => {
+      const la = (a.name + ' ' + (a.variante || '')).toLowerCase();
+      const lb = (b.name + ' ' + (b.variante || '')).toLowerCase();
+      return la.localeCompare(lb, 'de');
+    });
+    aktualisiereArtikelListe('');
+  }
+
+  // Formular nur zeigen wenn beides vorhanden
+  if (mitglieder.length && artikelListe.length) {
+    document.getElementById('wunsch-formular').style.display = '';
+  }
+}
+
+/* ── Wunsch hinzufügen ───────────────────────────────────────── */
+document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
+  const mitgliedId = document.getElementById('sel-mitglied').value;
+  const artikelId  = document.getElementById('sel-artikel-id').value;
+  const menge      = parseInt(document.getElementById('inp-menge').value, 10);
+  const fehlerEl   = document.getElementById('wunsch-fehler');
+
+  fehlerEl.style.display = 'none';
+
+  const artikel = artikelListe.find(a => a.id === artikelId);
+  if (!artikel) {
+    fehlerEl.textContent = 'Bitte einen Artikel auswählen.';
+    fehlerEl.style.display = 'inline';
+    return;
+  }
+
+  const neuerWunsch = {
+    id:         uuid(),
+    mitgliedId,
+    artikelNr:  artikel.artikelNr,
+    variante:   artikel.variante || '',
+    name:       artikel.name,
+    menge:      isNaN(menge) ? 1 : menge,
+  };
+
+  const validierung = validiereWunsch(neuerWunsch);
+  if (!validierung.ok) {
+    fehlerEl.textContent = validierung.fehler;
+    fehlerEl.style.display = 'inline';
+    return;
+  }
+
+  wuensche = [...wuensche, neuerWunsch];
+  renderWunschliste();
+
+  // Formular zurücksetzen (Mitglied behalten, Menge auf 1)
+  document.getElementById('inp-artikel-suche').value   = '';
+  document.getElementById('sel-artikel-id').value      = '';
+  document.getElementById('sel-artikel').style.display = 'none';
+  document.getElementById('inp-menge').value           = 1;
+});
+
+/* ── CSV kopieren ────────────────────────────────────────────── */
+document.getElementById('btn-csv-kopieren').addEventListener('click', async () => {
+  const agg = aggregiereWuensche(wuensche);
+  const csv = exportiereCSV(agg);
+  try {
+    await navigator.clipboard.writeText(csv);
+    const bestaetigung = document.getElementById('kopier-bestaetigung');
+    bestaetigung.classList.add('sichtbar');
+    setTimeout(() => bestaetigung.classList.remove('sichtbar'), 2500);
+  } catch {
+    alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+  }
+});
+
+/* ── Speichern ───────────────────────────────────────────────── */
+document.getElementById('btn-speichern').addEventListener('click', async () => {
+  const datum       = document.getElementById('inp-datum').value;
+  const bezeichnung = document.getElementById('inp-bezeichnung').value.trim();
+
+  if (!datum) { alert('Bitte ein Datum angeben.'); return; }
+  if (!bezeichnung) { alert('Bitte eine Bezeichnung angeben.'); return; }
+
+  const id = bestellungId || uuid();
+  const bestehendeIdx = bestellungen.findIndex(b => b.id === id);
+
+  const bestellung = {
+    id,
+    datum,
+    bezeichnung,
+    status:    'sammlung',
+    wuensche,
+    positionen: bestehendeIdx >= 0 ? (bestellungen[bestehendeIdx].positionen || []) : [],
+    rechnungen: bestehendeIdx >= 0 ? (bestellungen[bestehendeIdx].rechnungen  || []) : [],
+  };
+
+  if (bestehendeIdx >= 0) {
+    bestellungen[bestehendeIdx] = bestellung;
+  } else {
+    bestellungen = [...bestellungen, bestellung];
+  }
+
+  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+
+  if (client) {
+    await client.writeJson(NC_PFAD_B, bestellungen);
+  }
+
+  location.href = 'bestellungen.html';
+});
+
+/* ── Init ────────────────────────────────────────────────────── */
+async function init() {
+  // Einstellungen + NC-Client
+  const einstellungen = ladeJson(STORAGE_KEY_E);
+  if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
+    client = createWebDavClient(einstellungen.nc);
+  }
+
+  mitglieder   = einstellungen?.mitglieder || [];
+  artikelListe = ladeJson(STORAGE_KEY_A) || [];
+  bestellungen = ladeJson(STORAGE_KEY_B) || [];
+
+  // NC-Sync: Bestellungen + Artikel parallel nachladen
+  if (client) {
+    const [rB, rA] = await Promise.all([
+      client.readJson(NC_PFAD_B),
+      client.readJson('/LifeguardOrders/artikel.json'),
+    ]);
+    if (rB.ok && Array.isArray(rB.data) && rB.data.length > 0) {
+      bestellungen = rB.data;
+      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+    }
+    if (rA.ok && Array.isArray(rA.data) && rA.data.length > 0) {
+      artikelListe = rA.data;
+      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikelListe));
+    }
+  }
+
+  // Heute vorbelegen
+  document.getElementById('inp-datum').value = heute();
+
+  // Bestehende Bestellung laden?
+  bestellungId = ladeUrlParam();
+  if (bestellungId) {
+    const bestehend = bestellungen.find(b => b.id === bestellungId);
+    if (bestehend) {
+      document.getElementById('seiten-titel').textContent   = 'Bestellung bearbeiten';
+      document.title = 'Bestellung bearbeiten – LifeguardOrders';
+      document.getElementById('inp-datum').value            = bestehend.datum;
+      document.getElementById('inp-bezeichnung').value      = bestehend.bezeichnung;
+      wuensche = bestehend.wuensche || [];
+    } else {
+      bestellungId = null; // ID ungültig, neue Bestellung erstellen
+    }
+  }
+
+  befuelleSelects();
+  renderWunschliste();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -56,7 +56,7 @@ function parseTabFormat(text) {
     }
     if (isNaN(menge) || menge === 0) { letzterArtikel = null; continue; }
 
-    const neuerArtikel = { artikelNr, name, menge, einzelpreis: parsePreis(einzelpreisRaw), bvFoerderung: 0, lvFoerderung: 0 };
+    const neuerArtikel = { artikelNr, name, variante: '', menge, einzelpreis: parsePreis(einzelpreisRaw), bvFoerderung: 0, lvFoerderung: 0 };
     artikel.push(neuerArtikel);
     letzterArtikel = neuerArtikel;
   }
@@ -156,7 +156,7 @@ function parseMultilineFormat(text) {
     // Normaler Artikel
     commitArtikel();
     if (!isNaN(menge) && menge > 0) {
-      aktuellerArtikel = { artikelNr, name, menge, einzelpreis: 0, bvFoerderung: 0, lvFoerderung: 0 };
+      aktuellerArtikel = { artikelNr, name, variante: '', menge, einzelpreis: 0, bvFoerderung: 0, lvFoerderung: 0 };
       gruppe = 'artikel';
     } else {
       aktuellerArtikel = null;
@@ -169,16 +169,101 @@ function parseMultilineFormat(text) {
   return { artikel, ogKosten, fehler };
 }
 
+/* ── Produktseiten-Format (DLRG-Materialstelle Artikeldetail) ── */
+/*
+ * Beispiel-Inhalt:
+ *   T-Shirt »DLRG Ausbildung« JAKO, Rot
+ *   Artikelnummer: 18507110
+ *       XS S M L XL XXL 3XL 4XL 5XL 6XL
+ *   Dein Preis: 14,50 €
+ *   Mittelverwendung Bundesverband 26: -4,60 €
+ *   01_Mittelverwendung LV Baden 26: -4,95 €
+ *
+ * Gibt einen Artikel pro Größe zurück. Artikel ohne Größenzeile: ein Eintrag, variante: ''.
+ */
+
+// Zeilen, die NICHT als Varianten-Zeile zählen
+const NICHT_VARIANTE = new Set(['Beschreibung', 'Produktdetails', 'Datenblätter']);
+
+/**
+ * Sucht die Varianten-Zeile strukturell:
+ * eingerückte Zeile mit ≥ 2 Tokens zwischen "Artikelnummer:" und "Beschreibung".
+ */
+function parseVarianten(text) {
+  // Bereich zwischen Artikelnummer-Zeile und erster "Beschreibung"-Zeile
+  const bereichMatch = text.match(/Artikelnummer:\s*\d+[^\n]*\n([\s\S]*?)(?=\n\s*Beschreibung)/);
+  if (!bereichMatch) return [];
+
+  for (const zeile of bereichMatch[1].split('\n')) {
+    // Muss eingerückt sein (≥ 2 führende Leerzeichen oder Tab)
+    if (!/^[ \t]{2,}/.test(zeile)) continue;
+    const tokens = zeile.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length >= 2 && !tokens.some(t => NICHT_VARIANTE.has(t))) {
+      return tokens.map(t => t.toUpperCase());
+    }
+  }
+  return [];
+}
+
+function parseProduktseite(text) {
+  const nrMatch = text.match(/Artikelnummer:\s*(\d+)/);
+  if (!nrMatch) return { artikel: [], ogKosten: [], fehler: [] };
+
+  const artikelNr = nrMatch[1];
+
+  // Name: letzte nicht-leere Zeile vor der Artikelnummer
+  const vorNr = text.slice(0, nrMatch.index);
+  const name = vorNr.split('\n')
+    .map(z => z.trim())
+    .filter(z => z.length > 3)
+    .at(-1) || '';
+
+  // Einzelpreis: nach "Dein Preis:" oder "Preis ab:" (ggf. auf nächster Zeile)
+  const preisMatch = text.match(/(?:Dein Preis|Preis ab):\s*\n?\s*(-?\d+[,\.]\d+)\s*€/);
+  const einzelpreis = preisMatch ? parsePreis(preisMatch[1] + ' €') : 0;
+
+  // BV-Förderung: "Mittelverwendung Bundesverband..."
+  const bvMatch = text.match(/Mittelverwendung Bundesverband[^:\n]*:\s*\n?\s*(-?\d+[,\.]\d+)\s*€/);
+  const bvFoerderung = bvMatch ? parsePreis(bvMatch[1] + ' €') : 0;
+
+  // LV-Förderung: "Mittelverwendung LV..." (ggf. mit Präfix wie "01_")
+  const lvMatch = text.match(/\d*_?Mittelverwendung LV[^:\n]*:\s*\n?\s*(-?\d+[,\.]\d+)\s*€/);
+  const lvFoerderung = lvMatch ? parsePreis(lvMatch[1] + ' €') : 0;
+
+  // Größen: eine Zeile pro Größe zurückgeben
+  const groessen = parseVarianten(text);
+
+  if (groessen.length === 0) {
+    // Kein Größen-Selector → ein generischer Eintrag
+    return {
+      artikel: [{ artikelNr, name, variante: '', menge: 1, einzelpreis, bvFoerderung, lvFoerderung }],
+      ogKosten: [],
+      fehler: [],
+    };
+  }
+
+  return {
+    artikel: groessen.map(g => ({
+      artikelNr, name, variante: g, menge: 1, einzelpreis, bvFoerderung, lvFoerderung,
+    })),
+    ogKosten: [],
+    fehler: [],
+  };
+}
+
 /* ── Öffentliche API ─────────────────────────────────────────── */
 
 /**
- * Erkennt automatisch das Format und parst die Auftragsbestätigung.
+ * Erkennt automatisch das Format und parst die Auftragsbestätigung
+ * oder Produktdetailseite der DLRG-Materialstelle.
  *
  * @param {string} text
  * @returns {{ artikel[], ogKosten[], fehler[] }}
  */
 export function parseBestellung(text) {
-  // Mehrzeiliges Format erkennen: gibt es Zeilen, die NUR einen Preis enthalten?
+  // Produktdetailseite: enthält "Artikelnummer: XXXXXXXX"
+  if (/Artikelnummer:\s*\d+/.test(text)) return parseProduktseite(text);
+  // Auftragsbestätigung mehrzeilig: Preis-Zeilen allein
   if (/^\s*-?\d+[,\.]\d+\s*€\s*$/m.test(text)) return parseMultilineFormat(text);
   // Tab-Format: alle Spalten auf einer Zeile durch \t getrennt
   return parseTabFormat(text);

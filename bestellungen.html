@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bestellungen – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .meta { font-size:.78rem; color:var(--text-2); }
+  </style>
+</head>
+<body>
+<nav>
+  <a class="nav-brand" href="index.html">LifeguardOrders</a>
+  <a href="bestellungen.html" class="active">Bestellungen</a>
+  <a href="artikel.html">Artikel</a>
+  <a href="rechnungen.html">Rechnungen</a>
+  <a href="kassenwart.html">Kassenwart</a>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="einstellungen.html">Einstellungen</a>
+</nav>
+
+<div class="container">
+  <div class="flex gap-8" style="align-items:center;margin-bottom:20px">
+    <h1 style="margin:0;flex:1">Bestellungen</h1>
+    <a class="btn btn-primary btn-sm" href="bestellung-sammeln.html">+ Neue Bestellung</a>
+  </div>
+
+  <div class="card" id="liste-card">
+    <div id="liste-inhalt">
+      <div class="leer-hinweis" style="text-align:center;padding:48px 24px;color:var(--text-2)">
+        <p style="margin-bottom:12px">Noch keine Bestellungen angelegt.</p>
+        <a class="btn btn-ghost" href="bestellung-sammeln.html">Neue Bestellung anlegen</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { createWebDavClient } from './src/webdav.js';
+
+const STORAGE_KEY_E = 'lo_einstellungen';
+const STORAGE_KEY_B = 'lo_bestellungen';
+const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+
+let bestellungen = [];
+let client = null;
+
+function ladeJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+
+function eur(v) { return Number(v).toFixed(2).replace('.', ',') + ' €'; }
+
+function summePositionen(positionen) {
+  return positionen
+    .filter(p => p.typ === 'artikel')
+    .reduce((s, p) => s + p.einzelpreis * p.menge, 0);
+}
+
+function statusBadge(status) {
+  switch (status) {
+    case 'sammlung':      return '<span class="badge badge-amber">Sammlung</span>';
+    case 'bestellt':      return '<span class="badge badge-blue">Bestellt</span>';
+    case 'abgeschlossen': return '<span class="badge badge-green">Abgeschlossen</span>';
+    default:              return '<span class="badge badge-amber">Sammlung</span>';
+  }
+}
+
+function oeffnenHref(b) {
+  if (b.status === 'abgeschlossen') {
+    return `bestellung-abgleich.html?id=${b.id}`;
+  }
+  return `bestellung-sammeln.html?id=${b.id}`;
+}
+
+function mengenInfo(b) {
+  if (b.status === 'abgeschlossen') {
+    const artikel = (b.positionen || []).filter(p => p.typ === 'artikel');
+    return `<span style="color:var(--green)">${artikel.length}</span>
+            <span class="meta"> Position${artikel.length !== 1 ? 'en' : ''}</span>`;
+  }
+  // sammlung oder bestellt: Anzahl Wünsche
+  const anzahl = (b.wuensche || []).length;
+  return `<span style="color:var(--amber)">${anzahl}</span>
+          <span class="meta"> Wunsch${anzahl !== 1 ? 'e' : ''}</span>`;
+}
+
+function render() {
+  const el = document.getElementById('liste-inhalt');
+  if (!bestellungen.length) {
+    el.innerHTML = `
+      <div style="text-align:center;padding:48px 24px;color:var(--text-2)">
+        <p style="margin-bottom:12px">Noch keine Bestellungen angelegt.</p>
+        <a class="btn btn-ghost" href="bestellung-sammeln.html">Neue Bestellung anlegen</a>
+      </div>`;
+    return;
+  }
+
+  const sorted = [...bestellungen].sort((a, b) => b.datum.localeCompare(a.datum));
+
+  el.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Datum</th>
+          <th>Bezeichnung</th>
+          <th>Phase</th>
+          <th style="text-align:right">Umfang</th>
+          <th style="text-align:right">Betrag</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sorted.map(b => {
+          const summe = summePositionen(b.positionen || []);
+          return `
+          <tr>
+            <td class="meta">${b.datum}</td>
+            <td><strong>${b.bezeichnung}</strong></td>
+            <td>${statusBadge(b.status)}</td>
+            <td style="text-align:right">${mengenInfo(b)}</td>
+            <td style="text-align:right">${summe > 0 ? eur(summe) : '<span class="meta">–</span>'}</td>
+            <td style="text-align:right">
+              <a class="btn btn-ghost btn-sm" href="${oeffnenHref(b)}">Öffnen</a>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function init() {
+  const e = ladeJson(STORAGE_KEY_E);
+  if (e?.nc?.url && e?.nc?.user && e?.nc?.pass) {
+    client = createWebDavClient(e.nc);
+  }
+
+  const lokal = ladeJson(STORAGE_KEY_B);
+  if (lokal) bestellungen = lokal;
+
+  if (client) {
+    const r = await client.readJson(NC_PFAD_B);
+    if (r.ok && Array.isArray(r.data) && r.data.length > 0) {
+      bestellungen = r.data;
+      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+    }
+  }
+
+  render();
+}
+
+init();
+</script>
+</body>
+</html>

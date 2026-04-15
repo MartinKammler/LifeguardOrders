@@ -21,7 +21,7 @@ eigenen Server und arbeitet nach dem ersten Laden auch offline.
 ```
 /LifeguardOrders/
   artikel.json       ← Artikelkatalog
-  bestellungen.json  ← Sammelbestellungen, Positionen, Zuweisungen, Rechnungen
+  bestellungen.json  ← Sammelbestellungen mit Wünschen, CSV-Export, Rechnungen
   einstellungen.json ← OG-Daten, Förderrate, zählende Einsatztypen
 
 /LifeguardClock/
@@ -30,14 +30,31 @@ eigenen Server und arbeitet nach dem ersten Laden auch offline.
 
 **Seitenstruktur (je eine HTML-Datei):**
 ```
-index.html          ← Navigation / Startseite
-artikel.html        ← Artikelkatalog
-bestellungen.html   ← Sammelbestellungen-Übersicht
-bestellung-neu.html ← Import + Mitglieder-Zuweisung
-rechnungen.html     ← Rechnungsübersicht + PDF-Erzeugung
-kassenwart.html     ← Kassenwart-Übersicht + Export
-dashboard.html      ← Einsatzstunden-Dashboard
-einstellungen.html  ← Konfiguration
+index.html                ← Navigation / Startseite mit Kacheln und Live-Statistiken
+artikel.html              ← Artikelkatalog: CRUD + Import (Auftragsbestätigung & Produktseite)
+bestellungen.html         ← Übersicht aller Sammelbestellungen mit Phase und Status
+bestellung-sammeln.html   ← Phase 1: Mitgliederwünsche erfassen + CSV-Export für Materialstelle
+bestellung-abgleich.html  ← Phase 2: Rechnungsimport + Abgleich + Review bei Abweichungen
+rechnungen.html           ← Rechnungsübersicht + PDF-Erzeugung + Zahlungsstatus
+kassenwart.html           ← Kassenwart-Übersicht + PDF/CSV-Export
+dashboard.html            ← Einsatzstunden-Dashboard
+einstellungen.html        ← Konfiguration (NC, OG-Stammdaten, Mitglieder, Stundensatz)
+```
+
+**Workflow (zwei Phasen je Sammelbestellung):**
+```
+Phase 1 — Sammlung:
+  Admin legt Sammelbestellung an →
+  Erfasst Wünsche: Mitglied + Artikel (aus Katalog) + Größe + Menge →
+  System aggregiert: Artikel XL: 3 Stk. gesamt →
+  CSV-Export: "18507110,XL,3" pro Zeile → Admin kopiert in Materialstelle-Bestellformular
+
+Phase 2 — Eingang (nach Lieferung):
+  Admin öffnet Sammelbestellung →
+  Importiert Materialstelle-Rechnung (gleicher Parser) →
+  System gleicht ab: Rechnung ↔ Wunschliste (nach artikelNr + variante) →
+  Abweichungen (mehr/weniger geliefert) → Review-Ansicht →
+  Gematchte Positionen → Rechnungen je Mitglied erzeugen
 ```
 
 **Mitgliederliste:** Wird einmalig aus der `config.js` der Stempeluhr übernommen (gleiche IDs,
@@ -60,133 +77,121 @@ gleiche Namen). Sie ist die einzige Quelle der Wahrheit für Personen in beiden 
 
 ### Artikelverwaltung
 
-5. Als Admin möchte ich den Artikelkatalog als Liste sehen mit Artikel-Nr., Name,
-   Einzelpreis (brutto), BV-Förderung, LV-Förderung und OG-Förderung je Eintrag.
-6. Als Admin möchte ich eine Auftragsbestätigung der Materialstelle als Tab-getrennten Text
-   in ein Eingabefeld einfügen und automatisch parsen lassen, damit Artikel samt Förderbeträgen
-   erkannt werden.
-7. Als Admin möchte ich, dass der Parser `MITTELVERW. BV`-Zeilen als BV-Förderung und
+5. Als Admin möchte ich den Artikelkatalog als Liste sehen mit Artikel-Nr., Größe/Variante,
+   Name, Einzelpreis (brutto), BV-Förderung, LV-Förderung und OG-Förderung je Eintrag.
+6. Als Admin möchte ich eine Auftragsbestätigung der Materialstelle (Tab-getrennt oder
+   mehrzeilig) in ein Eingabefeld einfügen und automatisch parsen lassen.
+7. Als Admin möchte ich eine Produktdetailseite der Materialstelle einfügen und alle
+   verfügbaren Größen/Varianten automatisch als separate Katalogeinträge importieren,
+   damit ich nicht jede Größe einzeln anlegen muss.
+8. Als Admin möchte ich, dass beim Produktseitenimport BV- und LV-Förderung automatisch
+   erkannt und übernommen werden.
+9. Als Admin möchte ich, dass der Parser `MITTELVERW. BV`-Zeilen als BV-Förderung und
    `MITTELVERW. LV`-Zeilen als LV-Förderung dem jeweils vorherigen Artikel zuordnet.
-8. Als Admin möchte ich, dass Zeilen mit `VERSANDKOSTEN` und `EILAUFTRAG` beim Import als
-   OG-Kostenposten markiert werden und nicht im Artikelkatalog landen.
-9. Als Admin möchte ich, dass Artikel mit Menge 0 beim Import automatisch übersprungen werden.
-10. Als Admin möchte ich nach dem Import die erkannten Artikel prüfen und einzeln bearbeiten
-    (Name, Preis, Förderbeträge korrigieren), bevor sie gespeichert werden.
-11. Als Admin möchte ich die OG-Förderung pro Artikel als festen Betrag oder als Checkbox
+10. Als Admin möchte ich, dass Zeilen mit `VERSANDKOSTEN` und `EILAUFTRAG` beim Import als
+    OG-Kostenposten markiert werden und nicht im Artikelkatalog landen.
+11. Als Admin möchte ich, dass Artikel mit Menge 0 beim Import automatisch übersprungen werden.
+12. Als Admin möchte ich die OG-Förderung pro Artikel als festen Betrag oder als Checkbox
     "OG übernimmt Rest" festlegen können.
-12. Als Admin möchte ich Artikel manuell neu anlegen (Formular mit allen Feldern), damit
-    ich den Katalog jederzeit erweitern kann.
-13. Als Admin möchte ich Artikel bearbeiten und löschen können.
-14. Als Admin möchte ich bei einem leeren Artikelkatalog einen deutlichen Hinweistext sehen,
-    damit ich weiß, wie ich starte.
+13. Als Admin möchte ich Artikel manuell neu anlegen (Formular mit allen Feldern inkl. Variante).
+14. Als Admin möchte ich Artikel bearbeiten und löschen können.
+15. Als Admin möchte ich bei einem leeren Artikelkatalog einen deutlichen Hinweistext sehen.
 
-### Sammelbestellung erfassen
+### Sammelbestellung — Phase 1: Sammlung
 
-15. Als Admin möchte ich eine neue Sammelbestellung anlegen mit Datum und einer frei wählbaren
-    Bezeichnung (z. B. "Bestellung März 2025").
-16. Als Admin möchte ich in einer Sammelbestellung Zeilen aus einer Auftragsbestätigung
-    importieren (gleicher Parser wie Artikelkatalog), damit ich nicht doppelt eintippe.
-17. Als Admin möchte ich jede importierte Position einer Sammelbestellung einem Mitglied
-    zuweisen (Dropdown mit Mitgliederliste).
-18. Als Admin möchte ich eine Position mit Menge > 1 auf mehrere Mitglieder aufteilen, indem
-    ich pro Mitglied eine Teilmenge angebe, bis die Gesamtmenge verteilt ist.
-19. Als Admin möchte ich sehen, welche Positionen noch nicht vollständig zugewiesen sind
-    (visuell hervorgehoben), damit mir keine Zuweisung fehlt.
-20. Als Admin möchte ich pro zugewiesener Position sehen: Bruttobetrag, BV-Abzug, LV-Abzug,
-    OG-Abzug und den verbleibenden Mitgliedsanteil.
-21. Als Admin möchte ich, dass Versandkosten und Eilauftrag in der Sammelbestellung sichtbar
-    sind, aber als OG-Kosten ausgewiesen werden und nicht in Mitgliedsrechnungen fließen.
-22. Als Admin möchte ich eine Sammelbestellung als "abgeschlossen" markieren, sobald alle
-    Positionen zugewiesen und alle Rechnungen erstellt sind.
-23. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können.
-24. Als Admin möchte ich eine bestehende Sammelbestellung nachträglich bearbeiten (Positionen
-    hinzufügen, Zuweisungen ändern), solange sie noch nicht abgeschlossen ist.
+16. Als Admin möchte ich eine neue Sammelbestellung anlegen mit Datum und Bezeichnung.
+17. Als Admin möchte ich in einer Sammelbestellung Mitgliederwünsche erfassen:
+    Mitglied auswählen (Dropdown), Artikel aus dem Katalog wählen (mit Größe), Menge angeben.
+18. Als Admin möchte ich in derselben Bestellung für verschiedene Mitglieder und Artikel
+    beliebig viele Wunschzeilen hinzufügen.
+19. Als Admin möchte ich eine aggregierte Ansicht sehen: welche Artikel in welcher Variante
+    wie oft insgesamt bestellt werden sollen (Summe über alle Mitglieder).
+20. Als Admin möchte ich einen CSV-Export der aggregierten Bestellliste erhalten im Format
+    `artikelNr,variante,menge` (eine Zeile pro Artikel+Variante), den ich in das
+    Bestellformular der Materialstelle einfügen kann.
+21. Als Admin möchte ich eine bestehende Sammelbestellung nachträglich bearbeiten
+    (Wünsche hinzufügen, ändern, löschen), solange Phase 2 noch nicht begonnen hat.
+22. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können.
+
+### Sammelbestellung — Phase 2: Eingang & Abgleich
+
+23. Als Admin möchte ich nach Lieferung die Materialstelle-Rechnung in die Sammelbestellung
+    importieren (gleicher Parser wie Artikelkatalog).
+24. Als Admin möchte ich, dass das System die importierten Rechnungspositionen automatisch
+    den Mitgliederwünschen zuordnet (nach artikelNr + variante).
+25. Als Admin möchte ich Abweichungen zwischen Rechnung und Wunschliste in einer
+    Review-Ansicht sehen: zu viel geliefert, zu wenig geliefert, nicht bestellt.
+26. Als Admin möchte ich Abweichungen manuell auflösen: Position neu zuweisen, Menge
+    anpassen oder Position ignorieren.
+27. Als Admin möchte ich nach dem Abgleich für jedes betroffene Mitglied eine Rechnung
+    erzeugen (einzeln oder alle auf einmal).
+28. Als Admin möchte ich, dass Versandkosten und Eilauftrag in der Bestellung sichtbar sind,
+    als OG-Kosten ausgewiesen werden und nicht in Mitgliedsrechnungen fließen.
+29. Als Admin möchte ich eine Sammelbestellung als "abgeschlossen" markieren, sobald alle
+    Positionen verrechnet und alle Rechnungen erstellt sind.
 
 ### Rechnungen
 
-25. Als Admin möchte ich aus einer Sammelbestellung heraus für jedes zugewiesene Mitglied
-    eine Rechnung erzeugen lassen (einzeln oder alle auf einmal).
-26. Als Admin möchte ich, dass die Rechnung im Layout der bestehenden Rechnungen erscheint:
-    DLRG-Logo, OG-Adresse rechts, Empfängeradresse links, Tabelle mit Anzahl/Bezeichnung/
-    Einzelpreis/Gesamtpreis, Gesamtbetrag (Brutto), MwSt.-Hinweis, Zahlungsfrist 14 Tage,
-    Bankdaten und rechtliche Angaben im Fußbereich.
-27. Als Admin möchte ich, dass Rechnungen automatisch nummeriert werden im Format `R_YYYY_MM_NNN`
-    (fortlaufend pro Monat), damit sie eindeutig referenzierbar sind.
-28. Als Admin möchte ich, dass auf der Rechnung nur der vom Mitglied zu zahlende Betrag
-    erscheint (nach Abzug aller Förderungen) — keine Förderdetails, die das Mitglied
-    nicht sehen muss.
-29. Als Admin möchte ich die erzeugte Rechnung als PDF herunterladen können.
-30. Als Admin möchte ich eine bereits erzeugte Rechnung erneut als PDF abrufen können.
-31. Als Admin möchte ich eine Vorschau der Rechnung sehen, bevor ich sie finalisiere.
-
-### Zahlungsverfolgung
-
-32. Als Admin möchte ich alle Rechnungen in einer Übersicht sehen (Mitglied, Rechnungsnummer,
+30. Als Admin möchte ich alle Rechnungen in einer Übersicht sehen (Mitglied, Nummer,
     Betrag, Datum, Status: offen / bezahlt).
-33. Als Admin möchte ich eine Rechnung als "bezahlt" markieren mit Eingabe des Zahlungsdatums.
-34. Als Admin möchte ich eine Zahlung als "bezahlt" rückgängig machen können (zurück auf offen).
-35. Als Admin möchte ich die Rechnungsübersicht nach Status (offen/bezahlt) und nach Mitglied
-    filtern können.
-36. Als Admin möchte ich sehen, wie viel Gesamtbetrag noch offen ist, damit ich den
-    Liquiditätsbedarf kenne.
+31. Als Admin möchte ich, dass die Rechnung das Layout der bestehenden Vorlage hat:
+    DLRG-Logo, OG-Adresse, Empfängeradresse, Positionstabelle, Gesamtbetrag,
+    MwSt.-Hinweis, Zahlungsfrist 14 Tage, Bankdaten, Fußbereich.
+32. Als Admin möchte ich, dass Rechnungen automatisch nummeriert werden im Format
+    `R_YYYY_MM_NNN` (fortlaufend pro Monat).
+33. Als Admin möchte ich, dass auf der Rechnung nur der Mitgliedsanteil (nach Förderabzug)
+    erscheint sowie die erwarteten Einsatzstunden für die OG-Förderung.
+34. Als Admin möchte ich die Rechnung als PDF herunterladen.
+35. Als Admin möchte ich eine bereits erzeugte Rechnung erneut als PDF abrufen.
+36. Als Admin möchte ich eine Rechnung als "bezahlt" markieren (mit Zahlungsdatum).
+37. Als Admin möchte ich eine Zahlung rückgängig machen können (zurück auf offen).
+38. Als Admin möchte ich sehen, wie viel Gesamtbetrag noch offen ist.
 
 ### Kassenwart-Übersicht
 
-37. Als Admin möchte ich eine Kassenwart-Übersicht erzeugen, die alle Positionen aller
-    Sammelbestellungen tabellarisch zeigt: Mitglied, Artikel, Bruttobetrag, BV-Förderung,
-    LV-Förderung, OG-Förderung, Mitgliedsanteil, Zahlungsstatus.
-38. Als Admin möchte ich in der Kassenwart-Übersicht Summenzeilen sehen: BV-Gesamtbetrag,
-    LV-Gesamtbetrag, OG-Gesamtbetrag, Mitglieder-Gesamtbetrag, davon offen / bezahlt.
-39. Als Admin möchte ich die Kassenwart-Übersicht nach Zeitraum (z. B. Kalenderjahr) filtern.
-40. Als Admin möchte ich die Kassenwart-Übersicht als PDF exportieren.
-41. Als Admin möchte ich die Kassenwart-Übersicht als CSV exportieren, damit der Kassenwart
-    sie in Excel weiterverarbeiten kann.
+39. Als Admin möchte ich eine Kassenwart-Übersicht mit allen Positionen aller Bestellungen:
+    Mitglied, Artikel, Bruttobetrag, BV, LV, OG, Mitgliedsanteil, Zahlungsstatus.
+40. Als Admin möchte ich Summenzeilen sehen: BV-Gesamt, LV-Gesamt, OG-Gesamt,
+    Mitglieder-Gesamt, davon offen / bezahlt.
+41. Als Admin möchte ich die Übersicht nach Kalenderjahr filtern.
+42. Als Admin möchte ich die Übersicht als PDF exportieren.
+43. Als Admin möchte ich die Übersicht als CSV exportieren (für Excel).
 
 ### Einsatzstunden-Dashboard
 
-42. Als Admin möchte ich beim Öffnen des Dashboards automatisch alle LifeguardClock-JSON-Dateien
-    aus `/LifeguardClock/` auf der Nextcloud eingelesen bekommen, ohne einen Import-Button
-    drücken zu müssen.
-43. Als Admin möchte ich je Mitglied die Summe der geleisteten Einsatzstunden sehen, wobei
-    die Typen `wachdienst`, `sanitaetsdienst`, `helfer` und `verwaltung` zählen,
-    `anwesenheit` jedoch nicht.
-44. Als Admin möchte ich je Mitglied die offene Stundenschuld aus OG-Förderungen sehen,
-    berechnet als: OG-Förderbetrag (€) ÷ 10 × 3 Stunden.
-45. Als Admin möchte ich sehen, bis wann die Stundenverpflichtung einer Bestellung erfüllt
-    sein muss: 31.12. des Bestelljahres + 1 Kulanzjahr = 31.12. des Folgejahres.
-46. Als Admin möchte ich, dass bei einem Mitglied mit mehreren offenen Sammelbestellungen
-    die geleisteten Stunden zuerst der ältesten Schuld angerechnet werden.
-47. Als Admin möchte ich je Mitglied eine Ampel-Anzeige sehen: grün = Schuld vollständig
-    abgearbeitet, gelb = Frist läuft noch, rot = Frist überschritten und Schuld offen.
-48. Als Admin möchte ich je Mitglied den genauen Stand sehen: geleistete Stunden,
-    benötigte Stunden, Differenz (übrig oder Schuld), Frist.
-49. Als Admin möchte ich Mitglieder ohne OG-Förderung im Dashboard ausblenden können, damit
-    die Ansicht übersichtlich bleibt.
-50. Als Admin möchte ich, dass LifeguardClock-Einträge, deren `nutzer`-Name keinem Mitglied
-    zugeordnet werden kann, als "unbekannte Person" markiert werden, damit ich Datenfehler
-    erkennen kann.
+44. Als Admin möchte ich beim Öffnen des Dashboards automatisch alle LifeguardClock-JSON-Dateien
+    aus `/LifeguardClock/` einlesen, ohne manuellen Import.
+45. Als Admin möchte ich je Mitglied die Summe der geleisteten Einsatzstunden sehen
+    (zählende Typen: wachdienst, sanitaetsdienst, helfer, verwaltung — nicht anwesenheit).
+46. Als Admin möchte ich je Mitglied die offene Stundenschuld aus OG-Förderungen sehen
+    (OG-Betrag € ÷ 10 × 3 Stunden).
+47. Als Admin möchte ich sehen, bis wann die Stundenpflicht erfüllt sein muss:
+    31.12. des Bestelljahres + 1 Kulanzjahr.
+48. Als Admin möchte ich, dass bei mehreren offenen Bestellungen die geleisteten Stunden
+    zuerst der ältesten Schuld angerechnet werden.
+49. Als Admin möchte ich je Mitglied eine Ampel sehen: grün = abgearbeitet, gelb = Frist
+    läuft, rot = Frist überschritten.
+50. Als Admin möchte ich je Mitglied den genauen Stand sehen: geleistete / benötigte
+    Stunden, Differenz, Frist.
+51. Als Admin möchte ich Mitglieder ohne OG-Förderung ausblenden können.
+52. Als Admin möchte ich LifeguardClock-Einträge mit unbekanntem Nutzernamen markiert sehen.
 
 ### Einstellungen
 
-51. Als Admin möchte ich alle OG-Stammdaten in den Einstellungen pflegen: Name, Landesverband,
-    Bezirk, Adresse, E-Mail, Website, IBAN, BIC, Bank, Amtsgericht, Steuernummer,
-    Vorstandsnamen und Finanzverantwortliche.
-52. Als Admin möchte ich den Einsatzstunden-Umrechnungsschlüssel konfigurieren
-    (Standard: 3 Stunden = 10 €), damit eine spätere Änderung kein Code-Update erfordert.
-53. Als Admin möchte ich konfigurieren, welche Einsatztypen für die Stundenpflicht zählen,
-    damit ich Anpassungen ohne Entwickler vornehmen kann.
-54. Als Admin möchte ich die Nextcloud-Zugangsdaten in den Einstellungen ändern können.
-55. Als Admin möchte ich die Einstellungen lokal im Browser-`localStorage` speichern, damit
-    sie nach einem Neustart ohne erneute Eingabe verfügbar sind.
+53. Als Admin möchte ich alle OG-Stammdaten pflegen: Name, LV, Bezirk, Adresse, E-Mail,
+    Website, IBAN, BIC, Bank, Amtsgericht, Steuernummer, Vorstandsnamen, Finanzverantwortliche.
+54. Als Admin möchte ich den Einsatzstunden-Umrechnungsschlüssel konfigurieren
+    (Standard: 3 Stunden = 10 €).
+55. Als Admin möchte ich konfigurieren, welche Einsatztypen für die Stundenpflicht zählen.
+56. Als Admin möchte ich die Nextcloud-Zugangsdaten ändern können.
+57. Als Admin möchte ich die Einstellungen lokal im `localStorage` speichern.
 
-### Fehler- und Leerszustände
+### Fehler- und Leerzustände
 
-56. Als Admin möchte ich bei fehlendem Netzwerk/WebDAV eine klare Fehlermeldung sehen und
-    mit den zuletzt gecachten Daten weiterarbeiten können.
-57. Als Admin möchte ich bei einem fehlerhaften Import-Text eine verständliche Fehlermeldung
-    erhalten, die beschreibt, welche Zeile nicht geparst werden konnte.
-58. Als Admin möchte ich auf jeder leeren Listenseite (kein Artikel, keine Bestellung,
-    keine Rechnung) einen erklärenden Hinweis sehen, was als nächstes zu tun ist.
+58. Als Admin möchte ich bei fehlendem Netzwerk eine klare Fehlermeldung sehen und mit
+    gecachten Daten weiterarbeiten können.
+59. Als Admin möchte ich bei fehlerhaftem Import-Text eine verständliche Fehlermeldung erhalten.
+60. Als Admin möchte ich auf jeder leeren Listenseite einen erklärenden Hinweis sehen.
 
 ---
 
@@ -196,47 +201,52 @@ gleiche Namen). Sie ist die einzige Quelle der Wahrheit für Personen in beiden 
 
 **`artikel.json`** — Array von Artikeln:
 ```
-id            string   — UUID, intern generiert
-artikelNr     string   — Artikel-Nr. aus Materialstelle (z.B. "29510012")
-name          string
-einzelpreis   number   — Bruttobetrag in €
-netto         number   — Nettobetrag (exkl. MwSt.)
-bvFoerderung  number   — € pro Stück, 0 wenn keine Förderung
-lvFoerderung  number   — € pro Stück, 0 wenn keine Förderung
-ogFoerderung  number   — € pro Stück, 0 wenn keine OG-Förderung
-ogUebernimmtRest boolean — true = ogFoerderung wird als (preis − bv − lv) berechnet
+id              string   — UUID, intern generiert
+artikelNr       string   — Artikel-Nr. aus Materialstelle (z.B. "18507110")
+variante        string   — Größe/Variante-Code (z.B. "XL", "MAGNET", "46") oder ""
+name            string   — Produktname ohne Größe
+einzelpreis     number   — Bruttobetrag in €
+bvFoerderung    number   — € pro Stück, 0 wenn keine Förderung
+lvFoerderung    number   — € pro Stück, 0 wenn keine Förderung
+ogFoerderung    number   — € pro Stück, 0 wenn keine OG-Förderung
+ogUebernimmtRest boolean — true = og = (preis − bv − lv)
 ```
+Deduplizierung: `artikelNr + variante` (= ein Katalogeintrag pro Größe/Variante).
 
 **`bestellungen.json`** — Array von Sammelbestellungen:
 ```
 id            string
-datum         string   — ISO-Datum der Bestellung
-bezeichnung   string   — frei wählbarer Name
-status        enum     — "offen" | "abgeschlossen"
-positionen[]
-  id              string
-  artikelNr       string
-  name            string
-  menge           number   — Gesamtmenge dieser Zeile
-  einzelpreis     number
-  bvFoerderung    number   — pro Stück
-  lvFoerderung    number
-  ogFoerderung    number   — pro Stück (berechnet)
-  typ             enum     — "artikel" | "og-kosten"
-  zuweisung[]
-    mitgliedId    string
-    menge         number
-    ogAnteil      number   — OG zahlt diesen Betrag
-    mitgliedsAnteil number — Mitglied zahlt diesen Betrag
+datum         string    — ISO-Datum (Bestelldatum Phase 1)
+bezeichnung   string
+status        enum      — "sammlung" | "bestellt" | "abgeschlossen"
+wuensche[]              — Phase 1: Mitgliederwünsche
+  id          string
+  mitgliedId  string
+  artikelNr   string
+  variante    string
+  name        string
+  menge       number
+positionen[]            — Phase 2: aus Rechnungsimport (nach Abgleich)
+  id          string
+  artikelNr   string
+  variante    string
+  name        string
+  menge       number
+  einzelpreis number
+  bvFoerderung number
+  lvFoerderung number
+  ogFoerderung number
+  typ         enum      — "artikel" | "og-kosten"
+  wunschId    string    — Referenz auf den gematchten Wunsch (oder null)
 rechnungen[]
-  id              string
-  nummer          string   — "R_YYYY_MM_NNN"
-  datum           string
-  mitgliedId      string
-  positionen[]   — snapshot der zugewiesenen Positionen für dieses Mitglied
-  gesamtbetrag    number
-  bezahlt         boolean
-  bezahltDatum    string | null
+  id          string
+  nummer      string    — "R_YYYY_MM_NNN"
+  datum       string
+  mitgliedId  string
+  positionen[]          — Snapshot der zugewiesenen Positionen
+  gesamtbetrag number
+  bezahlt     boolean
+  bezahltDatum string | null
 ```
 
 **`einstellungen.json`**:
@@ -244,88 +254,84 @@ rechnungen[]
 og{}           — alle OG-Stammdaten (Name, Adresse, IBAN, ...)
 stundenRate{}  — { stunden: 3, euro: 10 }
 einsatztypen[] — z.B. ["wachdienst", "sanitaetsdienst", "helfer", "verwaltung"]
-nextcloud{}    — { url, user, pass }
+mitglieder[]   — [{ id, name }] — importiert aus Stempeluhr config.js
+nc{}           — { url, user, pass }
 ```
 
 ### Import-Parser
 
-Der Parser verarbeitet Tab-getrennten Text zeilenweise in einer einzigen Funktion ohne
-Seiteneffekte (`parseBestellung(text) → { artikel[], ogKosten[] }`). Priorität: robust
-gegen fehlende Spalten und inkonsistente Whitespace-Formatierung. BV/LV-Zeilen werden dem
-unmittelbar vorherigen Artikel-Eintrag zugeordnet. Artikel-Gruppen mit Menge 0 werden
-vollständig übersprungen (inkl. zugehöriger MITTELVERW.-Zeilen).
+Drei Formate, automatisch erkannt (`parseBestellung(text)`):
+
+1. **Produktdetailseite** (enthält `Artikelnummer: XXXXXXXX`):
+   - Name aus letzter Titelzeile vor Artikelnummer
+   - Varianten aus eingerückter Zeile zwischen Artikelnummer und "Beschreibung"
+   - `Dein Preis:` oder `Preis ab:` → einzelpreis
+   - `Mittelverwendung Bundesverband...` → bvFoerderung
+   - `Mittelverwendung LV...` → lvFoerderung
+   - Gibt einen Artikel pro Variante zurück
+
+2. **Auftragsbestätigung mehrzeilig** (Preis-Zeilen allein mit €-Zeichen):
+   - State machine: Artikelzeile + 3 Preiszeilen (Einzelpreis, Netto, Summe)
+   - MITTELVERW. BV / LV → Förderung für vorherigen Artikel
+   - VERSANDKOSTEN / EILAUFTRAG → ogKosten[]
+
+3. **Tab-Format** (Tab-getrennte Spalten):
+   - Für Tests und saubere Exporte
+
+### CSV-Export (Phase 1)
+
+Format: `artikelNr,variante,menge` — eine Zeile pro aggregierter Artikel+Variante-Kombination
+(Summe über alle Mitgliederwünsche). Groß/Kleinschreibung der Variante wie im Katalog gespeichert
+(Materialstelle erwartet Großschreibung — wird beim Speichern normiert).
+
+### Abgleich (Phase 2)
+
+Match-Schlüssel: `artikelNr + variante`. Algorithmus:
+- Für jede Rechnungsposition: suche Wunsch mit gleichem Schlüssel
+- Menge stimmt → direkt zuweisen
+- Menge weicht ab → Review-Flag
+- Keine Wunsch-Entsprechung → Review-Flag "nicht bestellt"
+- Wunsch ohne Rechnungsposition → Review-Flag "nicht geliefert"
 
 ### Förderberechnung
 
-Reine Rechenfunktion (`berechneFoerderung(artikel, menge) → { bv, lv, og, mitglied }`),
-die für eine gegebene Menge alle Anteile berechnet. `ogUebernimmtRest: true` setzt
-`og = einzelpreis − bv − lv`. Ergebnis ist stets auf 2 Dezimalstellen gerundet
-(kaufmännische Rundung).
+`berechneFoerderung(artikel, menge) → { bv, lv, og, mitglied, gesamt }`.
+`ogUebernimmtRest: true` → `og = einzelpreis − bv − lv`. Auf 2 Dezimalstellen gerundet.
 
 ### Einsatzstunden-Berechnung
 
-Funktion `berechneStunden(logEntries[], einsatztypen[]) → Map<mitgliedId, stunden>`.
-Summiert `dauer_ms` aller Stop-Events der erlaubten Typen und rechnet in Stunden um.
-Matching: `nutzer`-Feld (Vollname) → ID-Lookup über Mitgliederliste. Nicht zuordenbare
-Namen werden in einer separaten Liste "unbekannt" gesammelt.
-
-Stundenschuld-Verrechnung: `verechneSchuld(mitgliedId, bestellungen[], geleisteteStunden)`
-→ iteriert chronologisch über Bestellungen, tilgt älteste Schuld zuerst.
+`berechneStunden(logEntries[], einsatztypen[]) → Map<mitgliedId, stunden>`.
+Schulden-Verrechnung: `verechneSchuld(mitgliedId, bestellungen[], geleisteteStunden)`
+→ chronologisch, älteste Schuld zuerst.
 
 ### PDF-Erzeugung
 
-Im Browser via `jsPDF` (keine serverseitige Abhängigkeit). Das Layout orientiert sich exakt
-an der Vorlage `R_2025_07_001_Kammler.pdf`. Rechnungen werden als Datei-Download
-bereitgestellt; kein automatisches Speichern auf Nextcloud (Download lokal).
+Im Browser via `jsPDF`. Layout nach Vorlage `R_2025_07_001_Kammler.pdf`.
+Rechnung zeigt: Mitgliedsanteil (nach Förderabzug) + erwartete Einsatzstunden für OG-Anteil.
 
 ### Rechnungsnummerierung
 
-Format `R_YYYY_MM_NNN`. Der aktuelle Höchstzähler je Monat wird aus der Liste aller
-existierenden Rechnungsnummern in `bestellungen.json` berechnet — kein separater Counter
-im Schema. Dadurch ist die Nummerierung stets konsistent mit den gespeicherten Daten.
+Format `R_YYYY_MM_NNN`. Höchstzähler wird aus allen existierenden Rechnungsnummern berechnet.
 
 ### WebDAV-Client
 
-Ein schlankes Modul (`webdav.js`) kapselt alle PROPFIND/GET/PUT-Requests gegen die Nextcloud.
-Alle anderen Module sprechen ausschließlich durch dieses Modul mit Nextcloud. Fehler werden
-als strukturierte Objekte zurückgegeben, nicht als Exceptions, damit die UI sauber reagieren kann.
-
-### Offline / Service Worker
-
-Ein Service Worker cached alle App-Ressourcen (HTML, JS, CSS, Bibliotheken) beim ersten Laden.
-Daten aus der letzten erfolgreichen WebDAV-Antwort werden im `localStorage` als Fallback
-gecacht. Bei Offline-Betrieb arbeitet die App mit dem Cache und zeigt einen Offline-Banner.
+`createWebDavClient(creds, fetchFn)` — Factory-Pattern für Testbarkeit. Alle Fehler als
+strukturierte Objekte (`{ ok: false, error }`), keine Exceptions.
 
 ---
 
 ## Testing Decisions
 
-Tests prüfen **externes Verhalten durch öffentliche Funktionen** — sie sollen Refactorings
-überleben, ohne angepasst werden zu müssen. DOM-Manipulation und WebDAV-Aufrufe werden nicht
-direkt getestet.
+Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Refactorings.
 
 **Prioritäre Testbereiche:**
 
-1. **Import-Parser** — `parseBestellung(text)`: Eingabe ist Roh-Text, Ausgabe ist das
-   geparste Datenmodell. Testfälle: normaler Import, fehlende LV-Zeile, Menge-0-Artikel,
-   Versandkosten, mehrere Artikel hintereinander, fehlerhafter Text.
-
-2. **Förderberechnung** — `berechneFoerderung(artikel, menge)`: Zahlentests mit
-   Grenzfällen (ogUebernimmtRest, kein OG-Anteil, Menge > 1, Rundung).
-
-3. **Stunden-Matching** — `berechneStunden(logEntries, einsatztypen)`: Eingabe sind
-   LifeguardClock-JSON-Entries, Ausgabe ist Stundensumme je Mitglied.
-   Testfälle: anwesenheit wird nicht gezählt, mehrere Typen für ein Mitglied,
-   unbekannter Nutzername.
-
-4. **Schulden-Verrechnung** — `verechneSchuld(...)`: chronologische Tilgungsreihenfolge,
-   Teilerfüllung, keine Schuld vorhanden.
-
-5. **Rechnungsnummerierung** — `naechsteRechnungsnummer(rechnungen[], datum)`:
-   Monatsreset, erster des Monats, fortlaufende Zählung.
-
-Testdatei: `tests/unit.js` — einfache `assert`-basierte Tests ohne Testframework,
-konsistent mit dem Stempeluhr-Repo-Stil.
+1. **Import-Parser** — alle drei Formate, LV-Erkennung, Variantenzeile, Menge-0, ogKosten
+2. **Förderberechnung** — ogUebernimmtRest, Rundung, Menge > 1
+3. **Abgleich** — Match, Mengenabweichung, nicht bestellt, nicht geliefert
+4. **Stunden-Matching** — anwesenheit nicht zählen, unbekannte Nutzer
+5. **Schulden-Verrechnung** — chronologische Tilgung, Teilerfüllung
+6. **Rechnungsnummerierung** — Monatsreset, fortlaufend
 
 ---
 
@@ -343,14 +349,12 @@ konsistent mit dem Stempeluhr-Repo-Stil.
 
 ## Further Notes
 
-- **Offene Fragen aus Discovery:** (1) Parser-Robustheit bei Formatvarianten — Empfehlung:
-  Parser so robust wie möglich bauen, da das Quelldokument-Format leicht variiert.
-  (2) PDF-Ablage auf Nextcloud — zunächst nur lokaler Download, Nextcloud-Ablage als
-  optionale Erweiterung. (3) Mitglieder die austreten — Stundenschuld bleibt im System
-  als "offen" bestehen; kein automatisierter Löschmechanismus im MVP.
-- **OG-Stammdaten für Rechnung** (aus PDF-Vorlage übernommen): Landesverband Baden,
-  Bezirk Enz, OG-Schellbronn e.V., Nagoldstr. 47, 75242 Neuhausen,
-  IBAN DE57 6619 0000 0033 5861 08, BIC GENODE61KA1, Volksbank pur eG,
-  Amtsgericht Mannheim 501097, Steuernr. 41435/55802.
-- **Stempeluhr-Referenz:** `C:\GitHub\Stempeluhr\stempeluhr\` — Code-Stil, WebDAV-Pattern
-  und SW-Implementierung als Vorlage verwenden.
+- **OG-Stammdaten für Rechnung:** Landesverband Baden, Bezirk Enz, OG-Schellbronn e.V.,
+  Nagoldstr. 47, 75242 Neuhausen, IBAN DE57 6619 0000 0033 5861 08, BIC GENODE61KA1,
+  Volksbank pur eG, Amtsgericht Mannheim 501097, Steuernr. 41435/55802.
+- **Stempeluhr-Referenz:** `C:\GitHub\Stempeluhr\stempeluhr\` — Code-Stil und WebDAV-Pattern.
+- **Parser-Robustheit:** Format der Materialstelle-Seite kann variieren — Parser wird
+  laufend mit neuen Beispielen trainiert.
+- **NC-Sync-Strategie:** localStorage ist primärer Cache. NC wird beim Laden gelesen
+  (nur wenn nicht leer) und beim Speichern geschrieben. Lokale Daten verlieren nie gegen
+  ein leeres NC-Ergebnis.
