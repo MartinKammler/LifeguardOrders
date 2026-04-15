@@ -262,10 +262,10 @@ function parseProduktseite(text) {
  * oder Produktdetailseite der DLRG-Materialstelle.
  *
  * @param {string} text
- * @returns {{ artikel[], ogKosten[], fehler[] }}
+ * @returns {{ artikel[], ogKosten[], fehler[], warnings[], errors[] }}
  */
 export function parseBestellung(text) {
-  if (!text || !text.trim()) return { artikel: [], ogKosten: [], warnings: [], errors: ['Kein Text übergeben'] };
+  if (!text || !text.trim()) return { artikel: [], ogKosten: [], fehler: [], warnings: [], errors: ['Kein Text übergeben'] };
   // Produktdetailseite: enthält "Artikelnummer: XXXXXXXX"
   if (/Artikelnummer:\s*\d+/.test(text)) return parseProduktseite(text);
   // Auftragsbestätigung mehrzeilig: Preis-Zeilen allein
