@@ -21,6 +21,8 @@ assert('validateWunsch: fehler bei Dezimalmenge', validateWunsch({ mitgliedId: '
 // validatePosition
 assert('validatePosition: ok bei gültiger Position', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: 9.99 }).ok === true);
 assert('validatePosition: fehler bei menge 0', validatePosition({ artikelNr: '12345', menge: 0, einzelpreis: 9.99 }).ok === false);
+assert('validatePosition: fehler bei negativer menge', validatePosition({ artikelNr: '12345', menge: -1, einzelpreis: 9.99 }).ok === false);
+assert('validatePosition: fehler bei Dezimalmenge', validatePosition({ artikelNr: '12345', menge: 1.5, einzelpreis: 9.99 }).ok === false);
 assert('validatePosition: fehler bei negativem Preis', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: -1 }).ok === false);
 assert('validatePosition: ok bei Preis 0', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: 0 }).ok === true);
 

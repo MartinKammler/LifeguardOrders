@@ -21,7 +21,8 @@ export function validateWunsch(w) {
 
 export function validatePosition(p) {
   if (!p.artikelNr || !String(p.artikelNr).trim()) return err('artikelNr darf nicht leer sein');
-  if (typeof p.menge !== 'number' || p.menge <= 0) return err('menge muss positiv sein');
+  if (typeof p.menge !== 'number' || !Number.isInteger(p.menge) || p.menge <= 0)
+    return err('menge muss eine positive ganze Zahl sein');
   if (typeof p.einzelpreis !== 'number' || p.einzelpreis < 0) return err('einzelpreis darf nicht negativ sein');
   return OK;
 }
