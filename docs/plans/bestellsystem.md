@@ -5,7 +5,7 @@
 | Entscheidung | Festlegung |
 |---|---|
 | **Seitenstruktur** | Eine HTML-Datei pro Seite (kein SPA-Router), konsistent mit Stempeluhr |
-| **JS-Module** | Pro Seite eine `*-app.js`; geteilte Logik in: `webdav.js`, `parser.js`, `berechnung.js`, `mitglieder.js`, `pdf.js` |
+| **JS-Module** | Pro Seite eine `*-app.js`; geteilte Logik in: `webdav.js`, `parser.js`, `berechnung.js`, `mitglieder.js`, `pdf.js`, `sammlung.js`, `abgleich.js`, `stunden.js`, `defaults.js` |
 | **Datenhaltung** | JSON-Dateien auf Nextcloud: `artikel.json`, `bestellungen.json`, `einstellungen.json` |
 | **Offline-Cache** | `localStorage` als Lese-Fallback (lokale Daten verlieren nie gegen leeres NC-Ergebnis); Service Worker für statische Assets |
 | **WebDAV** | Alle NC-Zugriffe laufen durch `webdav.js`; Fehler als strukturierte Objekte, keine Exceptions; Factory-Pattern für Testbarkeit |
@@ -31,93 +31,71 @@
 
 ---
 
-## Phase 2 — Sammelbestellung: Sammlung & CSV-Export
+## Phase 2 — Sammelbestellung: Sammlung & CSV-Export ✅ ABGESCHLOSSEN
 
 **Ziel:** Admin erfasst Mitgliederwünsche, sieht die aggregierte Bestellmenge und exportiert
 die CSV-Liste für das Materialstelle-Bestellformular.
 
 **Stories:** 16–22
 
-**Wird möglich nach Phase 2:**
-- Mitgliederwünsche je Bestellung erfassen (Mitglied + Artikel + Variante + Menge)
-- Aggregierte Ansicht: wie viel von was insgesamt bestellt wird
-- CSV-Export im Format `artikelNr,variante,menge` für Materialstelle
+**Erreicht:**
+- `src/sammlung.js`: `aggregiereWuensche`, `exportiereCSV`, `validiereWunsch` (mit Tests)
+- `bestellungen.html`: Übersicht mit Phase, Anzahl Wünsche, "Wieder öffnen"-Button
+- `bestellung-sammeln.html`: Wünsche erfassen, aggregierte Tabelle, CSV-Export
+- `bestellung-neu.html`: eigene Seite zum Anlegen einer Sammelbestellung (zusätzlich)
 
-**Acceptance Criteria:**
-- Neue Sammelbestellung mit Datum und Bezeichnung anlegen
-- Wunscheintrag: Mitglied-Dropdown + Artikel-Suche aus Katalog (mit Variante) + Menge
-- Aggregierte Tabelle zeigt Gesamtmengen je Artikel+Variante
-- "CSV kopieren"-Button erzeugt fertige Liste
-- Wünsche nachträglich bearbeiten/löschen möglich (solange Status "sammlung")
-- Bestellungen-Übersicht zeigt Phase und Anzahl Wünsche
-
-**Seiten:** `bestellung-sammeln.html` + `bestellungen.html` (angepasst)
+**Seiten:** `bestellung-neu.html` + `bestellung-sammeln.html` + `bestellungen.html`
 
 ---
 
-## Phase 3 — Sammelbestellung: Eingang & Abgleich
+## Phase 3 — Sammelbestellung: Eingang & Abgleich ✅ ABGESCHLOSSEN
 
 **Ziel:** Admin importiert die Materialstelle-Rechnung, gleicht sie mit den Wünschen ab
 und löst Abweichungen auf.
 
 **Stories:** 23–29
 
-**Wird möglich nach Phase 3:**
-- Rechnungsimport direkt in die Bestellung
-- Automatischer Abgleich Rechnung ↔ Wünsche nach artikelNr + variante
-- Review-Ansicht für Abweichungen (zu viel, zu wenig, nicht bestellt)
-- Manuelle Korrektur von Abweichungen
-
-**Acceptance Criteria:**
-- Rechnungstext einfügen → Parser liefert Positionen
-- Automatischer Match nach artikelNr + variante
-- Abweichungen visuell markiert und einzeln auflösbar
-- OG-Kosten (Versand, Eilauftrag) sichtbar aber nicht zuweisbar
-- Status wechselt nach Abgleich auf "abgeschlossen"-bereit
+**Erreicht:**
+- `src/abgleich.js`: `gleiche_ab` (Match, Mengenabweichung, nicht bestellt, nicht geliefert, OG-Kosten) mit Tests
+- `bestellung-abgleich.html`: Rechnungsimport, Abgleich-UI, Review, Zuweisung, OG-Kosten-Ansicht
+- Zusatz: "Wünsche direkt übernehmen" für Artikel ohne externe Rechnung (z.B. Lehrgänge)
+- Zusatz: "Bestellung wieder öffnen" setzt Status zurück
 
 **Seiten:** `bestellung-abgleich.html`
 
 ---
 
-## Phase 4 — Rechnungen & Zahlungsverfolgung
+## Phase 4 — Rechnungen & Zahlungsverfolgung ✅ ABGESCHLOSSEN
 
 **Ziel:** Admin erzeugt PDF-Rechnungen je Mitglied und verfolgt Zahlungen.
 
 **Stories:** 30–38
 
-**Wird möglich nach Phase 4:**
-- PDF-Rechnung im OG-Layout mit Mitgliedsanteil und erwarteten Einsatzstunden
-- Rechnungsübersicht mit Zahlungsstatus
-- Rechnung als bezahlt/offen markieren
-
-**Acceptance Criteria:**
-- PDF entspricht Layout der Vorlage `R_2025_07_001_Kammler.pdf`
-- Rechnungsnummern lückenlos (R_YYYY_MM_NNN)
-- Rechnung zeigt Mitgliedsanteil nach Förderabzug + erwartete Stunden
-- Rechnungsübersicht filterbar nach offen/bezahlt und Mitglied
-- Offener Gesamtbetrag sichtbar
+**Erreicht:**
+- `src/pdf.js`: `erstelleRechnungsDaten`, `druckePDF` via jsPDF
+- `rechnungen.html`: Rechnungsübersicht mit Statistik-Karten, PDF-Download, Zahlungsstatus
+- Zahlungsfrist: 30 Tage ab Rechnungsdatum
 
 **Seiten:** `rechnungen.html`
 
 ---
 
-## Phase 5 — Kassenwart-Übersicht & Dashboard
+## Phase 5 — Kassenwart-Übersicht & Dashboard ✅ ABGESCHLOSSEN
 
 **Ziel:** Vollständige Unterlagen für die Kasse + Einsatzstunden-Tracking.
 
 **Stories:** 39–52
 
-**Wird möglich nach Phase 5:**
-- Kassenwart-Tabelle: wer hat was bekommen, was wurde wie gefördert
-- PDF- und CSV-Export
-- Dashboard: Stunden-Ampel je Mitglied
-
-**Acceptance Criteria:**
-- Kassenwart-Tabelle mit Förderanteilen und Zahlungsstatus je Mitglied
-- Summenzeilen: BV/LV/OG/Mitglieder-Gesamt, offen/bezahlt
-- CSV- und PDF-Export funktionsfähig
-- Dashboard liest LifeguardClock-JSONs automatisch
-- Ampel grün/gelb/rot, chronologische Tilgung
-- Unbekannte Nutzernamen markiert
+**Erreicht:**
+- `src/stunden.js`: `berechneStunden`, `verechneSchuld`, `ampelStatus`, `schuldFrist` mit Tests
+- `kassenwart.html`: Tabelle mit Förderanteilen, Summenzeilen, Jahresfilter, CSV/PDF-Export
+- `dashboard.html`: Ampel-Karten je Mitglied, automatischer LifeguardClock-Import, Ausblenden ohne OG-Schuld
 
 **Seiten:** `kassenwart.html`, `dashboard.html`
+
+---
+
+## Nachträgliche Erweiterungen (nach Sprint 05)
+
+- **Lehrgänge als Artikel** in `data/artikel.json`: 16 Einträge (8 Lehrgänge × Mitglied/Nichtmitglied, Präfix `LG-`)
+- **Mitglieder-Import JSON-Format** (`src/mitglieder.js`): Parser erkennt jetzt auch JSON-Schlüssel in Anführungszeichen (`"id": "value"`) zusätzlich zum JS-Literal-Format (`id: 'value'`)

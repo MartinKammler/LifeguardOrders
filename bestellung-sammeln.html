@@ -119,7 +119,6 @@
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html" class="active">Bestellungen</a>
-  <a href="artikel.html">Artikel</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
@@ -159,7 +158,7 @@
     <!-- Hinweis: kein Artikel -->
     <div id="hinweis-kein-artikel" class="hinweis hinweis-warn" style="display:none">
       Kein Artikel im Katalog gefunden.
-      <a href="artikel.html" style="color:inherit;text-decoration:underline">Bitte zuerst Artikel importieren.</a>
+      <a href="einstellungen.html" style="color:inherit;text-decoration:underline">Bitte zuerst Artikel importieren (Einstellungen → Artikelkatalog).</a>
     </div>
 
     <div id="wunsch-formular">
@@ -424,7 +423,8 @@ function befuelleSelects() {
   } else {
     hinweisMitglied.style.display = 'none';
     selMitglied.innerHTML = '<option value="">– bitte wählen –</option>' +
-      mitglieder.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+      [...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+        .map(m => `<option value="${m.id}">${m.name}</option>`).join('');
   }
 
   // Artikel
@@ -519,7 +519,7 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     id,
     datum,
     bezeichnung,
-    status:    'sammlung',
+    status:    bestehendeIdx >= 0 ? (bestellungen[bestehendeIdx].status || 'sammlung') : 'sammlung',
     wuensche,
     positionen: bestehendeIdx >= 0 ? (bestellungen[bestehendeIdx].positionen || []) : [],
     rechnungen: bestehendeIdx >= 0 ? (bestellungen[bestehendeIdx].rechnungen  || []) : [],

@@ -100,7 +100,6 @@
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html" class="active">Bestellungen</a>
-  <a href="artikel.html">Artikel</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
@@ -138,15 +137,17 @@
 
   <!-- Card: Rechnungsimport -->
   <div class="card card-hidden" id="card-import">
-    <p class="section-label">Rechnung importieren</p>
+    <p class="section-label">Rechnung / Bestätigung importieren</p>
     <p class="text-sm" style="color:var(--text-2);margin-bottom:10px">
       Auftragsbestätigung der DLRG-Materialstelle einfügen (Tab-Format oder mehrzeiliges Format).
     </p>
     <div class="rechnung-import">
       <textarea id="inp-rechnung" placeholder="Rechnungstext hier einfügen…"></textarea>
     </div>
-    <div class="mt-8 flex gap-8" style="align-items:center">
+    <div class="mt-8 flex gap-8" style="align-items:center;flex-wrap:wrap">
       <button class="btn btn-primary btn-sm" id="btn-parsen">Abgleich starten</button>
+      <span style="color:var(--text-2);font-size:.8rem">oder</span>
+      <button class="btn btn-ghost btn-sm" id="btn-direkt-uebernehmen" title="Für Lehrgänge und interne Buchungen ohne externe Rechnung">Wünsche direkt übernehmen</button>
       <span id="parse-fehler" class="text-sm" style="color:var(--red);display:none"></span>
     </div>
   </div>
@@ -197,17 +198,39 @@
     <a class="btn btn-ghost" href="bestellungen.html">Zurück</a>
     <button class="btn btn-primary" id="btn-abschliessen" disabled>Bestellung abschließen</button>
   </div>
+
+  <!-- Card: Positionen (abgeschlossen-Ansicht) -->
+  <div class="card card-hidden" id="card-positionen">
+    <p class="section-label">Positionen</p>
+    <div id="positionen-inhalt"></div>
+  </div>
+
+  <!-- Card: Rechnungen erzeugen -->
+  <div class="card card-hidden" id="card-rechnungen">
+    <p class="section-label">Rechnungen</p>
+    <div id="rechnungen-inhalt"></div>
+    <div class="flex gap-8 mt-16" style="align-items:center;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" id="btn-alle-rechnungen">Alle Rechnungen erzeugen</button>
+      <a class="btn btn-ghost btn-sm" href="rechnungen.html">Rechnungsübersicht →</a>
+      <span id="rechnungen-status"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-ghost btn-sm" id="btn-wieder-oeffnen" style="color:var(--amber)">Bestellung wieder öffnen</button>
+    </div>
+  </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="module">
-import { parseBestellung }   from './src/parser.js';
-import { aggregiereWuensche } from './src/sammlung.js';
-import { gleiche_ab }         from './src/abgleich.js';
-import { createWebDavClient } from './src/webdav.js';
+import { parseBestellung }                  from './src/parser.js';
+import { aggregiereWuensche }               from './src/sammlung.js';
+import { gleiche_ab }                       from './src/abgleich.js';
+import { createWebDavClient }               from './src/webdav.js';
+import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_E = 'lo_einstellungen';
+const STORAGE_KEY_A = 'lo_artikel';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
@@ -215,6 +238,8 @@ let bestellungen  = [];
 let bestellung    = null;
 let client        = null;
 let mitglieder    = [];
+let artikelListe  = [];
+let einstellungen = null;
 
 // Abgleich-Ergebnis + Auflösungs-Status
 let abgleichResult = null;
@@ -482,6 +507,171 @@ function bauePositionen() {
   return positionen;
 }
 
+/* ── Abgeschlossen: Positionen & Rechnungen ─────────────────── */
+
+function betroffeneMitgliederIds() {
+  const ids = new Set();
+  for (const p of (bestellung.positionen || [])) {
+    if (p.typ === 'og-kosten') continue;
+    for (const z of (p.zuweisung || [])) {
+      if (z.menge > 0) ids.add(z.mitgliedId);
+    }
+  }
+  return [...ids];
+}
+
+function alleRechnungenAusAllenBestellungen() {
+  return bestellungen.flatMap(b => b.rechnungen || []);
+}
+
+function renderPositionenCard() {
+  const el = document.getElementById('positionen-inhalt');
+  const positionen = (bestellung.positionen || []).filter(p => p.typ !== 'og-kosten');
+  const ogKosten   = (bestellung.positionen || []).filter(p => p.typ === 'og-kosten');
+
+  if (!positionen.length) {
+    el.innerHTML = '<p class="text-sm">Keine Artikel-Positionen gespeichert.</p>';
+    return;
+  }
+
+  const rows = positionen.map(p => {
+    const zuwHtml = (p.zuweisung || [])
+      .filter(z => z.menge > 0)
+      .map(z => `<span>${mitgliedName(z.mitgliedId)} ×${z.menge}</span>`)
+      .join(' ');
+    return `
+      <tr>
+        <td>${p.name}${p.variante ? ' <span class="badge badge-blue">' + p.variante + '</span>' : ''}</td>
+        <td style="text-align:right">${p.menge}</td>
+        <td class="zuweisung-liste">${zuwHtml}</td>
+      </tr>`;
+  }).join('');
+
+  let ogHtml = '';
+  if (ogKosten.length) {
+    const ogRows = ogKosten.map(k => `
+      <tr>
+        <td>${k.name}</td>
+        <td style="text-align:right">${k.menge}</td>
+        <td class="zuweisung-liste" style="color:var(--blue)">OG</td>
+      </tr>`).join('');
+    ogHtml = ogRows;
+  }
+
+  el.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Artikel</th>
+          <th style="text-align:right">Menge</th>
+          <th>Zuweisung</th>
+        </tr>
+      </thead>
+      <tbody>${rows}${ogHtml}</tbody>
+    </table>`;
+}
+
+function renderRechnungenCard() {
+  const el          = document.getElementById('rechnungen-inhalt');
+  const ids         = betroffeneMitgliederIds();
+  const vorhanden   = bestellung.rechnungen || [];
+
+  if (!ids.length) {
+    el.innerHTML = '<p class="text-sm">Keine Mitglieder mit Positionszuweisung gefunden.</p>';
+    document.getElementById('btn-alle-rechnungen').disabled = true;
+    return;
+  }
+
+  const rows = ids.map(mid => {
+    const name    = mitgliedName(mid);
+    const rechnung = vorhanden.find(r => r.mitgliedId === mid);
+    let aktionenHtml;
+    if (rechnung) {
+      aktionenHtml = `
+        <span class="badge badge-blue" style="margin-right:6px">${rechnung.nummer}</span>
+        <button class="btn btn-ghost btn-sm" data-pdf-id="${rechnung.id}">PDF</button>`;
+    } else {
+      aktionenHtml = `<button class="btn btn-primary btn-sm" data-erzeugen-id="${mid}">Rechnung erzeugen</button>`;
+    }
+    const betragsHtml = rechnung
+      ? `<td style="text-align:right">${eur(rechnung.gesamtbetrag)}</td>`
+      : `<td style="text-align:right;color:var(--text-2)">–</td>`;
+    const stundenHtml = rechnung
+      ? `<td style="text-align:right">${rechnung.erwartetEinsatzstunden > 0 ? rechnung.erwartetEinsatzstunden + ' Std.' : '–'}</td>`
+      : `<td></td>`;
+    return `
+      <tr>
+        <td>${name}</td>
+        ${betragsHtml}
+        ${stundenHtml}
+        <td style="text-align:right;white-space:nowrap">${aktionenHtml}</td>
+      </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Mitglied</th>
+          <th style="text-align:right">Eigenanteil</th>
+          <th style="text-align:right">Stunden</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  // PDF-Buttons
+  el.querySelectorAll('[data-pdf-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const rechnung = (bestellung.rechnungen || []).find(r => r.id === btn.dataset.pdfId);
+      if (rechnung) druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen);
+    });
+  });
+
+  // Einzeln erzeugen
+  el.querySelectorAll('[data-erzeugen-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const mid = btn.dataset.erzeugenId;
+      await erzeugeRechnungFuerMitglied(mid);
+      renderRechnungenCard();
+    });
+  });
+
+  // Alle-Button: nur aktiv wenn noch welche fehlen
+  const alleErzeugt = ids.every(mid => vorhanden.some(r => r.mitgliedId === mid));
+  document.getElementById('btn-alle-rechnungen').disabled = alleErzeugt;
+  document.getElementById('btn-alle-rechnungen').textContent = alleErzeugt
+    ? 'Alle Rechnungen vorhanden'
+    : 'Alle Rechnungen erzeugen';
+}
+
+async function erzeugeRechnungFuerMitglied(mitgliedId) {
+  const alleRechnungen = alleRechnungenAusAllenBestellungen();
+  const rechnung = erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, artikelListe, alleRechnungen);
+  if (!rechnung) return;
+
+  const idx = bestellungen.findIndex(b => b.id === bestellung.id);
+  if (idx < 0) return;
+
+  bestellungen[idx].rechnungen = [...(bestellungen[idx].rechnungen || []), rechnung];
+  bestellung = bestellungen[idx];
+
+  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+
+  druckePDF(rechnung, mitgliedName(mitgliedId), einstellungen);
+}
+
+function zeigeStatus(text, art = 'info') {
+  const el = document.getElementById('rechnungen-status');
+  if (!el) return;
+  const klassen = { ok: 'badge badge-green', error: 'badge badge-red',
+                    info: 'badge badge-blue', warn: 'badge badge-amber' };
+  el.className = klassen[art] || klassen.info;
+  el.textContent = text;
+}
+
 /* ── Parsen & Abgleich ───────────────────────────────────────── */
 document.getElementById('btn-parsen').addEventListener('click', () => {
   const text    = document.getElementById('inp-rechnung').value.trim();
@@ -521,6 +711,45 @@ document.getElementById('btn-parsen').addEventListener('click', () => {
   renderAbgleich();
 });
 
+/* ── Wünsche direkt übernehmen (ohne externe Rechnung) ──────── */
+document.getElementById('btn-direkt-uebernehmen').addEventListener('click', () => {
+  const wuensche = bestellung.wuensche || [];
+  if (!wuensche.length) {
+    const fehlerEl = document.getElementById('parse-fehler');
+    fehlerEl.textContent = 'Keine Wünsche in dieser Bestellung.';
+    fehlerEl.style.display = 'inline';
+    return;
+  }
+
+  aufgeloest.clear();
+  document.getElementById('parse-fehler').style.display = 'none';
+
+  // Aggregierte Wünsche als Positionen — Einzelpreise aus Artikelkatalog
+  const aggregiert = aggregiereWuensche(wuensche);
+  const positionen = aggregiert.map(w => {
+    const artikel = artikelListe.find(
+      a => a.artikelNr === w.artikelNr && (a.variante || '') === (w.variante || '')
+    );
+    return {
+      artikelNr:    w.artikelNr,
+      variante:     w.variante || '',
+      name:         w.name,
+      menge:        w.menge,
+      einzelpreis:  artikel?.einzelpreis  ?? 0,
+      bvFoerderung: artikel?.bvFoerderung ?? 0,
+      lvFoerderung: artikel?.lvFoerderung ?? 0,
+      typ:          'artikel',
+    };
+  });
+
+  // Gleiche_ab mit identischen Wünschen → alles matched
+  abgleichResult = gleiche_ab(aggregiert, positionen);
+
+  document.getElementById('card-ergebnis').classList.remove('card-hidden');
+  document.getElementById('div-aktionen').classList.remove('card-hidden');
+  renderAbgleich();
+});
+
 /* ── Abschließen ─────────────────────────────────────────────── */
 document.getElementById('btn-abschliessen').addEventListener('click', async () => {
   if (!confirm('Bestellung jetzt abschließen? Dies kann nicht rückgängig gemacht werden.')) return;
@@ -533,6 +762,7 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     ...bestellung,
     status:    'abgeschlossen',
     positionen,
+    rechnungen: [],
   };
 
   localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
@@ -541,14 +771,45 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     await client.writeJson(NC_PFAD_B, bestellungen);
   }
 
-  location.href = 'bestellungen.html';
+  // Zurück zur selben Seite → zeigt jetzt Rechnungen-Bereich
+  location.href = `bestellung-abgleich.html?id=${bestellung.id}`;
+});
+
+/* ── Alle Rechnungen erzeugen ────────────────────────────────── */
+document.getElementById('btn-alle-rechnungen').addEventListener('click', async () => {
+  const ids = betroffeneMitgliederIds();
+  const vorhanden = bestellung.rechnungen || [];
+  const fehlende  = ids.filter(mid => !vorhanden.some(r => r.mitgliedId === mid));
+
+  if (!fehlende.length) return;
+
+  zeigeStatus('Erzeuge…', 'info');
+  for (const mid of fehlende) {
+    await erzeugeRechnungFuerMitglied(mid);
+  }
+  renderRechnungenCard();
+  zeigeStatus(`✓ ${fehlende.length} Rechnung(en) erzeugt`, 'ok');
+});
+
+/* ── Wieder öffnen ───────────────────────────────────────────── */
+document.getElementById('btn-wieder-oeffnen').addEventListener('click', async () => {
+  if (!confirm('Bestellung wieder öffnen?\n\nPositionen und Rechnungen werden gelöscht. Wünsche bleiben erhalten.\nDer Abgleich kann danach erneut durchgeführt werden.')) return;
+
+  const idx = bestellungen.findIndex(b => b.id === bestellung.id);
+  if (idx < 0) return;
+
+  bestellungen[idx] = { ...bestellung, status: 'bestellt', positionen: [], rechnungen: [] };
+  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+
+  location.reload();
 });
 
 /* ── Init ────────────────────────────────────────────────────── */
 async function init() {
-  const params      = new URLSearchParams(location.search);
-  const id          = params.get('id');
-  const einstellungen = ladeJson(STORAGE_KEY_E);
+  const params    = new URLSearchParams(location.search);
+  const id        = params.get('id');
+  einstellungen   = ladeJson(STORAGE_KEY_E);
 
   if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
     client = createWebDavClient(einstellungen.nc);
@@ -556,13 +817,21 @@ async function init() {
 
   mitglieder   = einstellungen?.mitglieder || [];
   bestellungen = ladeJson(STORAGE_KEY_B)   || [];
+  artikelListe = ladeJson(STORAGE_KEY_A)   || [];
 
   // NC-Sync
   if (client) {
-    const r = await client.readJson(NC_PFAD_B);
-    if (r.ok && Array.isArray(r.data) && r.data.length > 0) {
-      bestellungen = r.data;
+    const [rB, rA] = await Promise.all([
+      client.readJson(NC_PFAD_B),
+      client.readJson('/LifeguardOrders/artikel.json'),
+    ]);
+    if (rB.ok && Array.isArray(rB.data) && rB.data.length > 0) {
+      bestellungen = rB.data;
       localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+    }
+    if (rA.ok && Array.isArray(rA.data) && rA.data.length > 0) {
+      artikelListe = rA.data;
+      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikelListe));
     }
   }
 
@@ -586,15 +855,14 @@ async function init() {
   document.title = `Abgleich: ${bestellung.bezeichnung} – LifeguardOrders`;
   document.getElementById('seiten-titel').textContent = `Abgleich: ${bestellung.bezeichnung}`;
 
-  // Import-Card nur zeigen wenn nicht bereits abgeschlossen
-  if (bestellung.status !== 'abgeschlossen') {
-    document.getElementById('card-import').classList.remove('card-hidden');
+  if (bestellung.status === 'abgeschlossen') {
+    // Positionen + Rechnungen-Bereich anzeigen
+    document.getElementById('card-positionen').classList.remove('card-hidden');
+    document.getElementById('card-rechnungen').classList.remove('card-hidden');
+    renderPositionenCard();
+    renderRechnungenCard();
   } else {
-    // Bereits abgeschlossen: Positionen direkt anzeigen
-    const hinweis = document.createElement('div');
-    hinweis.className = 'hinweis hinweis-info';
-    hinweis.textContent = 'Diese Bestellung ist bereits abgeschlossen.';
-    document.getElementById('card-import').before(hinweis);
+    document.getElementById('card-import').classList.remove('card-hidden');
   }
 }
 

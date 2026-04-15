@@ -33,6 +33,7 @@ eigenen Server und arbeitet nach dem ersten Laden auch offline.
 index.html                ← Navigation / Startseite mit Kacheln und Live-Statistiken
 artikel.html              ← Artikelkatalog: CRUD + Import (Auftragsbestätigung & Produktseite)
 bestellungen.html         ← Übersicht aller Sammelbestellungen mit Phase und Status
+bestellung-neu.html       ← Neue Sammelbestellung anlegen (Datum, Bezeichnung)
 bestellung-sammeln.html   ← Phase 1: Mitgliederwünsche erfassen + CSV-Export für Materialstelle
 bestellung-abgleich.html  ← Phase 2: Rechnungsimport + Abgleich + Review bei Abweichungen
 rechnungen.html           ← Rechnungsübersicht + PDF-Erzeugung + Zahlungsstatus
@@ -59,6 +60,8 @@ Phase 2 — Eingang (nach Lieferung):
 
 **Mitgliederliste:** Wird einmalig aus der `config.js` der Stempeluhr übernommen (gleiche IDs,
 gleiche Namen). Sie ist die einzige Quelle der Wahrheit für Personen in beiden Apps.
+Einzelne Mitglieder können auch manuell als JSON-Objekt (`{"id": "...", "name": "..."}`) eingetragen
+werden — der Parser versteht beide Formate.
 
 ---
 
@@ -72,6 +75,8 @@ gleiche Namen). Sie ist die einzige Quelle der Wahrheit für Personen in beiden 
    Einstellungen hinterlegen, damit die App auf die Dateiablage zugreift.
 3. Als Admin möchte ich die Mitgliederliste aus der Stempeluhr-`config.js` importieren
    (Copy-Paste der Array-Einträge oder Datei-Upload), damit ich nicht alle Namen neu eingeben muss.
+   Der Parser erkennt sowohl JS-Literal-Syntax (`id: 'value'`) als auch JSON-Syntax (`"id": "value"`),
+   sodass einzelne Mitglieder auch manuell als JSON-Objekt eingetragen werden können.
 4. Als Admin möchte ich sehen, ob die Nextcloud-Verbindung funktioniert (Verbindungstest),
    damit ich Konfigurationsfehler früh erkennen kann.
 

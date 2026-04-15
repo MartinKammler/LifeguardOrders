@@ -5,20 +5,320 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <style>
+    .ampel-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .ampel-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+      border-left: 4px solid transparent;
+    }
+    .ampel-card.gruen { border-left-color: var(--green); }
+    .ampel-card.gelb  { border-left-color: var(--amber); }
+    .ampel-card.rot   { border-left-color: var(--red);   }
+    .ampel-card.keine { border-left-color: var(--border); opacity: .6; }
+
+    .ac-name  { font-weight: 700; font-size: .95rem; margin-bottom: 6px; }
+    .ac-row   { display: flex; justify-content: space-between; font-size: .8rem; color: var(--text-2); margin-bottom: 2px; }
+    .ac-row .wert { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .ampel-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .dot-gruen { background: var(--green); }
+    .dot-gelb  { background: var(--amber); }
+    .dot-rot   { background: var(--red);   }
+    .dot-keine { background: var(--border); }
+
+    .filter-zeile {
+      display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap;
+    }
+
+    .sync-status {
+      font-size: .8rem;
+      color: var(--text-2);
+      margin-bottom: 12px;
+    }
+
+    .legende {
+      display: flex; gap: 16px; font-size: .78rem; color: var(--text-2);
+      margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .legende-item { display: flex; align-items: center; gap: 4px; }
+
+    .verrechnung-liste {
+      margin-top: 8px;
+      font-size: .76rem;
+      color: var(--text-2);
+      border-top: 1px solid var(--border);
+      padding-top: 6px;
+    }
+    .vr-row { display: flex; justify-content: space-between; margin-bottom: 1px; }
+  </style>
 </head>
 <body>
+
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html">Bestellungen</a>
-  <a href="artikel.html">Artikel</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html" class="active">Dashboard</a>
   <a href="einstellungen.html">Einstellungen</a>
 </nav>
+
 <div class="container">
-  <h1>Dashboard</h1>
-  <div class="hinweis hinweis-info">Diese Seite wird in Sprint 05 gebaut.</div>
+  <div class="flex gap-8" style="align-items:center;margin-bottom:20px">
+    <h1 style="margin:0;flex:1">Einsatzstunden-Dashboard</h1>
+    <button class="btn btn-ghost btn-sm" id="btn-sync">&#8635; Stunden neu laden</button>
+  </div>
+
+  <div class="sync-status" id="sync-status"></div>
+
+  <!-- Legende -->
+  <div class="legende">
+    <span class="legende-item"><span class="ampel-dot dot-gruen"></span>Schuld abgegolten</span>
+    <span class="legende-item"><span class="ampel-dot dot-gelb"></span>Schuld offen, Frist läuft noch</span>
+    <span class="legende-item"><span class="ampel-dot dot-rot"></span>Schuld offen, Frist überschritten</span>
+    <span class="legende-item"><span class="ampel-dot dot-keine"></span>Kein OG-Anteil</span>
+  </div>
+
+  <!-- Filter -->
+  <div class="filter-zeile">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem">
+      <input type="checkbox" id="filter-nur-schulden"> Nur Mitglieder mit offener Schuld
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem">
+      <input type="checkbox" id="filter-details"> Verrechnungsdetails anzeigen
+    </label>
+  </div>
+
+  <!-- Ampel-Grid -->
+  <div class="ampel-grid" id="ampel-grid">
+    <div class="hinweis hinweis-info">Wird geladen…</div>
+  </div>
+
+  <!-- Unbekannte -->
+  <div id="unbekannte-container" style="display:none">
+    <div class="card">
+      <h2 style="color:var(--amber)">Unbekannte Nutzer-IDs in Stempeluhr-Logs</h2>
+      <p class="text-sm" style="margin-bottom:8px">Diese IDs konnten keinem Mitglied zugeordnet werden:</p>
+      <div id="unbekannte-liste"></div>
+    </div>
+  </div>
 </div>
+
+<script type="module">
+import { createWebDavClient }                         from './src/webdav.js';
+import { berechneStunden, verechneSchuld, ampelStatus, schuldFrist } from './src/stunden.js';
+
+/* ── Konstanten ──────────────────────────────────────────────── */
+const STORAGE_KEY_B = 'lo_bestellungen';
+const STORAGE_KEY_E = 'lo_einstellungen';
+const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const NC_DIR_LGC    = '/LifeguardClock/';
+
+/* ── Zustand ─────────────────────────────────────────────────── */
+let bestellungen  = [];
+let einstellungen = null;
+let mitglieder    = [];
+let client        = null;
+let dashboard     = []; // berechnete Daten pro Mitglied
+
+/* ── Hilfsfunktionen ──────────────────────────────────────────── */
+function ladeJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+function runde2(v) { return Math.round((v || 0) * 100) / 100; }
+
+/* ── Stempeluhr-Logs laden ───────────────────────────────────── */
+async function ladeStempeluhrLogs() {
+  if (!client) return [];
+
+  const syncEl = document.getElementById('sync-status');
+  syncEl.textContent = 'Lade Stempeluhr-Daten von Nextcloud…';
+
+  const listR = await client.listFiles(NC_DIR_LGC);
+  if (!listR.ok) {
+    syncEl.textContent = `Stempeluhr-Daten nicht verfügbar: ${listR.error}`;
+    return [];
+  }
+
+  // hrefs: /remote.php/dav/files/martin/LifeguardClock/lgc_2025.json
+  // → extrahiere NC-Pfad: /LifeguardClock/lgc_2025.json
+  const nc    = einstellungen?.nc || {};
+  const regex = new RegExp(`^/remote\\.php/dav/files/${nc.user}/`, 'i');
+
+  const lgcHrefs = listR.files.filter(h => h.includes('lgc_') && h.endsWith('.json'));
+
+  const alleEintraege = [];
+  for (const href of lgcHrefs) {
+    const pfad = href.replace(regex, '/');
+    const r    = await client.readJson(pfad);
+    if (!r.ok) continue;
+    // Unterstütze { entries: [...] } oder direkt [...]
+    const data  = r.data;
+    const liste = Array.isArray(data) ? data : (Array.isArray(data?.entries) ? data.entries : []);
+    alleEintraege.push(...liste);
+  }
+
+  syncEl.textContent = `${alleEintraege.length} Stempeluhr-Einträge aus ${lgcHrefs.length} Datei(en) geladen.`;
+  return alleEintraege;
+}
+
+/* ── Dashboard-Daten berechnen ───────────────────────────────── */
+async function berechneDashboard() {
+  const logEintraege   = await ladeStempeluhrLogs();
+  const einsatztypen   = einstellungen?.einsatztypen || ['wachdienst', 'sanitaetsdienst', 'helfer', 'verwaltung'];
+
+  const { stundenMap, unbekannt } = berechneStunden(logEintraege, einsatztypen, mitglieder);
+
+  // Unbekannte anzeigen
+  const unbContainer = document.getElementById('unbekannte-container');
+  if (unbekannt.length) {
+    unbContainer.style.display = '';
+    document.getElementById('unbekannte-liste').innerHTML =
+      unbekannt.map(id => `<span class="badge badge-amber" style="margin-right:6px">${id}</span>`).join('');
+  } else {
+    unbContainer.style.display = 'none';
+  }
+
+  // Pro Mitglied berechnen
+  dashboard = mitglieder.map(m => {
+    const geleisteteStunden = stundenMap.get(m.id) || 0;
+    const { gesamtSchuldStunden, restSchuldStunden, verrechnungen } =
+      verechneSchuld(m.id, bestellungen, geleisteteStunden, einstellungen);
+
+    // Frist: älteste offene Schuld bestimmt die Frist
+    let frist = null;
+    for (const b of bestellungen) {
+      for (const r of (b.rechnungen || [])) {
+        if (r.mitgliedId !== m.id) continue;
+        if (!r.erwartetEinsatzstunden || r.erwartetEinsatzstunden <= 0) continue;
+        const f = schuldFrist(b.datum);
+        if (!frist || f < frist) frist = f;
+      }
+    }
+    if (!frist) frist = schuldFrist(new Date().toISOString());
+
+    const ampel = gesamtSchuldStunden === 0
+      ? 'keine'
+      : ampelStatus(restSchuldStunden, frist);
+
+    return {
+      id: m.id,
+      name: m.name,
+      geleisteteStunden,
+      gesamtSchuldStunden,
+      restSchuldStunden,
+      verrechnungen,
+      frist,
+      ampel,
+    };
+  });
+
+  renderDashboard();
+}
+
+/* ── Render ──────────────────────────────────────────────────── */
+function renderDashboard() {
+  const nurSchulden = document.getElementById('filter-nur-schulden').checked;
+  const mitDetails  = document.getElementById('filter-details').checked;
+  const grid        = document.getElementById('ampel-grid');
+
+  const gefiltert = nurSchulden
+    ? dashboard.filter(d => d.restSchuldStunden > 0)
+    : dashboard;
+
+  if (!gefiltert.length && !mitglieder.length) {
+    grid.innerHTML = '<div class="hinweis hinweis-warn">Keine Mitglieder geladen. Bitte in den Einstellungen importieren.</div>';
+    return;
+  }
+
+  if (!gefiltert.length) {
+    grid.innerHTML = '<div class="hinweis hinweis-info">Alle Mitglieder haben ihre Stundenschuld erfüllt.</div>';
+    return;
+  }
+
+  // Sortierung: rot → gelb → gruen → keine
+  const prio = { rot: 0, gelb: 1, gruen: 2, keine: 3 };
+  const sortiert = [...gefiltert].sort((a, b) => prio[a.ampel] - prio[b.ampel]);
+
+  const dotKlasse = { gruen: 'dot-gruen', gelb: 'dot-gelb', rot: 'dot-rot', keine: 'dot-keine' };
+
+  grid.innerHTML = sortiert.map(d => {
+    const fristStr = d.frist.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const geleistetH = d.geleisteteStunden.toFixed(1);
+    const schuld     = d.gesamtSchuldStunden;
+    const offen      = d.restSchuldStunden;
+
+    let vrHtml = '';
+    if (mitDetails && d.verrechnungen.length) {
+      vrHtml = `<div class="verrechnung-liste">
+        ${d.verrechnungen.map(v => `
+          <div class="vr-row">
+            <span>${v.rechnungNummer}</span>
+            <span>${v.offenStunden > 0
+              ? `<span style="color:var(--amber)">${v.offenStunden} Std. offen</span>`
+              : `<span style="color:var(--green)">getilgt</span>`}</span>
+          </div>`).join('')}
+      </div>`;
+    }
+
+    return `
+      <div class="ampel-card ${d.ampel}">
+        <div class="ac-name">
+          <span class="ampel-dot ${dotKlasse[d.ampel]}"></span>${d.name}
+        </div>
+        ${schuld > 0 ? `
+          <div class="ac-row"><span>Geleistete Stunden</span><span class="wert">${geleistetH} Std.</span></div>
+          <div class="ac-row"><span>Schuld gesamt</span><span class="wert">${schuld} Std.</span></div>
+          <div class="ac-row"><span>Noch offen</span><span class="wert" style="color:${offen > 0 ? 'var(--amber)' : 'var(--green)'}">${offen} Std.</span></div>
+          <div class="ac-row"><span>Frist</span><span class="wert">${fristStr}</span></div>
+        ` : `
+          <div class="ac-row" style="color:var(--text-2)">Kein OG-Anteil</div>
+        `}
+        ${vrHtml}
+      </div>`;
+  }).join('');
+}
+
+/* ── Event-Listener ──────────────────────────────────────────── */
+document.getElementById('btn-sync').addEventListener('click', berechneDashboard);
+document.getElementById('filter-nur-schulden').addEventListener('change', renderDashboard);
+document.getElementById('filter-details').addEventListener('change', renderDashboard);
+
+/* ── Init ────────────────────────────────────────────────────── */
+async function init() {
+  einstellungen = ladeJson(STORAGE_KEY_E);
+  if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
+    client = createWebDavClient(einstellungen.nc);
+  }
+
+  mitglieder   = einstellungen?.mitglieder || [];
+  bestellungen = ladeJson(STORAGE_KEY_B) || [];
+
+  if (client) {
+    const r = await client.readJson(NC_PFAD_B);
+    if (r.ok && Array.isArray(r.data) && r.data.length) {
+      bestellungen = r.data;
+      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+    }
+  }
+
+  await berechneDashboard();
+}
+
+init();
+</script>
 </body>
 </html>

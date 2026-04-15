@@ -5,20 +5,294 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rechnungen – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <style>
+    .betrag-offen   { color: var(--amber); font-weight: 600; }
+    .betrag-bezahlt { color: var(--green); }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .stat-label { font-size: .78rem; color: var(--text-2); margin-bottom: 4px; }
+    .stat-wert  { font-size: 1.3rem; font-weight: 700; }
+    .filter-zeile {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .filter-zeile select { width: auto; flex: 1; min-width: 180px; max-width: 320px; }
+  </style>
 </head>
 <body>
+
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html">Bestellungen</a>
-  <a href="artikel.html">Artikel</a>
   <a href="rechnungen.html" class="active">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
   <a href="einstellungen.html">Einstellungen</a>
 </nav>
+
 <div class="container">
   <h1>Rechnungen</h1>
-  <div class="hinweis hinweis-info">Diese Seite wird in Sprint 04 gebaut.</div>
+
+  <!-- Statistik -->
+  <div class="stat-grid" id="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Rechnungen gesamt</div>
+      <div class="stat-wert" id="stat-gesamt">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Offen</div>
+      <div class="stat-wert betrag-offen" id="stat-offen">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Bezahlt</div>
+      <div class="stat-wert betrag-bezahlt" id="stat-bezahlt">–</div>
+    </div>
+  </div>
+
+  <!-- Filter -->
+  <div class="card">
+    <div class="filter-zeile">
+      <select id="filter-bestellung">
+        <option value="">Alle Bestellungen</option>
+      </select>
+      <select id="filter-status">
+        <option value="">Alle Status</option>
+        <option value="offen">Nur offen</option>
+        <option value="bezahlt">Nur bezahlt</option>
+      </select>
+    </div>
+
+    <!-- Tabelle -->
+    <div id="rechnungen-tabelle-container">
+      <div class="hinweis hinweis-info" id="leer-hinweis" style="display:none">
+        Noch keine Rechnungen vorhanden.
+        Gehe zu einer abgeschlossenen Bestellung und erzeuge Rechnungen dort.
+      </div>
+      <table id="rechnungen-tabelle" style="display:none">
+        <thead>
+          <tr>
+            <th>Nummer</th>
+            <th>Datum</th>
+            <th>Mitglied</th>
+            <th>Bestellung</th>
+            <th style="text-align:right">Betrag</th>
+            <th style="text-align:right">Stunden</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rechnungen-tbody"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script type="module">
+import { createWebDavClient } from './src/webdav.js';
+import { druckePDF }           from './src/pdf.js';
+
+/* ── Konstanten ──────────────────────────────────────────────── */
+const STORAGE_KEY_B = 'lo_bestellungen';
+const STORAGE_KEY_E = 'lo_einstellungen';
+const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+
+/* ── Zustand ─────────────────────────────────────────────────── */
+let bestellungen  = [];
+let einstellungen = null;
+let mitglieder    = [];
+let client        = null;
+
+/* ── Hilfsfunktionen ──────────────────────────────────────────── */
+function ladeJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+
+function eur(v) {
+  return Number(v || 0).toFixed(2).replace('.', ',') + ' €';
+}
+
+function mitgliedName(id) {
+  const m = mitglieder.find(m => m.id === id);
+  return m ? m.name : id;
+}
+
+/* ── Alle Rechnungen aus allen Bestellungen sammeln ─────────── */
+function alleRechnungen() {
+  const liste = [];
+  for (const b of bestellungen) {
+    for (const r of (b.rechnungen || [])) {
+      liste.push({ ...r, bestellungBezeichnung: b.bezeichnung, bestellungId: b.id });
+    }
+  }
+  return liste;
+}
+
+/* ── Statistik ───────────────────────────────────────────────── */
+function aktualisiereStatistik(rechnungen) {
+  const anzahl  = rechnungen.length;
+  const offen   = rechnungen.filter(r => !r.bezahlt).reduce((s, r) => s + (r.gesamtbetrag || 0), 0);
+  const bezahlt = rechnungen.filter(r =>  r.bezahlt).reduce((s, r) => s + (r.gesamtbetrag || 0), 0);
+
+  document.getElementById('stat-gesamt').textContent  = anzahl;
+  document.getElementById('stat-offen').textContent   = eur(offen);
+  document.getElementById('stat-bezahlt').textContent = eur(bezahlt);
+}
+
+/* ── Filter-Selects befüllen ─────────────────────────────────── */
+function befuelleFilterBestellung(rechnungen) {
+  const sel = document.getElementById('filter-bestellung');
+  const bestellungIds = [...new Set(rechnungen.map(r => r.bestellungId))];
+  const bestellungOpts = bestellungIds.map(bid => {
+    const r = rechnungen.find(x => x.bestellungId === bid);
+    return `<option value="${bid}">${r?.bestellungBezeichnung || bid}</option>`;
+  }).join('');
+  sel.innerHTML = '<option value="">Alle Bestellungen</option>' + bestellungOpts;
+}
+
+/* ── Render Tabelle ──────────────────────────────────────────── */
+function renderTabelle() {
+  const alle          = alleRechnungen();
+  const filterBestell = document.getElementById('filter-bestellung').value;
+  const filterStatus  = document.getElementById('filter-status').value;
+
+  const gefiltert = alle.filter(r => {
+    if (filterBestell && r.bestellungId !== filterBestell) return false;
+    if (filterStatus === 'offen'   &&  r.bezahlt) return false;
+    if (filterStatus === 'bezahlt' && !r.bezahlt) return false;
+    return true;
+  });
+
+  aktualisiereStatistik(alle);
+
+  const leerHinweis = document.getElementById('leer-hinweis');
+  const tabelle     = document.getElementById('rechnungen-tabelle');
+
+  if (!alle.length) {
+    leerHinweis.style.display = '';
+    tabelle.style.display     = 'none';
+    return;
+  }
+
+  leerHinweis.style.display = 'none';
+  tabelle.style.display     = '';
+
+  const tbody = document.getElementById('rechnungen-tbody');
+  tbody.innerHTML = gefiltert.map(r => {
+    const name      = mitgliedName(r.mitgliedId);
+    const statusBadge = r.bezahlt
+      ? `<span class="badge badge-green">Bezahlt<span style="opacity:.7;font-size:.72rem;margin-left:4px">${r.bezahltDatum || ''}</span></span>`
+      : `<span class="badge badge-amber">Offen</span>`;
+    const bezahltBtn = r.bezahlt
+      ? `<button class="btn btn-ghost btn-sm" data-unbezahlt="${r.id}" data-bestell="${r.bestellungId}">Rückgängig</button>`
+      : `<button class="btn btn-success btn-sm" data-bezahlt="${r.id}" data-bestell="${r.bestellungId}">Als bezahlt</button>`;
+    return `
+      <tr>
+        <td style="font-family:monospace;font-size:.82rem">${r.nummer}</td>
+        <td>${r.datum}</td>
+        <td>${name}</td>
+        <td class="text-sm" style="color:var(--text-2)">${r.bestellungBezeichnung}</td>
+        <td style="text-align:right;font-variant-numeric:tabular-nums" class="${r.bezahlt ? 'betrag-bezahlt' : 'betrag-offen'}">${eur(r.gesamtbetrag)}</td>
+        <td style="text-align:right">${r.erwartetEinsatzstunden > 0 ? r.erwartetEinsatzstunden : '–'}</td>
+        <td>${statusBadge}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" data-pdf="${r.id}" data-bestell="${r.bestellungId}">PDF</button>
+          ${bezahltBtn}
+        </td>
+      </tr>`;
+  }).join('');
+
+  // ── Event-Handler ─────────────────────────────────────────────
+
+  // PDF
+  tbody.querySelectorAll('[data-pdf]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const rechnung = findeRechnung(btn.dataset.pdf, btn.dataset.bestell);
+      if (rechnung) druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen);
+    });
+  });
+
+  // Als bezahlt markieren
+  tbody.querySelectorAll('[data-bezahlt]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await setzeZahlungsstatus(btn.dataset.bezahlt, btn.dataset.bestell, true);
+    });
+  });
+
+  // Bezahlt rückgängig
+  tbody.querySelectorAll('[data-unbezahlt]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await setzeZahlungsstatus(btn.dataset.unbezahlt, btn.dataset.bestell, false);
+    });
+  });
+}
+
+/* ── Rechnung finden ──────────────────────────────────────────── */
+function findeRechnung(rechnungId, bestellungId) {
+  const b = bestellungen.find(x => x.id === bestellungId);
+  return (b?.rechnungen || []).find(r => r.id === rechnungId) || null;
+}
+
+/* ── Zahlungsstatus setzen ────────────────────────────────────── */
+async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
+  const bIdx = bestellungen.findIndex(b => b.id === bestellungId);
+  if (bIdx < 0) return;
+
+  const rIdx = (bestellungen[bIdx].rechnungen || []).findIndex(r => r.id === rechnungId);
+  if (rIdx < 0) return;
+
+  bestellungen[bIdx].rechnungen[rIdx] = {
+    ...bestellungen[bIdx].rechnungen[rIdx],
+    bezahlt,
+    bezahltDatum: bezahlt ? new Date().toISOString().slice(0, 10) : null,
+  };
+
+  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+
+  renderTabelle();
+}
+
+/* ── Init ────────────────────────────────────────────────────── */
+async function init() {
+  einstellungen = ladeJson(STORAGE_KEY_E);
+
+  if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
+    client = createWebDavClient(einstellungen.nc);
+  }
+
+  mitglieder   = einstellungen?.mitglieder || [];
+  bestellungen = ladeJson(STORAGE_KEY_B) || [];
+
+  if (client) {
+    const r = await client.readJson(NC_PFAD_B);
+    if (r.ok && Array.isArray(r.data) && r.data.length > 0) {
+      bestellungen = r.data;
+      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+    }
+  }
+
+  befuelleFilterBestellung(alleRechnungen());
+  renderTabelle();
+
+  document.getElementById('filter-bestellung').addEventListener('change', renderTabelle);
+  document.getElementById('filter-status').addEventListener('change', renderTabelle);
+}
+
+init();
+</script>
 </body>
 </html>

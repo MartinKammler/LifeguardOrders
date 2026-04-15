@@ -1,4 +1,4 @@
-# Sprint 05: Kassenwart-Übersicht & Einsatzstunden-Dashboard
+# Sprint 05: Kassenwart-Übersicht & Einsatzstunden-Dashboard ✅ ABGESCHLOSSEN
 
 ## Sprint Goal
 
@@ -41,25 +41,27 @@ und den Einsatzstunden-Fortschritt je Mitglied mit Ampel-Status sehen.
 ## Acceptance Criteria
 
 **Kassenwart:**
-- [ ] Tabelle: Mitglied, Artikel, Bruttobetrag, BV, LV, OG, Mitgliedsanteil, Zahlungsstatus
-- [ ] Summenzeilen: BV-Gesamt, LV-Gesamt, OG-Gesamt, Mitglieder-Gesamt, offen/bezahlt
-- [ ] Filter nach Kalenderjahr
-- [ ] CSV-Export (für Excel)
-- [ ] PDF-Export
+- [x] Tabelle: Mitglied, Artikel, Bruttobetrag, BV, LV, OG, Mitgliedsanteil, Zahlungsstatus
+- [x] Summenzeilen: BV-Gesamt, LV-Gesamt, OG-Gesamt, Mitglieder-Gesamt, offen/bezahlt
+- [x] Filter nach Kalenderjahr
+- [x] CSV-Export (für Excel)
+- [x] PDF-Export
 
 **Dashboard:**
-- [ ] Alle `lgc_*.json` aus `/LifeguardClock/` beim Öffnen automatisch einlesen
-- [ ] Stunden je Mitglied korrekt summiert (nur erlaubte Typen)
-- [ ] Offene Stundenschuld berechnet (OG-Betrag € ÷ 10 × 3)
-- [ ] Frist: 31.12. Bestelljahr + 1 Kulanzjahr
-- [ ] Ampel grün/gelb/rot je Mitglied
-- [ ] Mitglieder ohne OG-Förderung ausblendbar
-- [ ] Unbekannte Nutzernamen markiert
+- [x] Alle `lgc_*.json` aus `/LifeguardClock/` beim Öffnen automatisch einlesen
+- [x] Stunden je Mitglied korrekt summiert (nur erlaubte Typen)
+- [x] Offene Stundenschuld berechnet (OG-Betrag € ÷ 10 × 3)
+- [x] Frist: 31.12. Bestelljahr + 1 Kulanzjahr
+- [x] Ampel grün/gelb/rot je Mitglied
+- [x] Mitglieder ohne OG-Förderung ausblendbar
+- [x] Unbekannte Nutzernamen markiert
 
 ---
 
-## Done Looks Like
+## Ergebnis
 
-- Kassenwart-CSV mit echten Daten erzeugen und in Excel öffnen
-- Dashboard zeigt Ampel-Status für alle Mitglieder mit OG-Schulden
-- Tests für Stunden-Matching und Schulden-Verrechnung bestehen
+| Modul/Seite | Status | Tests |
+|---|---|---|
+| `src/stunden.js` | ✅ | bestehen |
+| `kassenwart.html` | ✅ | manuell |
+| `dashboard.html` | ✅ | manuell |

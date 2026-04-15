@@ -38,7 +38,6 @@
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html" class="active">Bestellungen</a>
-  <a href="artikel.html">Artikel</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
@@ -249,7 +248,7 @@ function renderPositionen() {
         <div class="zuw-zeile" data-zi="${zi}">
           <select class="zuw-mitglied" data-pos="${pos.id}" data-zi="${zi}">
             <option value="">– Mitglied wählen –</option>
-            ${mitglieder.map(m =>
+            ${[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de')).map(m =>
               `<option value="${m.id}" ${m.id === z.mitgliedId ? 'selected' : ''}>${m.name}</option>`
             ).join('')}
           </select>

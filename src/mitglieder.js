@@ -19,8 +19,8 @@ export function parseMitglieder(text) {
 
   if (!text || !text.trim()) return { mitglieder, fehler };
 
-  const idRegex   = /id\s*:\s*['"]([^'"]+)['"]/;
-  const nameRegex = /name\s*:\s*['"]([^'"]+)['"]/;
+  const idRegex   = /["']?id["']?\s*:\s*['"]([^'"]+)['"]/;
+  const nameRegex = /["']?name["']?\s*:\s*['"]([^'"]+)['"]/;
 
   const eintraege = text
     .split(/\}\s*,?\s*\{/)

@@ -1,4 +1,4 @@
-# Sprint 03: Sammelbestellung — Eingang & Abgleich
+# Sprint 03: Sammelbestellung — Eingang & Abgleich ✅ ABGESCHLOSSEN
 
 ## Sprint Goal
 
@@ -36,19 +36,25 @@ den automatischen Abgleich mit den Wünschen sehen und Abweichungen manuell aufl
 
 ## Acceptance Criteria
 
-- [ ] Rechnungstext einfügen → Parser liefert Positionen (gleicher Parser wie Artikelimport)
-- [ ] Automatischer Match nach artikelNr + variante
-- [ ] Gematchte Positionen grün markiert, Mitglied daneben sichtbar
-- [ ] Abweichungen rot/gelb markiert mit Typ-Hinweis
-- [ ] Abweichung auflösen: Menge anpassen, Mitglied neu zuweisen oder ignorieren
-- [ ] OG-Kosten (Versand, Eilauftrag) sichtbar, aber nicht zuweisbar
-- [ ] Bestellung auf "abgeschlossen" setzen möglich wenn alle Positionen aufgelöst
-- [ ] Gespeichert in `lo_bestellungen` + Nextcloud
+- [x] Rechnungstext einfügen → Parser liefert Positionen (gleicher Parser wie Artikelimport)
+- [x] Automatischer Match nach artikelNr + variante
+- [x] Gematchte Positionen grün markiert, Mitglied daneben sichtbar
+- [x] Abweichungen rot/gelb markiert mit Typ-Hinweis
+- [x] Abweichung auflösen: Menge anpassen, Mitglied neu zuweisen oder ignorieren
+- [x] OG-Kosten (Versand, Eilauftrag) sichtbar, aber nicht zuweisbar
+- [x] Bestellung auf "abgeschlossen" setzen möglich wenn alle Positionen aufgelöst
+- [x] Gespeichert in `lo_bestellungen` + Nextcloud
 
 ---
 
-## Done Looks Like
+## Ergebnis
 
-- Echte Materialstelle-Rechnung importieren → automatischer Abgleich funktioniert
-- Abweichungen sichtbar und auflösbar
-- Tests für Abgleich-Logik bestehen
+| Modul/Seite | Status | Tests |
+|---|---|---|
+| `src/abgleich.js` | ✅ | bestehen |
+| `bestellung-abgleich.html` | ✅ | manuell |
+
+## Nachträgliche Erweiterungen
+
+- **"Wünsche direkt übernehmen"** in `bestellung-abgleich.html`: Für Artikel ohne externe Rechnung (z.B. Lehrgänge) synthetisiert der Button Abgleich-Ergebnis direkt aus den Wünschen → sofortiges Abschließen ohne Datei-Import möglich.
+- **"Bestellung wieder öffnen"** (amber) im Rechnungen-Card: setzt Status zurück auf "bestellt".

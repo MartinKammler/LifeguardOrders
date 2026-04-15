@@ -13,7 +13,6 @@
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html" class="active">Bestellungen</a>
-  <a href="artikel.html">Artikel</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
@@ -85,13 +84,25 @@ function aktionenHtml(b) {
     case 'sammlung':
       return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${b.id}">Bearbeiten</a>`;
     case 'bestellt':
-      return `<a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${b.id}">Abgleich</a>`;
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${b.id}">Bearbeiten</a>
+              <a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${b.id}">Abgleich</a>`;
     case 'abgeschlossen':
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-abgleich.html?id=${b.id}">Ansehen</a>`;
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-abgleich.html?id=${b.id}">Ansehen</a>
+              <button class="btn btn-ghost btn-sm" onclick="oeffneWieder('${b.id}')">Wieder öffnen</button>`;
     default:
       return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${b.id}">Bearbeiten</a>`;
   }
 }
+
+window.oeffneWieder = async function(id) {
+  if (!confirm('Bestellung wieder öffnen?\n\nPositionen und Rechnungen werden gelöscht. Wünsche bleiben erhalten.\nDer Abgleich kann danach erneut durchgeführt werden.')) return;
+  const idx = bestellungen.findIndex(b => b.id === id);
+  if (idx < 0) return;
+  bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt', positionen: [], rechnungen: [] };
+  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+  render();
+};
 
 function render() {
   const el = document.getElementById('liste-inhalt');

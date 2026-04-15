@@ -1,4 +1,4 @@
-# Sprint 02: Sammelbestellung — Sammlung & CSV-Export
+# Sprint 02: Sammelbestellung — Sammlung & CSV-Export ✅ ABGESCHLOSSEN
 
 ## Sprint Goal
 
@@ -51,14 +51,14 @@ Materialstelle-Bestellformular kopieren.
 
 ## Acceptance Criteria
 
-- [ ] Neue Sammelbestellung mit Datum + Bezeichnung anlegen
-- [ ] Wunschzeile: Mitglied (Dropdown), Artikel aus Katalog (mit Variante), Menge
-- [ ] Mehrere Wünsche für verschiedene Mitglieder/Artikel in einer Bestellung
-- [ ] Aggregierte Tabelle: Artikel+Variante | Menge gesamt | Mitglieder (Namen)
-- [ ] "CSV kopieren" → Clipboard-Inhalt `18507110,XL,3` pro Zeile
-- [ ] Wünsche nachträglich bearbeiten/löschen (solange Status "sammlung")
-- [ ] `bestellungen.html` zeigt Phase ("Sammlung" / "Abgleich" / "Abgeschlossen") + Wunschanzahl
-- [ ] Gespeichert in `lo_bestellungen` + Nextcloud
+- [x] Neue Sammelbestellung mit Datum + Bezeichnung anlegen
+- [x] Wunschzeile: Mitglied (Dropdown), Artikel aus Katalog (mit Variante), Menge
+- [x] Mehrere Wünsche für verschiedene Mitglieder/Artikel in einer Bestellung
+- [x] Aggregierte Tabelle: Artikel+Variante | Menge gesamt | Mitglieder (Namen)
+- [x] "CSV kopieren" → Clipboard-Inhalt `18507110,XL,3` pro Zeile
+- [x] Wünsche nachträglich bearbeiten/löschen (solange Status "sammlung")
+- [x] `bestellungen.html` zeigt Phase ("Sammlung" / "Abgleich" / "Abgeschlossen") + Wunschanzahl
+- [x] Gespeichert in `lo_bestellungen` + Nextcloud
 
 ---
 
@@ -71,9 +71,16 @@ Materialstelle-Bestellformular kopieren.
 
 ---
 
-## Done Looks Like
+## Ergebnis
 
-- Sammelbestellung anlegen und Wünsche erfassen funktioniert ohne Fehler
-- CSV lässt sich aus einer echten Bestellung erzeugen und in die Materialstelle einfügen
-- `bestellungen.html` zeigt alle Bestellungen mit Phase
-- Tests für Logik-Funktionen bestehen
+| Modul/Seite | Status | Tests |
+|---|---|---|
+| `src/sammlung.js` | ✅ | bestehen |
+| `bestellungen.html` | ✅ | manuell |
+| `bestellung-sammeln.html` | ✅ | manuell |
+| `bestellung-neu.html` | ✅ | manuell |
+
+## Nachträgliche Erweiterungen
+
+- `bestellung-neu.html` als eigene Seite zum Anlegen einer neuen Sammelbestellung (war nicht explizit geplant)
+- "Bestellung wieder öffnen" in `bestellungen.html`: setzt Status zurück auf "sammlung", löscht positionen + rechnungen

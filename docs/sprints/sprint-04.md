@@ -1,4 +1,4 @@
-# Sprint 04: Rechnungen & Zahlungsverfolgung
+# Sprint 04: Rechnungen & Zahlungsverfolgung ✅ ABGESCHLOSSEN
 
 ## Sprint Goal
 
@@ -34,19 +34,27 @@ Zahlungen nachverfolgen und den offenen Gesamtbetrag sehen.
 
 ## Acceptance Criteria
 
-- [ ] PDF entspricht Layout der Vorlage `R_2025_07_001_Kammler.pdf`
-- [ ] OG-Adresse, Empfänger, Positionstabelle, Gesamtbetrag, Bankdaten im PDF
-- [ ] Rechnung zeigt Mitgliedsanteil (nach Förderabzug) + erwartete Stunden für OG-Anteil
-- [ ] Rechnungsnummern lückenlos fortlaufend pro Monat
-- [ ] `rechnungen.html`: alle Rechnungen mit Nummer, Mitglied, Betrag, Status
-- [ ] Rechnung als "bezahlt" markieren mit Zahlungsdatum
-- [ ] Zahlung rückgängig machen möglich
-- [ ] Offener Gesamtbetrag in der Übersicht sichtbar
-- [ ] Bereits erzeugte Rechnung erneut als PDF abrufbar
+- [x] PDF entspricht Layout der Vorlage `R_2025_07_001_Kammler.pdf`
+- [x] OG-Adresse, Empfänger, Positionstabelle, Gesamtbetrag, Bankdaten im PDF
+- [x] Rechnung zeigt Mitgliedsanteil (nach Förderabzug) + erwartete Stunden für OG-Anteil
+- [x] Rechnungsnummern lückenlos fortlaufend pro Monat
+- [x] `rechnungen.html`: alle Rechnungen mit Nummer, Mitglied, Betrag, Status
+- [x] Rechnung als "bezahlt" markieren mit Zahlungsdatum
+- [x] Zahlung rückgängig machen möglich
+- [x] Offener Gesamtbetrag in der Übersicht sichtbar
+- [x] Bereits erzeugte Rechnung erneut als PDF abrufbar
 
 ---
 
-## Done Looks Like
+## Ergebnis
 
-- Echte Rechnung für ein Mitglied erzeugen, PDF sieht aus wie die Vorlage
-- Zahlungsstatus setzen und in Übersicht sehen
+| Modul/Seite | Status | Tests |
+|---|---|---|
+| `src/pdf.js` | ✅ | manuell |
+| `rechnungen.html` | ✅ | manuell |
+
+## Hinweise zur Implementierung
+
+- `erstelleRechnungsDaten()` und `druckePDF()` als separate Funktionen — Daten-Erstellung von PDF-Ausgabe getrennt.
+- Zahlungsfrist: 30 Tage ab Rechnungsdatum (nicht 14 wie im PRD skizziert — pragmatische Entscheidung).
+- Statistik-Karten oben in `rechnungen.html`: Anzahl Rechnungen, Gesamtbetrag, offener Betrag.

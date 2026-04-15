@@ -5,20 +5,406 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kassenwart – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <style>
+    .filter-zeile {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    .filter-zeile select { width: auto; min-width: 160px; }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 800px) { .stat-grid { grid-template-columns: repeat(3, 1fr); } }
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .stat-label { font-size: .72rem; color: var(--text-2); margin-bottom: 3px; }
+    .stat-wert  { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    th.preis, td.preis { text-align: right; font-variant-numeric: tabular-nums; }
+    .summen-zeile td { font-weight: 700; border-top: 2px solid var(--border); }
+    .badge-bezahlt { background: #1a3a28; color: var(--green); font-size: .72rem; padding: 1px 7px; border-radius: 10px; }
+    .badge-offen   { background: #3a3010; color: var(--amber); font-size: .72rem; padding: 1px 7px; border-radius: 10px; }
+  </style>
 </head>
 <body>
+
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html">Bestellungen</a>
-  <a href="artikel.html">Artikel</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html" class="active">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
   <a href="einstellungen.html">Einstellungen</a>
 </nav>
+
 <div class="container">
-  <h1>Kassenwart</h1>
-  <div class="hinweis hinweis-info">Diese Seite wird in Sprint 05 gebaut.</div>
+  <div class="flex gap-8" style="align-items:center;margin-bottom:20px">
+    <h1 style="margin:0;flex:1">Kassenwart</h1>
+    <button class="btn btn-ghost btn-sm" id="btn-csv">&#8659; CSV</button>
+    <button class="btn btn-ghost btn-sm" id="btn-pdf">&#8659; PDF</button>
+  </div>
+
+  <!-- Statistik-Kacheln -->
+  <div class="stat-grid">
+    <div class="stat-card"><div class="stat-label">Brutto gesamt</div><div class="stat-wert" id="s-brutto">–</div></div>
+    <div class="stat-card"><div class="stat-label">BV-Förderung</div><div class="stat-wert" id="s-bv">–</div></div>
+    <div class="stat-card"><div class="stat-label">LV-Förderung</div><div class="stat-wert" id="s-lv">–</div></div>
+    <div class="stat-card"><div class="stat-label">OG-Förderung</div><div class="stat-wert" id="s-og">–</div></div>
+    <div class="stat-card"><div class="stat-label">Mitglieder offen</div><div class="stat-wert" style="color:var(--amber)" id="s-offen">–</div></div>
+    <div class="stat-card"><div class="stat-label">Mitglieder bezahlt</div><div class="stat-wert" style="color:var(--green)" id="s-bezahlt">–</div></div>
+  </div>
+
+  <!-- Filter + Tabelle -->
+  <div class="card">
+    <div class="filter-zeile">
+      <select id="filter-jahr"><option value="">Alle Jahre</option></select>
+      <select id="filter-mitglied"><option value="">Alle Mitglieder</option></select>
+    </div>
+
+    <div id="tabelle-container">
+      <div class="hinweis hinweis-info" id="leer-hinweis" style="display:none">
+        Noch keine abgeschlossenen Bestellungen vorhanden.
+      </div>
+      <div style="overflow-x:auto">
+        <table id="kassenwart-tabelle" style="display:none;min-width:860px">
+          <thead>
+            <tr>
+              <th>Mitglied</th>
+              <th>Bestellung</th>
+              <th>Artikel</th>
+              <th>Gr.</th>
+              <th class="preis">Menge</th>
+              <th class="preis">Brutto</th>
+              <th class="preis">BV</th>
+              <th class="preis">LV</th>
+              <th class="preis">OG</th>
+              <th class="preis">Anteil</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="kassenwart-tbody"></tbody>
+          <tfoot id="kassenwart-tfoot"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script type="module">
+import { createWebDavClient }  from './src/webdav.js';
+import { berechneFoerderung }  from './src/berechnung.js';
+
+/* ── Konstanten ──────────────────────────────────────────────── */
+const STORAGE_KEY_B = 'lo_bestellungen';
+const STORAGE_KEY_E = 'lo_einstellungen';
+const STORAGE_KEY_A = 'lo_artikel';
+const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+
+/* ── Zustand ─────────────────────────────────────────────────── */
+let bestellungen  = [];
+let artikelListe  = [];
+let einstellungen = null;
+let mitglieder    = [];
+let client        = null;
+let alleZeilen    = []; // vollständige berechnete Daten
+
+/* ── Hilfsfunktionen ──────────────────────────────────────────── */
+function ladeJson(key) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
+}
+function runde(v) { return Math.round((v || 0) * 100) / 100; }
+function eur(v)   { return Number(v || 0).toFixed(2).replace('.', ',') + ' €'; }
+function mitgliedName(id) {
+  const m = mitglieder.find(m => m.id === id);
+  return m ? m.name : id;
+}
+
+/* ── Kassenwart-Daten aufbauen ───────────────────────────────── */
+function baueZeilen() {
+  const zeilen = [];
+  for (const b of bestellungen) {
+    if (b.status !== 'abgeschlossen') continue;
+    const jahr = (b.datum || '').slice(0, 4);
+
+    for (const pos of (b.positionen || [])) {
+      if (pos.typ === 'og-kosten') continue;
+
+      const artikel = artikelListe.find(
+        a => a.artikelNr === pos.artikelNr && (a.variante || '') === (pos.variante || '')
+      );
+
+      for (const zuw of (pos.zuweisung || [])) {
+        if (zuw.menge === 0) continue;
+
+        let bv, lv, og, anteil;
+        if (artikel) {
+          const f = berechneFoerderung(artikel, zuw.menge);
+          bv = f.bv; lv = f.lv; og = f.og; anteil = f.mitglied;
+        } else {
+          bv     = runde((pos.bvFoerderung || 0) * zuw.menge);
+          lv     = runde((pos.lvFoerderung || 0) * zuw.menge);
+          og     = runde((pos.ogFoerderung || 0) * zuw.menge);
+          anteil = runde((pos.einzelpreis  || 0) * zuw.menge - bv - lv - og);
+        }
+        const brutto = runde((pos.einzelpreis || 0) * zuw.menge);
+
+        const rechnung = (b.rechnungen || []).find(r => r.mitgliedId === zuw.mitgliedId);
+
+        zeilen.push({
+          jahr,
+          bestellungId:   b.id,
+          bestellungBez:  b.bezeichnung,
+          mitgliedId:     zuw.mitgliedId,
+          mitgliedName:   mitgliedName(zuw.mitgliedId),
+          artikelName:    pos.name,
+          variante:       pos.variante || '',
+          menge:          zuw.menge,
+          einzelpreis:    pos.einzelpreis || 0,
+          brutto, bv, lv, og, anteil,
+          bezahlt:        rechnung?.bezahlt ?? false,
+          rechnungNummer: rechnung?.nummer  ?? '',
+        });
+      }
+    }
+  }
+  return zeilen;
+}
+
+/* ── Filter ──────────────────────────────────────────────────── */
+function gefiltert() {
+  const jahr      = document.getElementById('filter-jahr').value;
+  const mitglied  = document.getElementById('filter-mitglied').value;
+  return alleZeilen.filter(z =>
+    (!jahr     || z.jahr       === jahr)     &&
+    (!mitglied || z.mitgliedId === mitglied)
+  );
+}
+
+/* ── Filter-Optionen befüllen ────────────────────────────────── */
+function befuelleFilter() {
+  const jahre    = [...new Set(alleZeilen.map(z => z.jahr))].sort().reverse();
+  const members  = [...new Map(alleZeilen.map(z => [z.mitgliedId, z.mitgliedName]))];
+
+  const selJahr = document.getElementById('filter-jahr');
+  selJahr.innerHTML = '<option value="">Alle Jahre</option>' +
+    jahre.map(j => `<option value="${j}">${j}</option>`).join('');
+
+  const selMgl = document.getElementById('filter-mitglied');
+  selMgl.innerHTML = '<option value="">Alle Mitglieder</option>' +
+    members.map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+}
+
+/* ── Statistik aktualisieren ─────────────────────────────────── */
+function aktualisiereStatistik(zeilen) {
+  const sum = (f) => zeilen.reduce((s, z) => s + (z[f] || 0), 0);
+  document.getElementById('s-brutto').textContent  = eur(sum('brutto'));
+  document.getElementById('s-bv').textContent      = eur(sum('bv'));
+  document.getElementById('s-lv').textContent      = eur(sum('lv'));
+  document.getElementById('s-og').textContent      = eur(sum('og'));
+
+  const mitgliederIds = [...new Set(zeilen.map(z => z.mitgliedId))];
+  // Pro Mitglied schauen ob alle Rechnungen bezahlt
+  let offenCount = 0, bezahltCount = 0;
+  for (const mid of mitgliederIds) {
+    const mZeilen = zeilen.filter(z => z.mitgliedId === mid);
+    const alleArten = [...new Set(mZeilen.map(z => z.bezahlt))];
+    if (alleArten.includes(false)) offenCount++;
+    else bezahltCount++;
+  }
+  document.getElementById('s-offen').textContent   = eur(zeilen.filter(z => !z.bezahlt).reduce((s, z) => s + z.anteil, 0));
+  document.getElementById('s-bezahlt').textContent = eur(zeilen.filter(z =>  z.bezahlt).reduce((s, z) => s + z.anteil, 0));
+}
+
+/* ── Tabelle rendern ─────────────────────────────────────────── */
+function renderTabelle() {
+  const zeilen = gefiltert();
+  aktualisiereStatistik(zeilen);
+
+  const leer    = document.getElementById('leer-hinweis');
+  const tabelle = document.getElementById('kassenwart-tabelle');
+
+  if (!alleZeilen.length) {
+    leer.style.display    = '';
+    tabelle.style.display = 'none';
+    return;
+  }
+  leer.style.display    = 'none';
+  tabelle.style.display = '';
+
+  const tbody = document.getElementById('kassenwart-tbody');
+  tbody.innerHTML = zeilen.map(z => `
+    <tr>
+      <td>${z.mitgliedName}</td>
+      <td class="text-sm" style="color:var(--text-2)">${z.bestellungBez}</td>
+      <td>${z.artikelName}</td>
+      <td>${z.variante || '–'}</td>
+      <td class="preis">${z.menge}</td>
+      <td class="preis">${eur(z.brutto)}</td>
+      <td class="preis" style="color:var(--text-2)">${z.bv ? eur(z.bv) : '–'}</td>
+      <td class="preis" style="color:var(--text-2)">${z.lv ? eur(z.lv) : '–'}</td>
+      <td class="preis" style="color:var(--text-2)">${z.og ? eur(z.og) : '–'}</td>
+      <td class="preis" style="font-weight:600">${eur(z.anteil)}</td>
+      <td><span class="${z.bezahlt ? 'badge-bezahlt' : 'badge-offen'}">${z.bezahlt ? 'Bezahlt' : 'Offen'}</span></td>
+    </tr>`).join('');
+
+  // Summenzeile
+  const sum = (f) => zeilen.reduce((s, z) => s + (z[f] || 0), 0);
+  const tfoot = document.getElementById('kassenwart-tfoot');
+  tfoot.innerHTML = `
+    <tr class="summen-zeile">
+      <td colspan="5">Summe (${zeilen.length} Positionen)</td>
+      <td class="preis">${eur(sum('brutto'))}</td>
+      <td class="preis">${eur(sum('bv'))}</td>
+      <td class="preis">${eur(sum('lv'))}</td>
+      <td class="preis">${eur(sum('og'))}</td>
+      <td class="preis">${eur(sum('anteil'))}</td>
+      <td></td>
+    </tr>`;
+}
+
+/* ── CSV-Export ──────────────────────────────────────────────── */
+document.getElementById('btn-csv').addEventListener('click', () => {
+  const zeilen = gefiltert();
+  if (!zeilen.length) { alert('Keine Daten zum Exportieren.'); return; }
+
+  const header = 'Mitglied;Bestellung;Artikel;Größe;Menge;Brutto;BV;LV;OG;Anteil;Status';
+  const csvZeilen = zeilen.map(z =>
+    [z.mitgliedName, z.bestellungBez, z.artikelName, z.variante, z.menge,
+     z.brutto, z.bv, z.lv, z.og, z.anteil,
+     z.bezahlt ? 'Bezahlt' : 'Offen'
+    ].map(v => String(v ?? '').replace(/;/g, ',')).join(';')
+  );
+
+  const csv  = [header, ...csvZeilen].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'kassenwart.csv'; a.click();
+  URL.revokeObjectURL(url);
+});
+
+/* ── PDF-Export ──────────────────────────────────────────────── */
+document.getElementById('btn-pdf').addEventListener('click', () => {
+  const zeilen = gefiltert();
+  if (!zeilen.length) { alert('Keine Daten zum Exportieren.'); return; }
+  if (!window.jspdf?.jsPDF) { alert('jsPDF nicht geladen.'); return; }
+
+  const jsPDF = window.jspdf.jsPDF;
+  const doc   = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  const og    = einstellungen?.og || {};
+
+  // Header
+  doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+  doc.text('Kassenwart-Übersicht', 14, 16);
+  doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(120, 120, 120);
+  doc.text(`${og.name || ''} · ${new Date().toLocaleDateString('de-DE')}`, 14, 22);
+  doc.setTextColor(0, 0, 0);
+
+  // Tabelle
+  const cols   = [30, 35, 55, 10, 10, 18, 14, 14, 14, 18, 16];
+  const header = ['Mitglied', 'Bestellung', 'Artikel', 'Gr.', 'Menge', 'Brutto', 'BV', 'LV', 'OG', 'Anteil', 'Status'];
+  const PL = 14; let y = 28;
+  const ROW_H = 6;
+
+  function drawHeader() {
+    doc.setFillColor(40, 40, 60);
+    doc.setTextColor(200, 200, 220);
+    doc.setFontSize(7.5); doc.setFont('helvetica', 'bold');
+    let x = PL;
+    cols.forEach((w, i) => {
+      doc.text(header[i], x + 1, y + 4);
+      x += w;
+    });
+    y += ROW_H;
+    doc.setTextColor(0, 0, 0); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+  }
+
+  function cell(text, x, w, align = 'left') {
+    const t = String(text ?? '').slice(0, Math.floor(w / 1.8));
+    doc.text(t, align === 'right' ? x + w - 1 : x + 1, y + 4, { align });
+  }
+
+  drawHeader();
+
+  zeilen.forEach((z, idx) => {
+    if (y > 188) { doc.addPage(); y = 14; drawHeader(); }
+    if (idx % 2 === 0) {
+      doc.setFillColor(30, 30, 45);
+      doc.rect(PL, y, cols.reduce((a, b) => a + b), ROW_H, 'F');
+    }
+    let x = PL;
+    const vals = [
+      z.mitgliedName, z.bestellungBez, z.artikelName, z.variante || '–',
+      String(z.menge),
+      z.brutto.toFixed(2), z.bv ? z.bv.toFixed(2) : '–', z.lv ? z.lv.toFixed(2) : '–',
+      z.og ? z.og.toFixed(2) : '–', z.anteil.toFixed(2),
+      z.bezahlt ? 'Bezahlt' : 'Offen',
+    ];
+    vals.forEach((v, i) => { cell(v, x, cols[i]); x += cols[i]; });
+    y += ROW_H;
+  });
+
+  // Summenzeile
+  y += 2;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8);
+  doc.text(`Summe (${zeilen.length})`, PL + 1, y + 4);
+  const offsets = cols.slice(0, 5).reduce((a, b) => a + b, 0);
+  const sum = (f) => zeilen.reduce((s, z) => s + (z[f] || 0), 0);
+  let sx = PL + offsets;
+  [sum('brutto'), sum('bv'), sum('lv'), sum('og'), sum('anteil')].forEach((v, i) => {
+    doc.text(v.toFixed(2), sx + cols[5 + i] - 1, y + 4, { align: 'right' });
+    sx += cols[5 + i];
+  });
+
+  doc.save('kassenwart.pdf');
+});
+
+/* ── Init ────────────────────────────────────────────────────── */
+async function init() {
+  einstellungen = ladeJson(STORAGE_KEY_E);
+  if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
+    client = createWebDavClient(einstellungen.nc);
+  }
+  mitglieder   = einstellungen?.mitglieder || [];
+  bestellungen = ladeJson(STORAGE_KEY_B) || [];
+  artikelListe = ladeJson(STORAGE_KEY_A) || [];
+
+  if (client) {
+    const [rB, rA] = await Promise.all([
+      client.readJson(NC_PFAD_B),
+      client.readJson('/LifeguardOrders/artikel.json'),
+    ]);
+    if (rB.ok && Array.isArray(rB.data) && rB.data.length) {
+      bestellungen = rB.data;
+      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+    }
+    if (rA.ok && Array.isArray(rA.data) && rA.data.length) {
+      artikelListe = rA.data;
+      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikelListe));
+    }
+  }
+
+  alleZeilen = baueZeilen();
+  befuelleFilter();
+  renderTabelle();
+
+  document.getElementById('filter-jahr').addEventListener('change', renderTabelle);
+  document.getElementById('filter-mitglied').addEventListener('change', renderTabelle);
+}
+
+init();
+</script>
 </body>
 </html>

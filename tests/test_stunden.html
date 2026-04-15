@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Stunden – Unit Tests</title>
+  <style>
+    body { font-family: monospace; background: #0d0d12; color: #ccc; margin: 0; padding: 20px; }
+    h1   { color: #fff; font-size: 1.1rem; margin-bottom: 16px; }
+    .suite { margin-bottom: 20px; }
+    .suite-title { color: #7eb8f7; font-size: .9rem; margin-bottom: 6px; font-weight: bold; }
+    .pass { color: #4caf7d; }
+    .fail { color: #f76e6e; }
+    .result { font-size: .82rem; margin: 2px 0 2px 12px; }
+    #summary { margin-top: 24px; font-size: 1rem; font-weight: bold; padding: 10px; border-radius: 6px; }
+    .all-pass { background: #1a3a28; color: #4caf7d; }
+    .has-fail  { background: #3a1a1a; color: #f76e6e; }
+  </style>
+</head>
+<body>
+<h1>Stunden – Unit Tests</h1>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script type="module">
+import { berechneStunden, verechneSchuld, ampelStatus, schuldFrist } from '../src/stunden.js';
+
+/* ── Mini Test-Runner ───────────────────────────────────────── */
+const results = [];
+let currentSuite = '';
+function suite(name) { currentSuite = name; }
+async function test(name, fn) {
+  try { await fn(); results.push({ suite: currentSuite, name, ok: true }); }
+  catch (e) { results.push({ suite: currentSuite, name, ok: false, err: e.message }); }
+}
+function assert(cond, msg) {
+  if (!cond) throw new Error(msg || 'Assertion fehlgeschlagen');
+}
+function assertEqual(a, b, msg) {
+  if (a !== b) throw new Error((msg || '') + ` — erwartet: ${JSON.stringify(b)}, bekommen: ${JSON.stringify(a)}`);
+}
+function assertClose(a, b, msg, tol = 0.001) {
+  if (Math.abs(a - b) > tol) throw new Error((msg || '') + ` — erwartet: ≈${b}, bekommen: ${a}`);
+}
+
+/* ── Testdaten ──────────────────────────────────────────────── */
+
+const einsatztypen = ['wachdienst', 'sanitaetsdienst', 'helfer', 'verwaltung'];
+
+const logEintraege = [
+  { userId: 'martin', typ: 'wachdienst',      dauer_ms: 3 * 3_600_000 },  // 3h
+  { userId: 'martin', typ: 'sanitaetsdienst', dauer_ms: 2 * 3_600_000 },  // 2h
+  { userId: 'martin', typ: 'anwesenheit',     dauer_ms: 5 * 3_600_000 },  // soll NICHT zählen
+  { userId: 'dorit',  typ: 'wachdienst',      dauer_ms: 1 * 3_600_000 },  // 1h
+  { userId: 'dorit',  typ: 'helfer',          dauer_ms: 1.5 * 3_600_000 },// 1.5h
+  { userId: 'martin', typ: 'verwaltung',      dauer_ms: 0 },               // 0 → ignorieren
+];
+
+const mitglieder = [
+  { id: 'martin', name: 'Martin K.' },
+  { id: 'dorit',  name: 'Dorit S.'  },
+];
+
+/* ── berechneStunden ────────────────────────────────────────── */
+
+suite('berechneStunden — Grundfunktion');
+
+await test('zählt erlaubte Typen pro Mitglied', () => {
+  const { stundenMap } = berechneStunden(logEintraege, einsatztypen);
+  assertClose(stundenMap.get('martin'), 5, 'martin: 3+2=5h');
+  assertClose(stundenMap.get('dorit'),  2.5, 'dorit: 1+1.5=2.5h');
+});
+
+await test('anwesenheit zählt nicht', () => {
+  const { stundenMap } = berechneStunden(logEintraege, einsatztypen);
+  assertClose(stundenMap.get('martin'), 5, 'anwesenheit (5h) nicht enthalten');
+});
+
+await test('dauer_ms = 0 wird ignoriert', () => {
+  const { stundenMap } = berechneStunden(logEintraege, einsatztypen);
+  assertClose(stundenMap.get('martin'), 5, 'Eintrag mit 0ms ignoriert');
+});
+
+await test('leeres Array → leere Map', () => {
+  const { stundenMap } = berechneStunden([], einsatztypen);
+  assertEqual(stundenMap.size, 0);
+});
+
+await test('unbekannte ID wird gemeldet wenn mitglieder übergeben', () => {
+  const eintraege = [
+    { userId: 'unbekannt_user', typ: 'wachdienst', dauer_ms: 3_600_000 },
+    { userId: 'martin', typ: 'wachdienst', dauer_ms: 3_600_000 },
+  ];
+  const { stundenMap, unbekannt } = berechneStunden(eintraege, einsatztypen, mitglieder);
+  assert(unbekannt.includes('unbekannt_user'), 'unbekannter User gemeldet');
+  assert(!stundenMap.has('unbekannt_user'), 'unbekannter User nicht in Map');
+  assert(stundenMap.has('martin'), 'bekannter User in Map');
+});
+
+await test('ohne mitglieder-Liste werden alle IDs akzeptiert', () => {
+  const eintraege = [{ userId: 'neuer_user', typ: 'wachdienst', dauer_ms: 3_600_000 }];
+  const { stundenMap, unbekannt } = berechneStunden(eintraege, einsatztypen);
+  assert(stundenMap.has('neuer_user'), 'User ohne mitglieder-Liste in Map');
+  assertEqual(unbekannt.length, 0);
+});
+
+/* ── verechneSchuld ─────────────────────────────────────────── */
+
+suite('verechneSchuld — Grundfunktion');
+
+const einstellungen = { stundenRate: { stunden: 3, euro: 10 } };
+
+const bestellungenMitRechnungen = [{
+  id: 'b1', datum: '2025-03-01', status: 'abgeschlossen',
+  rechnungen: [{
+    id: 'r1', mitgliedId: 'martin', nummer: 'R_2025_03_001',
+    datum: '2025-03-15', erwartetEinsatzstunden: 6,
+  }],
+}];
+
+await test('keine Schulden → alles 0', () => {
+  const r = verechneSchuld('dorit', bestellungenMitRechnungen, 0, einstellungen);
+  assertEqual(r.gesamtSchuldStunden, 0);
+  assertEqual(r.restSchuldStunden, 0);
+  assertEqual(r.verrechnungen.length, 0);
+});
+
+await test('genug Stunden → Schuld vollständig getilgt', () => {
+  const r = verechneSchuld('martin', bestellungenMitRechnungen, 10, einstellungen);
+  assertEqual(r.gesamtSchuldStunden, 6);
+  assertEqual(r.restSchuldStunden, 0);
+  assertEqual(r.verrechnungen[0].getilgtStunden, 6);
+  assertEqual(r.verrechnungen[0].offenStunden, 0);
+});
+
+await test('zu wenig Stunden → Restschuld korrekt', () => {
+  const r = verechneSchuld('martin', bestellungenMitRechnungen, 3, einstellungen);
+  assertEqual(r.restSchuldStunden, 3);
+  assertEqual(r.verrechnungen[0].getilgtStunden, 3);
+  assertEqual(r.verrechnungen[0].offenStunden, 3);
+});
+
+await test('keine Stunden → Restschuld = Gesamtschuld', () => {
+  const r = verechneSchuld('martin', bestellungenMitRechnungen, 0, einstellungen);
+  assertEqual(r.restSchuldStunden, 6);
+});
+
+await test('mehrere Rechnungen: älteste zuerst tilgen', () => {
+  const bestellungen = [
+    {
+      id: 'b1', datum: '2024-06-01', status: 'abgeschlossen',
+      rechnungen: [{ id: 'r1', mitgliedId: 'martin', nummer: 'R_2024_06_001', datum: '2024-06-10', erwartetEinsatzstunden: 6 }],
+    },
+    {
+      id: 'b2', datum: '2025-03-01', status: 'abgeschlossen',
+      rechnungen: [{ id: 'r2', mitgliedId: 'martin', nummer: 'R_2025_03_001', datum: '2025-03-15', erwartetEinsatzstunden: 3 }],
+    },
+  ];
+  const r = verechneSchuld('martin', bestellungen, 6, einstellungen);
+  // 6 Stunden reichen für erste Schuld (6) komplett, zweite bleibt offen (3)
+  assertEqual(r.restSchuldStunden, 3);
+  assertEqual(r.verrechnungen[0].offenStunden, 0, 'älteste vollständig getilgt');
+  assertEqual(r.verrechnungen[1].offenStunden, 3, 'jüngere noch offen');
+});
+
+/* ── ampelStatus ────────────────────────────────────────────── */
+
+suite('ampelStatus');
+
+await test('restSchuld = 0 → gruen', () => {
+  assertEqual(ampelStatus(0, new Date('2026-12-31')), 'gruen');
+});
+
+await test('restSchuld > 0, Frist in Zukunft → gelb', () => {
+  const frist = new Date('2099-12-31');
+  assertEqual(ampelStatus(3, frist, new Date('2026-01-01')), 'gelb');
+});
+
+await test('restSchuld > 0, Frist überschritten → rot', () => {
+  const frist = new Date('2024-12-31');
+  assertEqual(ampelStatus(3, frist, new Date('2026-01-01')), 'rot');
+});
+
+await test('restSchuld > 0, Frist genau heute → gelb', () => {
+  const heute = new Date('2026-04-15');
+  assertEqual(ampelStatus(1, heute, heute), 'gelb');
+});
+
+/* ── schuldFrist ────────────────────────────────────────────── */
+
+suite('schuldFrist');
+
+await test('Bestellung 2025 → Frist 31.12.2026', () => {
+  const f = schuldFrist('2025-03-15');
+  assertEqual(f.getFullYear(), 2026);
+  assertEqual(f.getMonth(), 11);  // Dezember (0-basiert)
+  assertEqual(f.getDate(), 31);
+});
+
+await test('Bestellung 2024 → Frist 31.12.2025', () => {
+  const f = schuldFrist('2024-07-01');
+  assertEqual(f.getFullYear(), 2025);
+});
+
+await test('ungültiges Datum → Frist im nächsten Jahr', () => {
+  const f = schuldFrist('');
+  assertEqual(f.getFullYear(), new Date().getFullYear() + 1);
+});
+
+/* ── Render ─────────────────────────────────────────────────── */
+
+function render() {
+  const suites = {};
+  for (const r of results) {
+    if (!suites[r.suite]) suites[r.suite] = [];
+    suites[r.suite].push(r);
+  }
+  const out = document.getElementById('output');
+  out.innerHTML = Object.entries(suites).map(([name, tests]) => `
+    <div class="suite">
+      <div class="suite-title">${name}</div>
+      ${tests.map(t => `
+        <div class="result ${t.ok ? 'pass' : 'fail'}">
+          ${t.ok ? '✓' : '✗'} ${t.name}${t.ok ? '' : '<br><span style="color:#f76e6e;margin-left:20px">' + t.err + '</span>'}
+        </div>`).join('')}
+    </div>`).join('');
+
+  const total  = results.length;
+  const passed = results.filter(r => r.ok).length;
+  const sum = document.getElementById('summary');
+  sum.className = passed === total ? 'all-pass' : 'has-fail';
+  sum.textContent = `${passed} / ${total} Tests bestanden`;
+}
+
+render();
+</script>
+</body>
+</html>
