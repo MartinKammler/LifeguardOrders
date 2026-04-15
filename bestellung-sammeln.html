@@ -230,6 +230,7 @@
 </div>
 
 <script type="module">
+import { load, save }         from './src/storage.js';
 import { aggregiereWuensche, exportiereCSV, validiereWunsch } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
 
@@ -249,10 +250,6 @@ let mitglieder      = [];
 let sortierteArtikel = [];
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
-function ladeJson(key) {
-  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
-}
-
 function uuid() { return crypto.randomUUID(); }
 
 function heute() {
@@ -531,7 +528,7 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     bestellungen = [...bestellungen, bestellung];
   }
 
-  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  save(STORAGE_KEY_B, bestellungen);
 
   if (client) {
     await client.writeJson(NC_PFAD_B, bestellungen);
@@ -548,7 +545,7 @@ document.getElementById('btn-bestellt').addEventListener('click', async () => {
   if (!confirm('Bestellung als "Bestellt" markieren? Sie wird dann zum Abgleich weitergeleitet.')) return;
 
   bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt' };
-  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  save(STORAGE_KEY_B, bestellungen);
   if (client) await client.writeJson(NC_PFAD_B, bestellungen);
 
   location.href = `bestellung-abgleich.html?id=${bestellungId}`;
@@ -557,14 +554,14 @@ document.getElementById('btn-bestellt').addEventListener('click', async () => {
 /* ── Init ────────────────────────────────────────────────────── */
 async function init() {
   // Einstellungen + NC-Client
-  const einstellungen = ladeJson(STORAGE_KEY_E);
+  const einstellungen = load(STORAGE_KEY_E);
   if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
     client = createWebDavClient(einstellungen.nc);
   }
 
   mitglieder   = einstellungen?.mitglieder || [];
-  artikelListe = ladeJson(STORAGE_KEY_A) || [];
-  bestellungen = ladeJson(STORAGE_KEY_B) || [];
+  artikelListe = load(STORAGE_KEY_A) || [];
+  bestellungen = load(STORAGE_KEY_B) || [];
 
   // NC-Sync: Bestellungen + Artikel parallel nachladen
   if (client) {
@@ -574,11 +571,11 @@ async function init() {
     ]);
     if (rB.ok && Array.isArray(rB.data) && rB.data.length > 0) {
       bestellungen = rB.data;
-      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+      save(STORAGE_KEY_B, bestellungen);
     }
     if (rA.ok && Array.isArray(rA.data) && rA.data.length > 0) {
       artikelListe = rA.data;
-      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikelListe));
+      save(STORAGE_KEY_A, artikelListe);
     }
   }
 

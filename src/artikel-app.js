@@ -6,6 +6,7 @@
 import { createWebDavClient }                   from './webdav.js';
 import { parseBestellung }                     from './parser.js';
 import { ladeDefaultArtikel, downloadAlsJson } from './defaults.js';
+import { load, save }                          from './storage.js';
 
 const STORAGE_KEY_E  = 'lo_einstellungen';
 const STORAGE_KEY_A  = 'lo_artikel';
@@ -27,12 +28,7 @@ function uuid() {
   return crypto.randomUUID();
 }
 
-function leseEinstellungen() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_E);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
+function leseEinstellungen() { return load(STORAGE_KEY_E); }
 
 function zeigeStatus(elId, text, art = 'info') {
   const el = document.getElementById(elId);
@@ -74,17 +70,14 @@ export function aktualisiereArtikel(katalog, geaendert) {
 /* ── Persistenz ─────────────────────────────────────────────── */
 
 async function ladeArtikel() {
-  const lokal = localStorage.getItem(STORAGE_KEY_A);
-  if (lokal) {
-    try { artikel = JSON.parse(lokal); } catch { artikel = []; }
-  }
+  artikel = load(STORAGE_KEY_A) || [];
 
   // Kein localStorage → data/artikel.json als Fallback
   if (!artikel.length) {
     const defaults = await ladeDefaultArtikel();
     if (defaults.length) {
       artikel = defaults;
-      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikel));
+      save(STORAGE_KEY_A, artikel);
     }
   }
 
@@ -92,14 +85,14 @@ async function ladeArtikel() {
     const r = await client.readJson(NC_PFAD_A);
     if (r.ok && Array.isArray(r.data) && r.data.length) {
       artikel = r.data;
-      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikel));
+      save(STORAGE_KEY_A, artikel);
     }
   }
   renderKatalog();
 }
 
 async function speichereArtikel() {
-  localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikel));
+  save(STORAGE_KEY_A, artikel);
   if (client) {
     await client.writeJson(NC_PFAD_A, artikel);
   }

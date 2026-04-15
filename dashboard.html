@@ -118,6 +118,7 @@
 </div>
 
 <script type="module">
+import { load, save }                                 from './src/storage.js';
 import { createWebDavClient }                         from './src/webdav.js';
 import { berechneStunden, verechneSchuld, ampelStatus, schuldFrist } from './src/stunden.js';
 
@@ -135,9 +136,6 @@ let client        = null;
 let dashboard     = []; // berechnete Daten pro Mitglied
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
-function ladeJson(key) {
-  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
-}
 function runde2(v) { return Math.round((v || 0) * 100) / 100; }
 
 /* ── Stempeluhr-Logs laden ───────────────────────────────────── */
@@ -299,19 +297,19 @@ document.getElementById('filter-details').addEventListener('change', renderDashb
 
 /* ── Init ────────────────────────────────────────────────────── */
 async function init() {
-  einstellungen = ladeJson(STORAGE_KEY_E);
+  einstellungen = load(STORAGE_KEY_E);
   if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
     client = createWebDavClient(einstellungen.nc);
   }
 
   mitglieder   = einstellungen?.mitglieder || [];
-  bestellungen = ladeJson(STORAGE_KEY_B) || [];
+  bestellungen = load(STORAGE_KEY_B) || [];
 
   if (client) {
     const r = await client.readJson(NC_PFAD_B);
     if (r.ok && Array.isArray(r.data) && r.data.length) {
       bestellungen = r.data;
-      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+      save(STORAGE_KEY_B, bestellungen);
     }
   }
 

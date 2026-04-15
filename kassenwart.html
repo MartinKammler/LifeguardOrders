@@ -103,6 +103,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="module">
+import { load, save }          from './src/storage.js';
 import { createWebDavClient }  from './src/webdav.js';
 import { berechneFoerderung }  from './src/berechnung.js';
 
@@ -121,9 +122,6 @@ let client        = null;
 let alleZeilen    = []; // vollständige berechnete Daten
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
-function ladeJson(key) {
-  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
-}
 function runde(v) { return Math.round((v || 0) * 100) / 100; }
 function eur(v)   { return Number(v || 0).toFixed(2).replace('.', ',') + ' €'; }
 function mitgliedName(id) {
@@ -373,13 +371,13 @@ document.getElementById('btn-pdf').addEventListener('click', () => {
 
 /* ── Init ────────────────────────────────────────────────────── */
 async function init() {
-  einstellungen = ladeJson(STORAGE_KEY_E);
+  einstellungen = load(STORAGE_KEY_E);
   if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
     client = createWebDavClient(einstellungen.nc);
   }
   mitglieder   = einstellungen?.mitglieder || [];
-  bestellungen = ladeJson(STORAGE_KEY_B) || [];
-  artikelListe = ladeJson(STORAGE_KEY_A) || [];
+  bestellungen = load(STORAGE_KEY_B) || [];
+  artikelListe = load(STORAGE_KEY_A) || [];
 
   if (client) {
     const [rB, rA] = await Promise.all([
@@ -388,11 +386,11 @@ async function init() {
     ]);
     if (rB.ok && Array.isArray(rB.data) && rB.data.length) {
       bestellungen = rB.data;
-      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+      save(STORAGE_KEY_B, bestellungen);
     }
     if (rA.ok && Array.isArray(rA.data) && rA.data.length) {
       artikelListe = rA.data;
-      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikelListe));
+      save(STORAGE_KEY_A, artikelListe);
     }
   }
 

@@ -36,6 +36,7 @@
 </div>
 
 <script type="module">
+import { load, save }         from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 
 const STORAGE_KEY_E = 'lo_einstellungen';
@@ -44,10 +45,6 @@ const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
 
 let bestellungen = [];
 let client = null;
-
-function ladeJson(key) {
-  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
-}
 
 function eur(v) { return Number(v).toFixed(2).replace('.', ',') + ' €'; }
 
@@ -99,7 +96,7 @@ window.oeffneWieder = async function(id) {
   const idx = bestellungen.findIndex(b => b.id === id);
   if (idx < 0) return;
   bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt', positionen: [], rechnungen: [] };
-  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  save(STORAGE_KEY_B, bestellungen);
   if (client) await client.writeJson(NC_PFAD_B, bestellungen);
   render();
 };
@@ -149,19 +146,19 @@ function render() {
 }
 
 async function init() {
-  const e = ladeJson(STORAGE_KEY_E);
+  const e = load(STORAGE_KEY_E);
   if (e?.nc?.url && e?.nc?.user && e?.nc?.pass) {
     client = createWebDavClient(e.nc);
   }
 
-  const lokal = ladeJson(STORAGE_KEY_B);
+  const lokal = load(STORAGE_KEY_B);
   if (lokal) bestellungen = lokal;
 
   if (client) {
     const r = await client.readJson(NC_PFAD_B);
     if (r.ok && Array.isArray(r.data) && r.data.length > 0) {
       bestellungen = r.data;
-      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+      save(STORAGE_KEY_B, bestellungen);
     }
   }
 

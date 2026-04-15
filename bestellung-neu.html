@@ -99,6 +99,7 @@
 </div>
 
 <script type="module">
+import { load, save }         from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { parseBestellung }    from './src/parser.js';
 import { berechneFoerderung } from './src/berechnung.js';
@@ -123,7 +124,6 @@ let importPuffer   = null;   // geparste Vorschau
 
 function uuid() { return crypto.randomUUID(); }
 function eur(v) { return Number(v).toFixed(2).replace('.', ',') + ' €'; }
-function ladeJson(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } }
 
 function heute() {
   return new Date().toISOString().slice(0, 10);
@@ -416,7 +416,7 @@ async function speichern() {
     });
   }
 
-  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  save(STORAGE_KEY_B, bestellungen);
   const statusEl = document.getElementById('speichern-status');
 
   if (client) {
@@ -439,23 +439,23 @@ async function init() {
   // Datum vorbelegen
   document.getElementById('datum').value = heute();
 
-  const e = ladeJson(STORAGE_KEY_E);
+  const e = load(STORAGE_KEY_E);
   if (e?.nc?.url && e?.nc?.user && e?.nc?.pass) client = createWebDavClient(e.nc);
 
   // Mitglieder aus Einstellungen
   mitglieder = e?.mitglieder || [];
 
   // Artikelkatalog
-  artikel = ladeJson(STORAGE_KEY_A) || [];
+  artikel = load(STORAGE_KEY_A) || [];
 
   // Bestellungen
-  const lokal = ladeJson(STORAGE_KEY_B);
+  const lokal = load(STORAGE_KEY_B);
   if (lokal) bestellungen = lokal;
   if (client) {
     const r = await client.readJson(NC_PFAD_B);
     if (r.ok && Array.isArray(r.data)) {
       bestellungen = r.data;
-      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+      save(STORAGE_KEY_B, bestellungen);
     }
   }
 

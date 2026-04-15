@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>Tests – storage</title></head>
+<body><pre id="out"></pre>
+<script type="module">
+import { load, save, remove } from '../src/storage.js';
+let ok = 0, fail = 0;
+function assert(label, cond) {
+  document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
+  cond ? ok++ : fail++;
+}
+
+const KEY = '__test_storage__';
+remove(KEY);
+
+assert('load: gibt null zurück wenn kein Wert', load(KEY) === null);
+assert('save + load: Objekt round-trip', (() => {
+  save(KEY, { a: 1, b: 'hallo' });
+  const v = load(KEY);
+  return v?.a === 1 && v?.b === 'hallo';
+})());
+assert('save + load: Array round-trip', (() => {
+  save(KEY, [1, 2, 3]);
+  return JSON.stringify(load(KEY)) === '[1,2,3]';
+})());
+assert('remove: nach remove ist load null', (() => {
+  save(KEY, { x: 1 });
+  remove(KEY);
+  return load(KEY) === null;
+})());
+assert('load: gibt null bei korrupten Daten zurück', (() => {
+  localStorage.setItem(KEY, 'kein-json{{{');
+  const v = load(KEY);
+  return v === null;
+})());
+
+remove(KEY);
+document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;
+</script></body></html>

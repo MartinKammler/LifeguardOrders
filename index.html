@@ -142,14 +142,12 @@
 </div>
 
 <script type="module">
+import { load } from './src/storage.js';
+
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_R = 'lo_rechnungen';
-
-function ladeJson(key) {
-  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
-}
 
 function setStat(id, text) {
   const el = document.getElementById(id);
@@ -157,9 +155,9 @@ function setStat(id, text) {
 }
 
 // Kachel-Statistiken
-const artikel     = ladeJson(STORAGE_KEY_A) || [];
-const bestellungen = ladeJson(STORAGE_KEY_B) || [];
-const rechnungen  = ladeJson(STORAGE_KEY_R) || [];
+const artikel     = load(STORAGE_KEY_A) || [];
+const bestellungen = load(STORAGE_KEY_B) || [];
+const rechnungen  = load(STORAGE_KEY_R) || [];
 
 setStat('stat-artikel',
   artikel.length
@@ -179,7 +177,7 @@ setStat('stat-rechnungen',
     : 'Noch keine Rechnungen');
 
 // Setup-Hinweis wenn NC noch nicht konfiguriert
-const einstellungen = ladeJson(STORAGE_KEY_E);
+const einstellungen = load(STORAGE_KEY_E);
 if (!einstellungen?.nc?.url) {
   document.getElementById('setup-hinweis').innerHTML = `
     <div class="hinweis hinweis-info hinweis-setup">

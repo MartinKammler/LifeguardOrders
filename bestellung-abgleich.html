@@ -221,6 +221,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="module">
+import { load, save }                        from './src/storage.js';
 import { parseBestellung }                  from './src/parser.js';
 import { aggregiereWuensche }               from './src/sammlung.js';
 import { gleiche_ab }                       from './src/abgleich.js';
@@ -247,10 +248,6 @@ let abgleichResult = null;
 const aufgeloest = new Map();
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
-function ladeJson(key) {
-  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
-}
-
 function eur(v) {
   return Number(v || 0).toFixed(2).replace('.', ',') + ' €';
 }
@@ -657,7 +654,7 @@ async function erzeugeRechnungFuerMitglied(mitgliedId) {
   bestellungen[idx].rechnungen = [...(bestellungen[idx].rechnungen || []), rechnung];
   bestellung = bestellungen[idx];
 
-  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  save(STORAGE_KEY_B, bestellungen);
   if (client) await client.writeJson(NC_PFAD_B, bestellungen);
 
   druckePDF(rechnung, mitgliedName(mitgliedId), einstellungen);
@@ -765,7 +762,7 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     rechnungen: [],
   };
 
-  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  save(STORAGE_KEY_B, bestellungen);
 
   if (client) {
     await client.writeJson(NC_PFAD_B, bestellungen);
@@ -799,7 +796,7 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
   if (idx < 0) return;
 
   bestellungen[idx] = { ...bestellung, status: 'bestellt', positionen: [], rechnungen: [] };
-  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  save(STORAGE_KEY_B, bestellungen);
   if (client) await client.writeJson(NC_PFAD_B, bestellungen);
 
   location.reload();
@@ -809,15 +806,15 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
 async function init() {
   const params    = new URLSearchParams(location.search);
   const id        = params.get('id');
-  einstellungen   = ladeJson(STORAGE_KEY_E);
+  einstellungen   = load(STORAGE_KEY_E);
 
   if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
     client = createWebDavClient(einstellungen.nc);
   }
 
   mitglieder   = einstellungen?.mitglieder || [];
-  bestellungen = ladeJson(STORAGE_KEY_B)   || [];
-  artikelListe = ladeJson(STORAGE_KEY_A)   || [];
+  bestellungen = load(STORAGE_KEY_B)   || [];
+  artikelListe = load(STORAGE_KEY_A)   || [];
 
   // NC-Sync
   if (client) {
@@ -827,11 +824,11 @@ async function init() {
     ]);
     if (rB.ok && Array.isArray(rB.data) && rB.data.length > 0) {
       bestellungen = rB.data;
-      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+      save(STORAGE_KEY_B, bestellungen);
     }
     if (rA.ok && Array.isArray(rA.data) && rA.data.length > 0) {
       artikelListe = rA.data;
-      localStorage.setItem(STORAGE_KEY_A, JSON.stringify(artikelListe));
+      save(STORAGE_KEY_A, artikelListe);
     }
   }
 

@@ -6,6 +6,7 @@
 import { createWebDavClient }                        from './webdav.js';
 import { parseMitglieder }                           from './mitglieder.js';
 import { ladeDefaultEinstellungen, downloadAlsJson } from './defaults.js';
+import { load, save }                                from './storage.js';
 
 const STORAGE_KEY = 'lo_einstellungen';
 const NC_PFAD     = '/LifeguardOrders/einstellungen.json';
@@ -60,16 +61,8 @@ function ladeClient(einstellungen) {
 
 /* ── Einstellungen lesen / schreiben ────────────────────────── */
 
-function leseLokal() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-function schreibeLokal(daten) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(daten));
-}
+function leseLokal()      { return load(STORAGE_KEY); }
+function schreibeLokal(d) { save(STORAGE_KEY, d); }
 
 async function leseVonNc(client) {
   const r = await client.readJson(NC_PFAD);

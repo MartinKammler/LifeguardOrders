@@ -102,6 +102,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="module">
+import { load, save }         from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { druckePDF }           from './src/pdf.js';
 
@@ -117,10 +118,6 @@ let mitglieder    = [];
 let client        = null;
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
-function ladeJson(key) {
-  try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; }
-}
-
 function eur(v) {
   return Number(v || 0).toFixed(2).replace('.', ',') + ' €';
 }
@@ -260,7 +257,7 @@ async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
     bezahltDatum: bezahlt ? new Date().toISOString().slice(0, 10) : null,
   };
 
-  localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+  save(STORAGE_KEY_B, bestellungen);
   if (client) await client.writeJson(NC_PFAD_B, bestellungen);
 
   renderTabelle();
@@ -268,20 +265,20 @@ async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
 
 /* ── Init ────────────────────────────────────────────────────── */
 async function init() {
-  einstellungen = ladeJson(STORAGE_KEY_E);
+  einstellungen = load(STORAGE_KEY_E);
 
   if (einstellungen?.nc?.url && einstellungen?.nc?.user && einstellungen?.nc?.pass) {
     client = createWebDavClient(einstellungen.nc);
   }
 
   mitglieder   = einstellungen?.mitglieder || [];
-  bestellungen = ladeJson(STORAGE_KEY_B) || [];
+  bestellungen = load(STORAGE_KEY_B) || [];
 
   if (client) {
     const r = await client.readJson(NC_PFAD_B);
     if (r.ok && Array.isArray(r.data) && r.data.length > 0) {
       bestellungen = r.data;
-      localStorage.setItem(STORAGE_KEY_B, JSON.stringify(bestellungen));
+      save(STORAGE_KEY_B, bestellungen);
     }
   }
 
