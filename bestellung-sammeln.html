@@ -540,8 +540,8 @@ document.getElementById('inp-artikel-suche-edit').addEventListener('blur', () =>
 
 /* ── Edit-Modal öffnen / schließen / speichern ───────────────── */
 function oeffneBearbeitenModal(id) {
-  const w = wuensche.find(w => w.id === id);
-  if (!w) return;
+  const gefundener = wuensche.find(w => w.id === id);
+  if (!gefundener) return;
   bearbeitenId = id;
 
   // Mitglied-Select befüllen
@@ -550,11 +550,11 @@ function oeffneBearbeitenModal(id) {
     `<option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>` +
     [...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
       .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
-  selMitglied.value = w.mitgliedId;
+  selMitglied.value = gefundener.mitgliedId;
 
   // Artikel vorbelegen (Suche nach artikelNr + variante)
   const art = artikelListe.find(a =>
-    a.artikelNr === w.artikelNr && (a.variante || '') === w.variante);
+    a.artikelNr === gefundener.artikelNr && (a.variante || '') === gefundener.variante);
   if (art) {
     document.getElementById('sel-artikel-id-edit').value    = art.id;
     document.getElementById('inp-artikel-suche-edit').value = artikelLabel(art);
@@ -562,11 +562,11 @@ function oeffneBearbeitenModal(id) {
     // Artikel nicht mehr im Katalog: Freitext zeigen, ID leer lassen
     document.getElementById('sel-artikel-id-edit').value    = '';
     document.getElementById('inp-artikel-suche-edit').value =
-      w.name + (w.variante ? ' ' + w.variante : '');
+      gefundener.name + (gefundener.variante ? ' ' + gefundener.variante : '');
   }
 
-  document.getElementById('inp-menge-edit').value          = w.menge;
-  document.getElementById('chk-og-kostenlos-edit').checked = !!w.ogKostenlos;
+  document.getElementById('inp-menge-edit').value          = gefundener.menge;
+  document.getElementById('chk-og-kostenlos-edit').checked = !!gefundener.ogKostenlos;
 
   document.getElementById('modal-bearbeiten').classList.add('open');
   selMitglied.focus();
@@ -592,10 +592,7 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
     alert('Bitte einen gültigen Artikel aus der Suche auswählen.');
     return;
   }
-  if (!mitgliedId) {
-    alert('Bitte ein Mitglied auswählen.');
-    return;
-  }
+  // mitgliedId ist immer gesetzt (Select hat keine Leer-Option, wird mit OG_ID vorbelegt)
   if (isNaN(menge) || menge < 1) {
     alert('Menge muss mindestens 1 sein.');
     return;
@@ -620,9 +617,9 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
   renderWunschliste();
 });
 
-// Escape-Taste schließt Modal
+// Escape-Taste schließt Modal (nur wenn geöffnet)
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') schliesseBearbeitenModal();
+  if (e.key === 'Escape' && bearbeitenId) schliesseBearbeitenModal();
 });
 
 /* ── Selects befüllen ────────────────────────────────────────── */
