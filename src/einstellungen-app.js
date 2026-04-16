@@ -7,7 +7,6 @@ import { createWebDavClient }                        from './webdav.js';
 import { parseMitglieder }                           from './mitglieder.js';
 import { ladeDefaultEinstellungen, downloadAlsJson } from './defaults.js';
 import { load, save }                                from './storage.js';
-import { esc }                                       from './dom.js';
 
 const STORAGE_KEY = 'lo_einstellungen';
 const NC_PFAD     = '/LifeguardOrders/einstellungen.json';
