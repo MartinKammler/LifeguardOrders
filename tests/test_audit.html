@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>Tests – audit</title></head>
+<body><pre id="out"></pre>
+<script type="module">
+import { logAktion, ladeLog, istRechnungUnveraendert } from '../src/audit.js';
+let ok = 0, fail = 0;
+function assert(label, cond) {
+  document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
+  cond ? ok++ : fail++;
+}
+
+// logAktion
+const eintrag = logAktion('RECHNUNG_ERSTELLT', 'martin_kammler', { rechnungId: 'r1', betrag: 49.90 });
+assert('logAktion: gibt Objekt zurück', typeof eintrag === 'object');
+assert('logAktion: enthält action', eintrag.action === 'RECHNUNG_ERSTELLT');
+assert('logAktion: enthält user', eintrag.user === 'martin_kammler');
+assert('logAktion: enthält timestamp (ISO)', typeof eintrag.timestamp === 'string' && eintrag.timestamp.includes('T'));
+assert('logAktion: enthält changes', eintrag.changes?.rechnungId === 'r1');
+
+// istRechnungUnveraendert
+const rechnung = { id: 'r1', nummer: 'R_2025_01_001', gesamtbetrag: 49.90, positionen: [{ name: 'T-Shirt', menge: 1 }] };
+assert('istRechnungUnveraendert: gleiche Rechnung → true', istRechnungUnveraendert(rechnung, rechnung));
+assert('istRechnungUnveraendert: geänderter Betrag → false', (() => {
+  const geaendert = { ...rechnung, gesamtbetrag: 99.90 };
+  return istRechnungUnveraendert(rechnung, geaendert) === false;
+})());
+assert('istRechnungUnveraendert: geänderte Positionen → false', (() => {
+  const geaendert = { ...rechnung, positionen: [{ name: 'Hose', menge: 1 }] };
+  return istRechnungUnveraendert(rechnung, geaendert) === false;
+})());
+
+document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;
+</script></body></html>
