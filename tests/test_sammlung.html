@@ -180,6 +180,16 @@ await test('ogKostenlos-Flag bleibt erhalten nach Merge', () => {
   assertEqual(result[0].ogKostenlos, true);
 });
 
+await test('Reihenfolge bleibt erhalten (Eingabereihenfolge, kein Sort)', () => {
+  const result = mergeWuensche([
+    { id: 'z', mitgliedId: 'z', artikelNr: 'Z999', variante: '', name: 'Z', menge: 1 },
+    { id: 'a', mitgliedId: 'a', artikelNr: 'A001', variante: '', name: 'A', menge: 1 },
+  ]);
+  // Z kommt zuerst, da zuerst eingegeben — kein alphabetisches Sort
+  assertEqual(result[0].artikelNr, 'Z999');
+  assertEqual(result[1].artikelNr, 'A001');
+});
+
 /* ── Tests: exportiereCSV ───────────────────────────────────── */
 
 suite('exportiereCSV — Grundfunktion');

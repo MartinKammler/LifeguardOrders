@@ -75,10 +75,15 @@ export function validiereWunsch(wunsch) {
 
 /**
  * Fasst Wünsche mit gleicher mitgliedId + artikelNr + variante zusammen.
- * Die Menge wird summiert. Id, name, ogKostenlos vom ersten Eintrag behalten.
- * Reihenfolge bleibt erhalten (erster Auftritt des Schlüssels bestimmt Position).
+ * Die Menge wird summiert. Id, name, ogKostenlos und alle anderen Felder
+ * vom ersten Eintrag behalten.
  *
- * @param {Array<{id, mitgliedId, artikelNr, variante, name, menge, ogKostenlos?}>} wuensche
+ * Im Gegensatz zu aggregiereWuensche bleibt mitgliedId erhalten und
+ * die Reihenfolge des ersten Auftritts jedes Schlüssels wird beibehalten
+ * (Map-Insertion-Order). Kein Sortieren — die Nutzer-Eingabereihenfolge
+ * soll im UI sichtbar bleiben.
+ *
+ * @param {Array<{id: string, mitgliedId: string, artikelNr: string, variante: string, name: string, menge: number, ogKostenlos?: boolean}>} wuensche
  * @returns {Array}
  */
 export function mergeWuensche(wuensche) {
