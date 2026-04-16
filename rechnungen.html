@@ -105,6 +105,7 @@
 import { load, save }         from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { druckePDF }           from './src/pdf.js';
+import { esc }                 from './src/dom.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
@@ -155,7 +156,7 @@ function befuelleFilterBestellung(rechnungen) {
   const bestellungIds = [...new Set(rechnungen.map(r => r.bestellungId))];
   const bestellungOpts = bestellungIds.map(bid => {
     const r = rechnungen.find(x => x.bestellungId === bid);
-    return `<option value="${bid}">${r?.bestellungBezeichnung || bid}</option>`;
+    return `<option value="${bid}">${esc(r?.bestellungBezeichnung || bid)}</option>`;
   }).join('');
   sel.innerHTML = '<option value="">Alle Bestellungen</option>' + bestellungOpts;
 }
@@ -200,8 +201,8 @@ function renderTabelle() {
       <tr>
         <td style="font-family:monospace;font-size:.82rem">${r.nummer}</td>
         <td>${r.datum}</td>
-        <td>${name}</td>
-        <td class="text-sm" style="color:var(--text-2)">${r.bestellungBezeichnung}</td>
+        <td>${esc(name)}</td>
+        <td class="text-sm" style="color:var(--text-2)">${esc(r.bestellungBezeichnung)}</td>
         <td style="text-align:right;font-variant-numeric:tabular-nums" class="${r.bezahlt ? 'betrag-bezahlt' : 'betrag-offen'}">${eur(r.gesamtbetrag)}</td>
         <td style="text-align:right">${r.erwartetEinsatzstunden > 0 ? r.erwartetEinsatzstunden : '–'}</td>
         <td>${statusBadge}</td>
