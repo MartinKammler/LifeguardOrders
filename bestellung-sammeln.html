@@ -321,25 +321,6 @@ function renderWunschliste() {
       </td>
     </tr>`).join('');
 
-  // Delegierter Event-Handler auf tbody
-  tbody.addEventListener('click', e => {
-    const btn = e.target.closest('[data-action]');
-    if (!btn) return;
-    const id     = btn.dataset.id;
-    const action = btn.dataset.action;
-    if (action === 'loeschen') {
-      wuensche = wuensche.filter(w => w.id !== id);
-    } else if (action === 'plus') {
-      wuensche = wuensche.map(w => w.id === id ? { ...w, menge: w.menge + 1 } : w);
-    } else if (action === 'minus') {
-      wuensche = wuensche.map(w => {
-        if (w.id !== id) return w;
-        return w.menge > 1 ? { ...w, menge: w.menge - 1 } : null;
-      }).filter(Boolean);
-    }
-    renderWunschliste();
-  });
-
   // Aggregiert
   const aggContainer = document.getElementById('aggregiert-container');
   const agg = aggregiereWuensche(wuensche);
@@ -632,6 +613,25 @@ async function init() {
 
   befuelleSelects();
   renderWunschliste();
+
+  // Delegierter Event-Handler für Wunschliste (einmalig registrieren)
+  document.getElementById('wunsch-tbody').addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const id     = btn.dataset.id;
+    const action = btn.dataset.action;
+    if (action === 'loeschen') {
+      wuensche = wuensche.filter(w => w.id !== id);
+    } else if (action === 'plus') {
+      wuensche = wuensche.map(w => w.id === id ? { ...w, menge: w.menge + 1 } : w);
+    } else if (action === 'minus') {
+      wuensche = wuensche.map(w => {
+        if (w.id !== id) return w;
+        return w.menge > 1 ? { ...w, menge: w.menge - 1 } : null;
+      }).filter(Boolean);
+    }
+    renderWunschliste();
+  });
 }
 
 init();
