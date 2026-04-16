@@ -236,6 +236,7 @@
 </div>
 
 <script type="module">
+import { OG_ID }              from './src/konstanten.js';
 import { load, save }         from './src/storage.js';
 import { aggregiereWuensche, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
@@ -255,8 +256,6 @@ let client          = null;
 let artikelListe    = [];
 let mitglieder      = [];
 let sortierteArtikel = [];
-
-const OG_ID = '__og__';
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function uuid() { return crypto.randomUUID(); }

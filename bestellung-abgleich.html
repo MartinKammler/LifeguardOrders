@@ -221,6 +221,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="module">
+import { OG_ID }                            from './src/konstanten.js';
 import { load, save }                        from './src/storage.js';
 import { parseBestellung }                  from './src/parser.js';
 import { aggregiereWuensche }               from './src/sammlung.js';
@@ -234,7 +235,6 @@ const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
-const OG_ID         = '__og__';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
 let bestellungen  = [];

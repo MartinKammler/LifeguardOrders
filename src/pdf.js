@@ -5,6 +5,7 @@
  *   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
  */
 
+import { OG_ID } from './konstanten.js';
 import { berechneFoerderung, naechsteRechnungsnummer } from './berechnung.js';
 
 /* ── Hilfsfunktionen ────────────────────────────────────────── */
@@ -28,7 +29,7 @@ function eur(v) {
  * @returns {object|null}           Rechnung oder null wenn kein Anteil
  */
 export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, artikelListe, alleRechnungen) {
-  if (mitgliedId === '__og__') return null;
+  if (mitgliedId === OG_ID) return null;
   const meinePositionen = [];
 
   for (const pos of (bestellung.positionen || [])) {
