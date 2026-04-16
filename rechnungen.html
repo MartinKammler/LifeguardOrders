@@ -106,6 +106,7 @@ import { load, save }         from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { druckePDF }           from './src/pdf.js';
 import { esc }                 from './src/dom.js';
+import { OG_ID }               from './src/konstanten.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
@@ -124,6 +125,7 @@ function eur(v) {
 }
 
 function mitgliedName(id) {
+  if (id === OG_ID) return 'Ortsgruppe';
   const m = mitglieder.find(m => m.id === id);
   return m ? m.name : id;
 }
