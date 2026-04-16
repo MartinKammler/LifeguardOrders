@@ -233,6 +233,7 @@
 import { load, save }         from './src/storage.js';
 import { aggregiereWuensche, exportiereCSV, validiereWunsch } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
+import { esc }                from './src/dom.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
@@ -295,12 +296,12 @@ function renderWunschliste() {
   const tbody = document.getElementById('wunsch-tbody');
   tbody.innerHTML = wuensche.map(w => `
     <tr>
-      <td>${mitgliedName(w.mitgliedId)}</td>
-      <td>${w.name}</td>
-      <td><span class="badge badge-blue">${w.variante || '–'}</span></td>
+      <td>${esc(mitgliedName(w.mitgliedId))}</td>
+      <td>${esc(w.name)}</td>
+      <td><span class="badge badge-blue">${esc(w.variante) || '–'}</span></td>
       <td style="text-align:right">${w.menge}</td>
       <td style="text-align:right">
-        <button class="btn btn-danger btn-sm" data-wunsch-id="${w.id}">Löschen</button>
+        <button class="btn btn-danger btn-sm" data-wunsch-id="${esc(w.id)}">Löschen</button>
       </td>
     </tr>`).join('');
 
@@ -328,15 +329,15 @@ function renderWunschliste() {
       </thead>
       <tbody>
         ${agg.map(zeile => {
-          const variante = zeile.variante ? ' <span class="badge badge-blue">' + zeile.variante + '</span>' : '';
+          const variante = zeile.variante ? ' <span class="badge badge-blue">' + esc(zeile.variante) + '</span>' : '';
           // Mitglieder die diesen Wunsch haben
           const betroffene = wuensche
             .filter(w => w.artikelNr === zeile.artikelNr && w.variante === zeile.variante)
-            .map(w => mitgliedName(w.mitgliedId))
+            .map(w => esc(mitgliedName(w.mitgliedId)))
             .join(', ');
           return `
             <tr>
-              <td>${zeile.name}${variante}</td>
+              <td>${esc(zeile.name)}${variante}</td>
               <td style="text-align:right"><strong>${zeile.menge}</strong></td>
               <td class="aggregiert-mitglieder">${betroffene}</td>
             </tr>`;
@@ -379,12 +380,12 @@ function aktualisiereArtikelListe(suche) {
 
   dropdown.innerHTML = gefiltert.map(a => {
     const varianteBadge = a.variante
-      ? `<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${a.variante}</span>`
+      ? `<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${esc(a.variante)}</span>`
       : '';
     const preis = a.einzelpreis != null ? eur(a.einzelpreis) : '';
-    return `<div class="artikel-option" data-id="${a.id}">
-      <div class="ao-name">${a.name}${varianteBadge}</div>
-      <div class="ao-meta">${a.artikelNr}${preis ? ' · ' + preis : ''}</div>
+    return `<div class="artikel-option" data-id="${esc(a.id)}">
+      <div class="ao-name">${esc(a.name)}${varianteBadge}</div>
+      <div class="ao-meta">${esc(a.artikelNr)}${preis ? ' · ' + preis : ''}</div>
     </div>`;
   }).join('');
 
@@ -421,7 +422,7 @@ function befuelleSelects() {
     hinweisMitglied.style.display = 'none';
     selMitglied.innerHTML = '<option value="">– bitte wählen –</option>' +
       [...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
-        .map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+        .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
   }
 
   // Artikel

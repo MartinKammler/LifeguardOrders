@@ -38,6 +38,7 @@
 <script type="module">
 import { load, save }         from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
+import { esc }                from './src/dom.js';
 
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_B = 'lo_bestellungen';
@@ -132,7 +133,7 @@ function render() {
           return `
           <tr>
             <td class="meta">${b.datum}</td>
-            <td><strong>${b.bezeichnung}</strong></td>
+            <td><strong>${esc(b.bezeichnung)}</strong></td>
             <td>${statusBadge(b.status)}</td>
             <td style="text-align:right">${mengenInfo(b)}</td>
             <td style="text-align:right">${summe > 0 ? eur(summe) : '<span class="meta">–</span>'}</td>

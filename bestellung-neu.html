@@ -103,6 +103,7 @@ import { load, save }         from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { parseBestellung }    from './src/parser.js';
 import { berechneFoerderung } from './src/berechnung.js';
+import { esc }                from './src/dom.js';
 
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
@@ -188,8 +189,8 @@ function renderImportVorschau(geparst) {
       <tbody>
         ${geparst.artikel.map(a => `
           <tr>
-            <td class="pos-nr">${a.artikelNr}</td>
-            <td>${a.name}</td>
+            <td class="pos-nr">${esc(a.artikelNr)}</td>
+            <td>${esc(a.name)}</td>
             <td class="pos-preis">${eur(a.einzelpreis)}</td>
             <td class="pos-foerd">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="pos-foerd">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
@@ -199,7 +200,7 @@ function renderImportVorschau(geparst) {
     </table>
     ${geparst.ogKosten.length
       ? `<p class="text-sm" style="margin-top:6px;color:var(--text-2)">
-           OG-Kosten: ${geparst.ogKosten.map(k => k.name + ' ' + eur(k.einzelpreis)).join(', ')}
+           OG-Kosten: ${geparst.ogKosten.map(k => esc(k.name) + ' ' + eur(k.einzelpreis)).join(', ')}
          </p>` : ''}`;
 }
 
@@ -222,7 +223,7 @@ function renderPositionen() {
   const ogZeile = document.getElementById('og-kosten-zeile');
   if (ogKosten.length) {
     ogZeile.innerHTML = 'OG-Kosten (nicht zuweisbar): ' +
-      ogKosten.map(k => `<strong>${k.name}</strong> ${eur(k.einzelpreis)}`).join(' · ');
+      ogKosten.map(k => `<strong>${esc(k.name)}</strong> ${eur(k.einzelpreis)}`).join(' · ');
   } else {
     ogZeile.textContent = '';
   }
@@ -249,7 +250,7 @@ function renderPositionen() {
           <select class="zuw-mitglied" data-pos="${pos.id}" data-zi="${zi}">
             <option value="">– Mitglied wählen –</option>
             ${[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de')).map(m =>
-              `<option value="${m.id}" ${m.id === z.mitgliedId ? 'selected' : ''}>${m.name}</option>`
+              `<option value="${esc(m.id)}" ${m.id === z.mitgliedId ? 'selected' : ''}>${esc(m.name)}</option>`
             ).join('')}
           </select>
           <input type="number" class="zuw-menge" data-pos="${pos.id}" data-zi="${zi}"
@@ -266,8 +267,8 @@ function renderPositionen() {
 
     div.innerHTML = `
       <div class="flex gap-8" style="align-items:baseline;margin-bottom:6px">
-        <span class="pos-nr">${pos.artikelNr}</span>
-        <strong style="flex:1">${pos.name}</strong>
+        <span class="pos-nr">${esc(pos.artikelNr)}</span>
+        <strong style="flex:1">${esc(pos.name)}</strong>
         <span style="font-size:.82rem">${eur(pos.einzelpreis)} × ${pos.menge} = ${eur(pos.einzelpreis * pos.menge)}</span>
         <span class="${vollstaendig ? 'vollst' : 'unvollst'}" style="font-size:.8rem;font-weight:700">
           ${zugewiesen}/${pos.menge}

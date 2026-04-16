@@ -106,6 +106,7 @@
 import { load, save }          from './src/storage.js';
 import { createWebDavClient }  from './src/webdav.js';
 import { berechneFoerderung }  from './src/berechnung.js';
+import { esc }                 from './src/dom.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
@@ -201,7 +202,7 @@ function befuelleFilter() {
 
   const selMgl = document.getElementById('filter-mitglied');
   selMgl.innerHTML = '<option value="">Alle Mitglieder</option>' +
-    members.map(([id, name]) => `<option value="${id}">${name}</option>`).join('');
+    members.map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
 }
 
 /* ── Statistik aktualisieren ─────────────────────────────────── */
@@ -244,10 +245,10 @@ function renderTabelle() {
   const tbody = document.getElementById('kassenwart-tbody');
   tbody.innerHTML = zeilen.map(z => `
     <tr>
-      <td>${z.mitgliedName}</td>
-      <td class="text-sm" style="color:var(--text-2)">${z.bestellungBez}</td>
-      <td>${z.artikelName}</td>
-      <td>${z.variante || '–'}</td>
+      <td>${esc(z.mitgliedName)}</td>
+      <td class="text-sm" style="color:var(--text-2)">${esc(z.bestellungBez)}</td>
+      <td>${esc(z.artikelName)}</td>
+      <td>${z.variante ? esc(z.variante) : '–'}</td>
       <td class="preis">${z.menge}</td>
       <td class="preis">${eur(z.brutto)}</td>
       <td class="preis" style="color:var(--text-2)">${z.bv ? eur(z.bv) : '–'}</td>

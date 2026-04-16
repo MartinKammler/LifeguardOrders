@@ -227,6 +227,7 @@ import { aggregiereWuensche }               from './src/sammlung.js';
 import { gleiche_ab }                       from './src/abgleich.js';
 import { createWebDavClient }               from './src/webdav.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
+import { esc }                              from './src/dom.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
@@ -307,11 +308,11 @@ function renderAbgleich() {
   for (const m of gematch) {
     const key = `${m.wunsch.artikelNr}\x00${m.wunsch.variante}`;
     const zuw = berechneZuweisung(m.wunsch.artikelNr, m.wunsch.variante, m.position.menge);
-    const zuwHtml = zuw.map(z => `<span>${z.name} ×${z.zugeteiltMenge}</span>`).join('');
+    const zuwHtml = zuw.map(z => `<span>${esc(z.name)} ×${z.zugeteiltMenge}</span>`).join('');
     rows += `
       <tr class="abgleich-row-match" data-key="${key}">
         <td><span class="status-dot dot-green"></span></td>
-        <td>${m.wunsch.name}${m.wunsch.variante ? ' <span class="badge badge-blue">' + m.wunsch.variante + '</span>' : ''}</td>
+        <td>${esc(m.wunsch.name)}${m.wunsch.variante ? ' <span class="badge badge-blue">' + esc(m.wunsch.variante) + '</span>' : ''}</td>
         <td style="text-align:right">${m.wunsch.menge}</td>
         <td style="text-align:right">${m.position.menge}</td>
         <td><div class="zuweisung-liste">${zuwHtml}</div></td>
@@ -338,7 +339,7 @@ function renderAbgleich() {
       bestellt  = String(a.erwartet);
       geliefert = String(a.geliefert);
       const zuw = berechneZuweisung(a.wunsch.artikelNr, a.wunsch.variante, a.geliefert);
-      zuwHtml   = zuw.map(z => `<span>${z.name} ×${z.zugeteiltMenge}</span>`).join('');
+      zuwHtml   = zuw.map(z => `<span>${esc(z.name)} ×${z.zugeteiltMenge}</span>`).join('');
 
       if (!istAufgeloest) {
         aktionenHtml = `<div class="aufloes-aktion">
@@ -380,7 +381,7 @@ function renderAbgleich() {
       <tr class="${rowCls}" data-key="${key}">
         <td><span class="status-dot ${dotCls}"></span></td>
         <td>
-          ${a.wunsch ? (a.wunsch.name + (a.wunsch.variante ? ' <span class="badge badge-blue">' + a.wunsch.variante + '</span>' : '')) : (a.position ? a.position.name : '–')}
+          ${a.wunsch ? (esc(a.wunsch.name) + (a.wunsch.variante ? ' <span class="badge badge-blue">' + esc(a.wunsch.variante) + '</span>' : '')) : (a.position ? esc(a.position.name) : '–')}
           ${typBadge}
         </td>
         <td style="text-align:right">${bestellt}</td>
@@ -399,7 +400,7 @@ function renderAbgleich() {
     ogContainer.classList.remove('card-hidden');
     ogTbody.innerHTML = og_kosten.map(k => `
       <tr class="abgleich-row-og">
-        <td>${k.name}</td>
+        <td>${esc(k.name)}</td>
         <td style="text-align:right">${k.menge}</td>
         <td style="text-align:right">${eur(k.einzelpreis)}</td>
         <td style="text-align:right">${eur((k.einzelpreis || 0) * k.menge)}</td>
@@ -534,11 +535,11 @@ function renderPositionenCard() {
   const rows = positionen.map(p => {
     const zuwHtml = (p.zuweisung || [])
       .filter(z => z.menge > 0)
-      .map(z => `<span>${mitgliedName(z.mitgliedId)} ×${z.menge}</span>`)
+      .map(z => `<span>${esc(mitgliedName(z.mitgliedId))} ×${z.menge}</span>`)
       .join(' ');
     return `
       <tr>
-        <td>${p.name}${p.variante ? ' <span class="badge badge-blue">' + p.variante + '</span>' : ''}</td>
+        <td>${esc(p.name)}${p.variante ? ' <span class="badge badge-blue">' + esc(p.variante) + '</span>' : ''}</td>
         <td style="text-align:right">${p.menge}</td>
         <td class="zuweisung-liste">${zuwHtml}</td>
       </tr>`;
@@ -548,7 +549,7 @@ function renderPositionenCard() {
   if (ogKosten.length) {
     const ogRows = ogKosten.map(k => `
       <tr>
-        <td>${k.name}</td>
+        <td>${esc(k.name)}</td>
         <td style="text-align:right">${k.menge}</td>
         <td class="zuweisung-liste" style="color:var(--blue)">OG</td>
       </tr>`).join('');
@@ -598,7 +599,7 @@ function renderRechnungenCard() {
       : `<td></td>`;
     return `
       <tr>
-        <td>${name}</td>
+        <td>${esc(name)}</td>
         ${betragsHtml}
         ${stundenHtml}
         <td style="text-align:right;white-space:nowrap">${aktionenHtml}</td>

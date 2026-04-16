@@ -15,6 +15,7 @@ assert('esc: kein HTML-Zeichen → unverändert', esc('Hallo Welt') === 'Hallo W
 assert('esc: < wird escaped', esc('<script>') === '&lt;script&gt;');
 assert('esc: & wird escaped', esc('A & B') === 'A &amp; B');
 assert('esc: " wird escaped', esc('"Hallo"') === '&quot;Hallo&quot;');
+assert('esc: \' wird escaped', esc("It's") === 'It&#39;s');
 assert('esc: null → leerer String', esc(null) === '');
 assert('esc: undefined → leerer String', esc(undefined) === '');
 

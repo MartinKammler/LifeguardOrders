@@ -121,6 +121,7 @@
 import { load, save }                                 from './src/storage.js';
 import { createWebDavClient }                         from './src/webdav.js';
 import { berechneStunden, verechneSchuld, ampelStatus, schuldFrist } from './src/stunden.js';
+import { esc }                                        from './src/dom.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
@@ -275,7 +276,7 @@ function renderDashboard() {
     return `
       <div class="ampel-card ${d.ampel}">
         <div class="ac-name">
-          <span class="ampel-dot ${dotKlasse[d.ampel]}"></span>${d.name}
+          <span class="ampel-dot ${dotKlasse[d.ampel]}"></span>${esc(d.name)}
         </div>
         ${schuld > 0 ? `
           <div class="ac-row"><span>Geleistete Stunden</span><span class="wert">${geleistetH} Std.</span></div>

@@ -144,8 +144,8 @@ function renderKatalog() {
                 : a.ogFoerderung ? eur(a.ogFoerderung) : '–'}
             </td>
             <td class="text-right" style="white-space:nowrap">
-              <button class="btn btn-ghost btn-sm" onclick="oeffneModal('${esc(a.id)}')">Bearbeiten</button>
-              <button class="btn btn-danger btn-sm" onclick="loescheArtikelUI('${esc(a.id)}')">Löschen</button>
+              <button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${esc(a.id)}">Bearbeiten</button>
+              <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${esc(a.id)}">Löschen</button>
             </td>
           </tr>`).join('')}
       </tbody>
@@ -315,6 +315,16 @@ async function init() {
     client = createWebDavClient({ ...e.nc, pass: ncPass });
   }
   await ladeArtikel();
+
+  // Delegierter Event-Listener auf der Katalog-Tabelle (einmalig registriert)
+  const tabelleEl = document.getElementById('katalog-inhalt');
+  tabelleEl.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (btn.dataset.action === 'bearbeiten') oeffneModal(id);
+    if (btn.dataset.action === 'loeschen')   loescheArtikelUI(id);
+  });
 }
 
 init();
