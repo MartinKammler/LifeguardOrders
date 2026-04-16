@@ -3,6 +3,7 @@
 <head><meta charset="UTF-8"><title>Tests – audit</title></head>
 <body><pre id="out"></pre>
 <script type="module">
+localStorage.removeItem('lo_audit_log');
 import { logAktion, ladeLog, istRechnungUnveraendert } from '../src/audit.js';
 let ok = 0, fail = 0;
 function assert(label, cond) {

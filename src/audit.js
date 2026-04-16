@@ -57,6 +57,7 @@ export function ladeLog() {
  */
 export function istRechnungUnveraendert(a, b) {
   if (a === b) return true;
+  if (!a || !b) return false;
   if (a.nummer       !== b.nummer)       return false;
   if (a.gesamtbetrag !== b.gesamtbetrag) return false;
   if (JSON.stringify(a.positionen) !== JSON.stringify(b.positionen)) return false;
