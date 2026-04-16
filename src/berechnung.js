@@ -32,7 +32,7 @@ export function berechneFoerderung(artikel, menge, opts = {}) {
 
   let og;
   if (artikel.ogUebernimmtRest) {
-    og = runde(artikel.einzelpreis * menge - bv - lv);
+    og = Math.max(0, runde(artikel.einzelpreis * menge - bv - lv));
   } else {
     og = runde((artikel.ogFoerderung || 0) * menge);
   }
