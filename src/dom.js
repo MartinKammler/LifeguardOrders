@@ -29,6 +29,9 @@ export function setText(element, value) {
 }
 
 export function raw(html) {
+  if (html != null && typeof html === 'object' && html[RAW_HTML] != null) {
+    return html; // bereits ein raw-Objekt — kein doppeltes Wrapping
+  }
   return { [RAW_HTML]: String(html ?? '') };
 }
 
