@@ -22,7 +22,7 @@
 <div id="summary"></div>
 
 <script type="module">
-import { aggregiereWuensche, exportiereCSV, validiereWunsch } from '../src/sammlung.js';
+import { aggregiereWuensche, exportiereCSV, validiereWunsch, mergeWuensche } from '../src/sammlung.js';
 
 /* ── Mini Test-Runner ───────────────────────────────────────── */
 const results = [];
@@ -129,6 +129,55 @@ await test('variante leer-String wird korrekt als Schlüssel behandelt', () => {
   ]);
   assertEqual(result.length, 1);
   assertEqual(result[0].menge, 5);
+});
+
+/* ── Tests: mergeWuensche ──────────────────────────────────── */
+
+suite('mergeWuensche — gleiche Person + gleicher Artikel');
+
+await test('same mitgliedId+artikelNr+variante → Mengen summiert', () => {
+  const result = mergeWuensche([
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: 'XL', name: 'Shirt', menge: 2 },
+    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: 'XL', name: 'Shirt', menge: 3 },
+  ]);
+  assertEqual(result.length, 1);
+  assertEqual(result[0].menge, 5);
+});
+
+await test('same mitgliedId+artikelNr+variante → id des ersten Eintrags behalten', () => {
+  const result = mergeWuensche([
+    { id: 'first', mitgliedId: 'martin', artikelNr: 'A001', variante: 'XL', name: 'Shirt', menge: 2 },
+    { id: 'second', mitgliedId: 'martin', artikelNr: 'A001', variante: 'XL', name: 'Shirt', menge: 1 },
+  ]);
+  assertEqual(result[0].id, 'first');
+});
+
+await test('unterschiedliche Mitglieder, gleicher Artikel → bleiben getrennt', () => {
+  const result = mergeWuensche([
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1 },
+    { id: 'b', mitgliedId: 'dorit',  artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1 },
+  ]);
+  assertEqual(result.length, 2);
+});
+
+await test('gleiche Person, unterschiedliche Variante → getrennt', () => {
+  const result = mergeWuensche([
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M',  name: 'Shirt', menge: 1 },
+    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: 'XL', name: 'Shirt', menge: 1 },
+  ]);
+  assertEqual(result.length, 2);
+});
+
+await test('leeres Array → leeres Array', () => {
+  assertDeepEqual(mergeWuensche([]), []);
+});
+
+await test('ogKostenlos-Flag bleibt erhalten nach Merge', () => {
+  const result = mergeWuensche([
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: '', name: 'X', menge: 1, ogKostenlos: true },
+    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: '', name: 'X', menge: 2, ogKostenlos: true },
+  ]);
+  assertEqual(result[0].ogKostenlos, true);
 });
 
 /* ── Tests: exportiereCSV ───────────────────────────────────── */
