@@ -180,6 +180,12 @@
           <input type="number" id="inp-menge" min="1" value="1">
         </div>
       </div>
+      <div class="field" style="margin-top:4px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem">
+          <input type="checkbox" id="chk-og-kostenlos">
+          OG übernimmt Kosten (Mitglied zahlt nichts)
+        </label>
+      </div>
       <div class="mt-8">
         <button class="btn btn-primary btn-sm" id="btn-hinzufuegen">+ Hinzufügen</button>
         <span id="wunsch-fehler" class="text-sm" style="color:var(--red);margin-left:10px;display:none"></span>
@@ -231,7 +237,7 @@
 
 <script type="module">
 import { load, save }         from './src/storage.js';
-import { aggregiereWuensche, exportiereCSV, validiereWunsch } from './src/sammlung.js';
+import { aggregiereWuensche, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
 import { esc }                from './src/dom.js';
 
@@ -250,6 +256,8 @@ let artikelListe    = [];
 let mitglieder      = [];
 let sortierteArtikel = [];
 
+const OG_ID = '__og__';
+
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function uuid() { return crypto.randomUUID(); }
 
@@ -262,6 +270,7 @@ function eur(v) {
 }
 
 function mitgliedName(id) {
+  if (id === OG_ID) return 'Ortsgruppe';
   const m = mitglieder.find(m => m.id === id);
   return m ? m.name : id;
 }
@@ -297,21 +306,38 @@ function renderWunschliste() {
   tbody.innerHTML = wuensche.map(w => `
     <tr>
       <td>${esc(mitgliedName(w.mitgliedId))}</td>
-      <td>${esc(w.name)}</td>
+      <td>
+        ${esc(w.name)}
+        ${w.ogKostenlos ? '<span class="badge badge-amber" style="font-size:.72rem;margin-left:4px;vertical-align:middle">OG-kostenlos</span>' : ''}
+      </td>
       <td><span class="badge badge-blue">${esc(w.variante) || '–'}</span></td>
-      <td style="text-align:right">${w.menge}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" data-action="minus" data-id="${esc(w.id)}" style="padding:2px 8px">−</button>
+        <span style="display:inline-block;min-width:20px;text-align:center">${w.menge}</span>
+        <button class="btn btn-ghost btn-sm" data-action="plus"  data-id="${esc(w.id)}" style="padding:2px 8px">+</button>
+      </td>
       <td style="text-align:right">
-        <button class="btn btn-danger btn-sm" data-wunsch-id="${esc(w.id)}">Löschen</button>
+        <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${esc(w.id)}">×</button>
       </td>
     </tr>`).join('');
 
-  // Löschen-Handler
-  tbody.querySelectorAll('[data-wunsch-id]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.wunschId;
+  // Delegierter Event-Handler auf tbody
+  tbody.addEventListener('click', e => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const id     = btn.dataset.id;
+    const action = btn.dataset.action;
+    if (action === 'loeschen') {
       wuensche = wuensche.filter(w => w.id !== id);
-      renderWunschliste();
-    });
+    } else if (action === 'plus') {
+      wuensche = wuensche.map(w => w.id === id ? { ...w, menge: w.menge + 1 } : w);
+    } else if (action === 'minus') {
+      wuensche = wuensche.map(w => {
+        if (w.id !== id) return w;
+        return w.menge > 1 ? { ...w, menge: w.menge - 1 } : null;
+      }).filter(Boolean);
+    }
+    renderWunschliste();
   });
 
   // Aggregiert
@@ -421,6 +447,7 @@ function befuelleSelects() {
   } else {
     hinweisMitglied.style.display = 'none';
     selMitglied.innerHTML = '<option value="">– bitte wählen –</option>' +
+      `<option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>` +
       [...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
         .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
   }
@@ -469,6 +496,7 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
     variante:   artikel.variante || '',
     name:       artikel.name,
     menge:      isNaN(menge) ? 1 : menge,
+    ogKostenlos: document.getElementById('chk-og-kostenlos').checked,
   };
 
   const validierung = validiereWunsch(neuerWunsch);
@@ -478,7 +506,7 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
     return;
   }
 
-  wuensche = [...wuensche, neuerWunsch];
+  wuensche = mergeWuensche([...wuensche, neuerWunsch]);
   renderWunschliste();
 
   // Formular zurücksetzen (Mitglied behalten, Menge auf 1)
@@ -486,6 +514,7 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
   document.getElementById('sel-artikel-id').value    = '';
   schliesseDropdown();
   document.getElementById('inp-menge').value         = 1;
+  document.getElementById('chk-og-kostenlos').checked = false;
 });
 
 /* ── CSV kopieren ────────────────────────────────────────────── */
