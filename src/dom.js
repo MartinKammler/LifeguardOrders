@@ -38,11 +38,15 @@ export function html(strings, ...values) {
     out += strings[i];
     if (i < values.length) out += renderHtmlValue(values[i]);
   }
-  return out;
+  return raw(out);
 }
 
 export function setHTML(element, markup) {
-  element.innerHTML = String(markup ?? '');
+  if (markup != null && typeof markup === 'object' && markup[RAW_HTML] != null) {
+    element.innerHTML = markup[RAW_HTML];
+  } else {
+    element.innerHTML = String(markup ?? '');
+  }
 }
 
 function renderHtmlValue(value) {
