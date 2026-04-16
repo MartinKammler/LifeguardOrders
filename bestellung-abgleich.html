@@ -222,7 +222,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="module">
 import { OG_ID }                            from './src/konstanten.js';
-import { load, save }                        from './src/storage.js';
+import { load }                              from './src/storage.js';
 import { parseBestellung }                  from './src/parser.js';
 import { aggregiereWuensche }               from './src/sammlung.js';
 import {
@@ -233,13 +233,22 @@ import {
 } from './src/abgleich.js';
 import { createWebDavClient }               from './src/webdav.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
-import { esc }                              from './src/dom.js';
+import { html, raw, setHTML }               from './src/dom.js';
+import { validateListe, validatePosition, validateWunsch } from './src/validation.js';
+import {
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './src/sync.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const NC_PFAD_A     = '/LifeguardOrders/artikel.json';
+const SYNC_SCOPE_B  = 'bestellungen';
+const SYNC_SCOPE_A  = 'artikel';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
 let bestellungen  = [];
@@ -284,22 +293,22 @@ function berechneZuweisung(artikelNr, variante, geliefertMenge) {
 function renderAbgleich() {
   const tbody = document.getElementById('abgleich-tbody');
   const { gematch, abweichungen, og_kosten } = abgleichResult;
-  let rows = '';
+  const rows = [];
 
   // Exakte Matches
   for (const m of gematch) {
     const key = `${m.wunsch.artikelNr}\x00${m.wunsch.variante}`;
     const zuw = berechneZuweisung(m.wunsch.artikelNr, m.wunsch.variante, m.position.menge);
-    const zuwHtml = zuw.map(z => `<span>${esc(z.name)} ×${z.zugeteiltMenge}</span>`).join('');
-    rows += `
-      <tr class="abgleich-row-match" data-key="${esc(key)}">
+    const zuwHtml = raw(zuw.map(z => html`<span>${z.name} ×${z.zugeteiltMenge}</span>`).join(''));
+    rows.push(html`
+      <tr class="abgleich-row-match" data-key="${key}">
         <td><span class="status-dot dot-green"></span></td>
-        <td>${esc(m.wunsch.name)}${m.wunsch.variante ? ' <span class="badge badge-blue">' + esc(m.wunsch.variante) + '</span>' : ''}</td>
+        <td>${m.wunsch.name}${m.wunsch.variante ? raw(html` <span class="badge badge-blue">${m.wunsch.variante}</span>`) : raw('')}</td>
         <td style="text-align:right">${m.wunsch.menge}</td>
         <td style="text-align:right">${m.position.menge}</td>
         <td><div class="zuweisung-liste">${zuwHtml}</div></td>
         <td></td>
-      </tr>`;
+      </tr>`);
   }
 
   // Abweichungen
@@ -317,78 +326,81 @@ function renderAbgleich() {
 
     if (a.typ === 'menge') {
       dotCls    = 'dot-yellow';
-      typBadge  = '<span class="abweich-typ typ-menge">Menge</span>';
+      typBadge  = raw('<span class="abweich-typ typ-menge">Menge</span>');
       bestellt  = String(a.erwartet);
       geliefert = String(a.geliefert);
       const zuw = berechneZuweisung(a.wunsch.artikelNr, a.wunsch.variante, a.geliefert);
-      zuwHtml   = zuw.map(z => `<span>${esc(z.name)} ×${z.zugeteiltMenge}</span>`).join('');
+      zuwHtml   = raw(zuw.map(z => html`<span>${z.name} ×${z.zugeteiltMenge}</span>`).join(''));
 
       if (!istAufgeloest) {
-        aktionenHtml = `<div class="aufloes-aktion">
-          <button class="btn btn-sm btn-primary" data-aktion="accept-menge" data-key="${esc(key)}" data-menge="${a.geliefert}">
+        aktionenHtml = raw(html`<div class="aufloes-aktion">
+          <button class="btn btn-sm btn-primary" data-aktion="accept-menge" data-key="${key}" data-menge="${a.geliefert}">
             ${a.geliefert} übernehmen
           </button>
-          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${esc(key)}">Ignorieren</button>
-        </div>`;
+          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${key}">Ignorieren</button>
+        </div>`);
       } else {
-        aktionenHtml = '<span class="badge badge-green">Aufgelöst</span>';
+        aktionenHtml = raw('<span class="badge badge-green">Aufgelöst</span>');
       }
     } else if (a.typ === 'nicht_geliefert') {
       dotCls    = 'dot-red';
-      typBadge  = '<span class="abweich-typ typ-nicht-gel">Nicht geliefert</span>';
+      typBadge  = raw('<span class="abweich-typ typ-nicht-gel">Nicht geliefert</span>');
       bestellt  = String(a.erwartet);
 
       if (!istAufgeloest) {
-        aktionenHtml = `<div class="aufloes-aktion">
-          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${esc(key)}">Ignorieren</button>
-        </div>`;
+        aktionenHtml = raw(html`<div class="aufloes-aktion">
+          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${key}">Ignorieren</button>
+        </div>`);
       } else {
-        aktionenHtml = '<span class="badge badge-green">Aufgelöst</span>';
+        aktionenHtml = raw('<span class="badge badge-green">Aufgelöst</span>');
       }
     } else if (a.typ === 'nicht_bestellt') {
       dotCls    = 'dot-blue';
-      typBadge  = '<span class="abweich-typ typ-nicht-bestellt">Nicht bestellt</span>';
+      typBadge  = raw('<span class="abweich-typ typ-nicht-bestellt">Nicht bestellt</span>');
       geliefert = String(a.geliefert);
 
       if (!istAufgeloest) {
-        aktionenHtml = `<div class="aufloes-aktion">
-          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${esc(key)}">Ignorieren</button>
-        </div>`;
+        aktionenHtml = raw(html`<div class="aufloes-aktion">
+          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${key}">Ignorieren</button>
+        </div>`);
       } else {
-        aktionenHtml = '<span class="badge badge-green">Aufgelöst</span>';
+        aktionenHtml = raw('<span class="badge badge-green">Aufgelöst</span>');
       }
     }
 
-    rows += `
-      <tr class="${rowCls}" data-key="${esc(key)}">
+    rows.push(html`
+      <tr class="${rowCls}" data-key="${key}">
         <td><span class="status-dot ${dotCls}"></span></td>
         <td>
-          ${a.wunsch ? (esc(a.wunsch.name) + (a.wunsch.variante ? ' <span class="badge badge-blue">' + esc(a.wunsch.variante) + '</span>' : '')) : (a.position ? esc(a.position.name) : '–')}
+          ${a.wunsch
+            ? raw(html`${a.wunsch.name}${a.wunsch.variante ? raw(html` <span class="badge badge-blue">${a.wunsch.variante}</span>`) : raw('')}`)
+            : (a.position ? a.position.name : '–')}
           ${typBadge}
         </td>
         <td style="text-align:right">${bestellt}</td>
         <td style="text-align:right">${geliefert}</td>
         <td><div class="zuweisung-liste">${zuwHtml}</div></td>
         <td>${aktionenHtml}</td>
-      </tr>`;
+      </tr>`);
   }
 
-  tbody.innerHTML = rows;
+  setHTML(tbody, html`${rows}`);
 
   // OG-Kosten
   const ogContainer = document.getElementById('og-kosten-container');
   const ogTbody     = document.getElementById('og-tbody');
   if (og_kosten.length) {
     ogContainer.classList.remove('card-hidden');
-    ogTbody.innerHTML = og_kosten.map(k => `
+    setHTML(ogTbody, html`${og_kosten.map(k => html`
       <tr class="abgleich-row-og">
-        <td>${esc(k.name)}</td>
+        <td>${k.name}</td>
         <td style="text-align:right">${k.menge}</td>
         <td style="text-align:right">${eur(k.einzelpreis)}</td>
         <td style="text-align:right">${eur((k.einzelpreis || 0) * k.menge)}</td>
-      </tr>`).join('');
+      </tr>`)}`);
   } else {
     ogContainer.classList.add('card-hidden');
+    setHTML(ogTbody, '');
   }
 
   // Event-Listener für Aktionen
@@ -453,35 +465,35 @@ function renderPositionenCard() {
   const ogKosten   = (bestellung.positionen || []).filter(p => p.typ === 'og-kosten');
 
   if (!positionen.length) {
-    el.innerHTML = '<p class="text-sm">Keine Artikel-Positionen gespeichert.</p>';
+    setHTML(el, '<p class="text-sm">Keine Artikel-Positionen gespeichert.</p>');
     return;
   }
 
   const rows = positionen.map(p => {
-    const zuwHtml = (p.zuweisung || [])
+    const zuwHtml = raw((p.zuweisung || [])
       .filter(z => z.menge > 0)
-      .map(z => `<span>${esc(mitgliedName(z.mitgliedId))} ×${z.menge}</span>`)
-      .join(' ');
-    return `
+      .map(z => html`<span>${mitgliedName(z.mitgliedId)} ×${z.menge}</span>`)
+      .join(' '));
+    return html`
       <tr>
-        <td>${esc(p.name)}${p.variante ? ' <span class="badge badge-blue">' + esc(p.variante) + '</span>' : ''}</td>
+        <td>${p.name}${p.variante ? raw(html` <span class="badge badge-blue">${p.variante}</span>`) : raw('')}</td>
         <td style="text-align:right">${p.menge}</td>
         <td class="zuweisung-liste">${zuwHtml}</td>
       </tr>`;
-  }).join('');
+  });
 
-  let ogHtml = '';
+  let ogHtml = raw('');
   if (ogKosten.length) {
-    const ogRows = ogKosten.map(k => `
+    const ogRows = ogKosten.map(k => html`
       <tr>
-        <td>${esc(k.name)}</td>
+        <td>${k.name}</td>
         <td style="text-align:right">${k.menge}</td>
         <td class="zuweisung-liste" style="color:var(--blue)">OG</td>
-      </tr>`).join('');
-    ogHtml = ogRows;
+      </tr>`);
+    ogHtml = raw(ogRows.join(''));
   }
 
-  el.innerHTML = `
+  setHTML(el, html`
     <table>
       <thead>
         <tr>
@@ -491,7 +503,7 @@ function renderPositionenCard() {
         </tr>
       </thead>
       <tbody>${rows}${ogHtml}</tbody>
-    </table>`;
+    </table>`);
 }
 
 function renderRechnungenCard() {
@@ -500,7 +512,7 @@ function renderRechnungenCard() {
   const vorhanden   = bestellung.rechnungen || [];
 
   if (!ids.length) {
-    el.innerHTML = '<p class="text-sm">Keine Mitglieder mit Positionszuweisung gefunden.</p>';
+    setHTML(el, '<p class="text-sm">Keine Mitglieder mit Positionszuweisung gefunden.</p>');
     document.getElementById('btn-alle-rechnungen').disabled = true;
     return;
   }
@@ -510,28 +522,28 @@ function renderRechnungenCard() {
     const rechnung = vorhanden.find(r => r.mitgliedId === mid);
     let aktionenHtml;
     if (rechnung) {
-      aktionenHtml = `
+      aktionenHtml = raw(html`
         <span class="badge badge-blue" style="margin-right:6px">${rechnung.nummer}</span>
-        <button class="btn btn-ghost btn-sm" data-pdf-id="${rechnung.id}">PDF</button>`;
+        <button class="btn btn-ghost btn-sm" data-pdf-id="${rechnung.id}">PDF</button>`);
     } else {
-      aktionenHtml = `<button class="btn btn-primary btn-sm" data-erzeugen-id="${mid}">Rechnung erzeugen</button>`;
+      aktionenHtml = raw(html`<button class="btn btn-primary btn-sm" data-erzeugen-id="${mid}">Rechnung erzeugen</button>`);
     }
     const betragsHtml = rechnung
-      ? `<td style="text-align:right">${eur(rechnung.gesamtbetrag)}</td>`
-      : `<td style="text-align:right;color:var(--text-2)">–</td>`;
+      ? raw(html`<td style="text-align:right">${eur(rechnung.gesamtbetrag)}</td>`)
+      : raw('<td style="text-align:right;color:var(--text-2)">–</td>');
     const stundenHtml = rechnung
-      ? `<td style="text-align:right">${rechnung.erwartetEinsatzstunden > 0 ? rechnung.erwartetEinsatzstunden + ' Std.' : '–'}</td>`
-      : `<td></td>`;
-    return `
+      ? raw(html`<td style="text-align:right">${rechnung.erwartetEinsatzstunden > 0 ? rechnung.erwartetEinsatzstunden + ' Std.' : '–'}</td>`)
+      : raw('<td></td>');
+    return html`
       <tr>
-        <td>${esc(name)}</td>
+        <td>${name}</td>
         ${betragsHtml}
         ${stundenHtml}
         <td style="text-align:right;white-space:nowrap">${aktionenHtml}</td>
       </tr>`;
-  }).join('');
+  });
 
-  el.innerHTML = `
+  setHTML(el, html`
     <table>
       <thead>
         <tr>
@@ -542,7 +554,7 @@ function renderRechnungenCard() {
         </tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>`);
 
   // PDF-Buttons
   el.querySelectorAll('[data-pdf-id]').forEach(btn => {
@@ -580,8 +592,16 @@ async function erzeugeRechnungFuerMitglied(mitgliedId) {
   bestellungen[idx].rechnungen = [...(bestellungen[idx].rechnungen || []), rechnung];
   bestellung = bestellungen[idx];
 
-  save(STORAGE_KEY_B, bestellungen);
-  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  if (gespeichert.sync?.pending) {
+    zeigeStatus(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn');
+  }
 
   druckePDF(rechnung, mitgliedName(mitgliedId), einstellungen);
 }
@@ -677,7 +697,21 @@ document.getElementById('btn-direkt-uebernehmen').addEventListener('click', () =
 document.getElementById('btn-abschliessen').addEventListener('click', async () => {
   if (!confirm('Bestellung jetzt abschließen? Dies kann nicht rückgängig gemacht werden.')) return;
 
+  const wunschValidierung = validateListe(bestellung.wuensche || [], validateWunsch);
+  if (!wunschValidierung.ok) {
+    alert(`Ungültiger Wunsch in Zeile ${wunschValidierung.index + 1}: ${wunschValidierung.fehler}`);
+    return;
+  }
+
   const positionen = bauePositionen();
+  const positionsValidierung = validateListe(
+    positionen.filter(p => p.typ === 'artikel'),
+    validatePosition
+  );
+  if (!positionsValidierung.ok) {
+    alert(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`);
+    return;
+  }
   const idx = bestellungen.findIndex(b => b.id === bestellung.id);
   if (idx < 0) return;
 
@@ -687,11 +721,17 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     positionen,
     rechnungen: [],
   };
+  bestellung = bestellungen[idx];
 
-  save(STORAGE_KEY_B, bestellungen);
-
-  if (client) {
-    await client.writeJson(NC_PFAD_B, bestellungen);
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  if (gespeichert.sync?.pending) {
+    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
   }
 
   // Zurück zur selben Seite → zeigt jetzt Rechnungen-Bereich
@@ -722,8 +762,17 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
   if (idx < 0) return;
 
   bestellungen[idx] = { ...bestellung, status: 'bestellt', positionen: [], rechnungen: [] };
-  save(STORAGE_KEY_B, bestellungen);
-  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+  bestellung = bestellungen[idx];
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  if (gespeichert.sync?.pending) {
+    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  }
 
   location.reload();
 });
@@ -746,16 +795,26 @@ async function init() {
   // NC-Sync
   if (client) {
     const [rB, rA] = await Promise.all([
-      client.readJson(NC_PFAD_B),
-      client.readJson('/LifeguardOrders/artikel.json'),
+      hydrateJsonFromSync({
+        scope: SYNC_SCOPE_B,
+        storageKey: STORAGE_KEY_B,
+        client,
+        remotePath: NC_PFAD_B,
+        isValidRemote: data => Array.isArray(data),
+      }),
+      hydrateJsonFromSync({
+        scope: SYNC_SCOPE_A,
+        storageKey: STORAGE_KEY_A,
+        client,
+        remotePath: NC_PFAD_A,
+        isValidRemote: data => Array.isArray(data),
+      }),
     ]);
-    if (rB.ok && Array.isArray(rB.data) && rB.data.length > 0) {
+    if (Array.isArray(rB.data)) {
       bestellungen = rB.data;
-      save(STORAGE_KEY_B, bestellungen);
     }
-    if (rA.ok && Array.isArray(rA.data) && rA.data.length > 0) {
+    if (Array.isArray(rA.data)) {
       artikelListe = rA.data;
-      save(STORAGE_KEY_A, artikelListe);
     }
   }
 
@@ -775,7 +834,7 @@ async function init() {
   document.getElementById('card-kopfdaten').style.display = '';
   document.getElementById('info-bezeichnung').textContent = bestellung.bezeichnung;
   document.getElementById('info-datum').textContent       = bestellung.datum;
-  document.getElementById('info-status').innerHTML        = `<span class="badge badge-blue">${statusLabel(bestellung.status)}</span>`;
+  setHTML(document.getElementById('info-status'), html`<span class="badge badge-blue">${statusLabel(bestellung.status)}</span>`);
   document.title = `Abgleich: ${bestellung.bezeichnung} – LifeguardOrders`;
   document.getElementById('seiten-titel').textContent = `Abgleich: ${bestellung.bezeichnung}`;
 

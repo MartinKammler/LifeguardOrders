@@ -3,7 +3,7 @@
 <head><meta charset="UTF-8"><title>Tests – validation</title></head>
 <body><pre id="out"></pre>
 <script type="module">
-import { validateWunsch, validatePosition, validateArtikel } from '../src/validation.js';
+import { validateWunsch, validatePosition, validateArtikel, validateListe } from '../src/validation.js';
 let ok = 0, fail = 0;
 function assert(label, cond) {
   document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
@@ -25,12 +25,26 @@ assert('validatePosition: fehler bei negativer menge', validatePosition({ artike
 assert('validatePosition: fehler bei Dezimalmenge', validatePosition({ artikelNr: '12345', menge: 1.5, einzelpreis: 9.99 }).ok === false);
 assert('validatePosition: fehler bei negativem Preis', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: -1 }).ok === false);
 assert('validatePosition: ok bei Preis 0', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: 0 }).ok === true);
+assert('validatePosition: fehler bei negativer OG-Förderung', validatePosition({ artikelNr: '12345', menge: 1, einzelpreis: 9.99, ogFoerderung: -1 }).ok === false);
 
 // validateArtikel
 assert('validateArtikel: ok bei vollständigem Artikel', validateArtikel({ artikelNr: '12345', name: 'T-Shirt', einzelpreis: 19.99 }).ok === true);
 assert('validateArtikel: fehler bei fehlendem Namen', validateArtikel({ artikelNr: '12345', einzelpreis: 19.99 }).ok === false);
 assert('validateArtikel: fehler bei negativem Preis', validateArtikel({ artikelNr: '12345', name: 'T-Shirt', einzelpreis: -5 }).ok === false);
 assert('validateArtikel: fehler bei fehlender artikelNr', validateArtikel({ name: 'T-Shirt', einzelpreis: 19.99 }).ok === false);
+assert('validateArtikel: fehler bei negativer BV-Förderung', validateArtikel({ artikelNr: '12345', name: 'T-Shirt', einzelpreis: 19.99, bvFoerderung: -1 }).ok === false);
+
+// validateListe
+assert('validateListe: ok bei komplett gültiger Liste', validateListe([
+  { mitgliedId: 'alice', artikelNr: '12345', menge: 1 },
+  { mitgliedId: 'bob', artikelNr: '67890', menge: 2 },
+], validateWunsch).ok === true);
+const listenFehler = validateListe([
+  { mitgliedId: 'alice', artikelNr: '12345', menge: 1 },
+  { mitgliedId: '', artikelNr: '67890', menge: 2 },
+], validateWunsch);
+assert('validateListe: meldet Fehler in ungültiger Liste', listenFehler.ok === false);
+assert('validateListe: liefert Index des fehlerhaften Eintrags', listenFehler.index === 1);
 
 document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;
 </script></body></html>

@@ -3,6 +3,8 @@
  * Sichere DOM-Hilfsfunktionen — kein innerHTML mit Nutzerdaten.
  */
 
+const RAW_HTML = Symbol('rawHtml');
+
 export function esc(value) {
   if (value == null) return '';
   return String(value)
@@ -24,4 +26,28 @@ export function el(tag, opts = {}) {
 
 export function setText(element, value) {
   element.textContent = value != null ? String(value) : '';
+}
+
+export function raw(html) {
+  return { [RAW_HTML]: String(html ?? '') };
+}
+
+export function html(strings, ...values) {
+  let out = '';
+  for (let i = 0; i < strings.length; i++) {
+    out += strings[i];
+    if (i < values.length) out += renderHtmlValue(values[i]);
+  }
+  return out;
+}
+
+export function setHTML(element, markup) {
+  element.innerHTML = String(markup ?? '');
+}
+
+function renderHtmlValue(value) {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map(renderHtmlValue).join('');
+  if (typeof value === 'object' && value[RAW_HTML] != null) return value[RAW_HTML];
+  return esc(value);
 }

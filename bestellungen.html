@@ -36,13 +36,19 @@
 </div>
 
 <script type="module">
-import { load, save }         from './src/storage.js';
+import { load }               from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
-import { esc }                from './src/dom.js';
+import { html, raw, setHTML } from './src/dom.js';
+import {
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './src/sync.js';
 
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_B = 'lo_bestellungen';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const SYNC_SCOPE_B  = 'bestellungen';
 
 let bestellungen = [];
 let client = null;
@@ -57,10 +63,10 @@ function summePositionen(positionen) {
 
 function statusBadge(status) {
   switch (status) {
-    case 'sammlung':      return '<span class="badge badge-amber">Sammlung</span>';
-    case 'bestellt':      return '<span class="badge badge-blue">Bestellt</span>';
-    case 'abgeschlossen': return '<span class="badge badge-green">Abgeschlossen</span>';
-    default:              return '<span class="badge badge-amber">Sammlung</span>';
+    case 'sammlung':      return raw('<span class="badge badge-amber">Sammlung</span>');
+    case 'bestellt':      return raw('<span class="badge badge-blue">Bestellt</span>');
+    case 'abgeschlossen': return raw('<span class="badge badge-green">Abgeschlossen</span>');
+    default:              return raw('<span class="badge badge-amber">Sammlung</span>');
   }
 }
 
@@ -68,27 +74,27 @@ function statusBadge(status) {
 function mengenInfo(b) {
   if (b.status === 'abgeschlossen') {
     const artikel = (b.positionen || []).filter(p => p.typ === 'artikel');
-    return `<span style="color:var(--green)">${artikel.length}</span>
-            <span class="meta"> Position${artikel.length !== 1 ? 'en' : ''}</span>`;
+    return raw(html`<span style="color:var(--green)">${artikel.length}</span>
+            <span class="meta"> Position${artikel.length !== 1 ? 'en' : ''}</span>`);
   }
   // sammlung oder bestellt: Anzahl Wünsche
   const anzahl = (b.wuensche || []).length;
-  return `<span style="color:var(--amber)">${anzahl}</span>
-          <span class="meta"> Wunsch${anzahl !== 1 ? 'e' : ''}</span>`;
+  return raw(html`<span style="color:var(--amber)">${anzahl}</span>
+          <span class="meta"> Wunsch${anzahl !== 1 ? 'e' : ''}</span>`);
 }
 
 function aktionenHtml(b) {
   switch (b.status) {
     case 'sammlung':
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${esc(b.id)}">Bearbeiten</a>`;
+      return raw(html`<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${encodeURIComponent(b.id)}">Bearbeiten</a>`);
     case 'bestellt':
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${esc(b.id)}">Bearbeiten</a>
-              <a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${esc(b.id)}">Abgleich</a>`;
+      return raw(html`<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${encodeURIComponent(b.id)}">Bearbeiten</a>
+              <a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${encodeURIComponent(b.id)}">Abgleich</a>`);
     case 'abgeschlossen':
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-abgleich.html?id=${esc(b.id)}">Ansehen</a>
-              <button class="btn btn-ghost btn-sm" onclick="oeffneWieder('${esc(b.id)}')">Wieder öffnen</button>`;
+      return raw(html`<a class="btn btn-ghost btn-sm" href="bestellung-abgleich.html?id=${encodeURIComponent(b.id)}">Ansehen</a>
+              <button class="btn btn-ghost btn-sm" data-aktion="wieder-oeffnen" data-id="${b.id}">Wieder öffnen</button>`);
     default:
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${esc(b.id)}">Bearbeiten</a>`;
+      return raw(html`<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${encodeURIComponent(b.id)}">Bearbeiten</a>`);
   }
 }
 
@@ -97,25 +103,33 @@ window.oeffneWieder = async function(id) {
   const idx = bestellungen.findIndex(b => b.id === id);
   if (idx < 0) return;
   bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt', positionen: [], rechnungen: [] };
-  save(STORAGE_KEY_B, bestellungen);
-  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  if (gespeichert.sync?.pending) {
+    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  }
   render();
 };
 
 function render() {
   const el = document.getElementById('liste-inhalt');
   if (!bestellungen.length) {
-    el.innerHTML = `
+    setHTML(el, `
       <div style="text-align:center;padding:48px 24px;color:var(--text-2)">
         <p style="margin-bottom:12px">Noch keine Bestellungen angelegt.</p>
         <a class="btn btn-ghost" href="bestellung-sammeln.html">Neue Bestellung anlegen</a>
-      </div>`;
+      </div>`);
     return;
   }
 
   const sorted = [...bestellungen].sort((a, b) => b.datum.localeCompare(a.datum));
 
-  el.innerHTML = `
+  setHTML(el, html`
     <table>
       <thead>
         <tr>
@@ -130,20 +144,24 @@ function render() {
       <tbody>
         ${sorted.map(b => {
           const summe = summePositionen(b.positionen || []);
-          return `
+          return html`
           <tr>
             <td class="meta">${b.datum}</td>
-            <td><strong>${esc(b.bezeichnung)}</strong></td>
+            <td><strong>${b.bezeichnung}</strong></td>
             <td>${statusBadge(b.status)}</td>
             <td style="text-align:right">${mengenInfo(b)}</td>
-            <td style="text-align:right">${summe > 0 ? eur(summe) : '<span class="meta">–</span>'}</td>
+            <td style="text-align:right">${summe > 0 ? eur(summe) : raw('<span class="meta">–</span>')}</td>
             <td style="text-align:right">
               ${aktionenHtml(b)}
             </td>
           </tr>`;
-        }).join('')}
+        })}
       </tbody>
-    </table>`;
+    </table>`);
+
+  el.querySelectorAll('[data-aktion="wieder-oeffnen"]').forEach(btn => {
+    btn.addEventListener('click', () => oeffneWieder(btn.dataset.id));
+  });
 }
 
 async function init() {
@@ -157,10 +175,15 @@ async function init() {
   if (lokal) bestellungen = lokal;
 
   if (client) {
-    const r = await client.readJson(NC_PFAD_B);
-    if (r.ok && Array.isArray(r.data) && r.data.length > 0) {
+    const r = await hydrateJsonFromSync({
+      scope: SYNC_SCOPE_B,
+      storageKey: STORAGE_KEY_B,
+      client,
+      remotePath: NC_PFAD_B,
+      isValidRemote: data => Array.isArray(data),
+    });
+    if (Array.isArray(r.data)) {
       bestellungen = r.data;
-      save(STORAGE_KEY_B, bestellungen);
     }
   }
 

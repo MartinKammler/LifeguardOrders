@@ -102,16 +102,22 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="module">
-import { load, save }         from './src/storage.js';
+import { load }               from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { druckePDF }           from './src/pdf.js';
-import { esc }                 from './src/dom.js';
+import { html, raw, setHTML }  from './src/dom.js';
 import { OG_ID }               from './src/konstanten.js';
+import {
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './src/sync.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const SYNC_SCOPE_B  = 'bestellungen';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
 let bestellungen  = [];
@@ -158,9 +164,9 @@ function befuelleFilterBestellung(rechnungen) {
   const bestellungIds = [...new Set(rechnungen.map(r => r.bestellungId))];
   const bestellungOpts = bestellungIds.map(bid => {
     const r = rechnungen.find(x => x.bestellungId === bid);
-    return `<option value="${bid}">${esc(r?.bestellungBezeichnung || bid)}</option>`;
-  }).join('');
-  sel.innerHTML = '<option value="">Alle Bestellungen</option>' + bestellungOpts;
+    return html`<option value="${bid}">${r?.bestellungBezeichnung || bid}</option>`;
+  });
+  setHTML(sel, html`<option value="">Alle Bestellungen</option>${bestellungOpts}`);
 }
 
 /* ── Render Tabelle ──────────────────────────────────────────── */
@@ -191,20 +197,20 @@ function renderTabelle() {
   tabelle.style.display     = '';
 
   const tbody = document.getElementById('rechnungen-tbody');
-  tbody.innerHTML = gefiltert.map(r => {
+  setHTML(tbody, html`${gefiltert.map(r => {
     const name      = mitgliedName(r.mitgliedId);
     const statusBadge = r.bezahlt
-      ? `<span class="badge badge-green">Bezahlt<span style="opacity:.7;font-size:.72rem;margin-left:4px">${r.bezahltDatum || ''}</span></span>`
-      : `<span class="badge badge-amber">Offen</span>`;
+      ? raw(html`<span class="badge badge-green">Bezahlt<span style="opacity:.7;font-size:.72rem;margin-left:4px">${r.bezahltDatum || ''}</span></span>`)
+      : raw('<span class="badge badge-amber">Offen</span>');
     const bezahltBtn = r.bezahlt
-      ? `<button class="btn btn-ghost btn-sm" data-unbezahlt="${r.id}" data-bestell="${r.bestellungId}">Rückgängig</button>`
-      : `<button class="btn btn-success btn-sm" data-bezahlt="${r.id}" data-bestell="${r.bestellungId}">Als bezahlt</button>`;
-    return `
+      ? raw(html`<button class="btn btn-ghost btn-sm" data-unbezahlt="${r.id}" data-bestell="${r.bestellungId}">Rückgängig</button>`)
+      : raw(html`<button class="btn btn-success btn-sm" data-bezahlt="${r.id}" data-bestell="${r.bestellungId}">Als bezahlt</button>`);
+    return html`
       <tr>
         <td style="font-family:monospace;font-size:.82rem">${r.nummer}</td>
         <td>${r.datum}</td>
-        <td>${esc(name)}</td>
-        <td class="text-sm" style="color:var(--text-2)">${esc(r.bestellungBezeichnung)}</td>
+        <td>${name}</td>
+        <td class="text-sm" style="color:var(--text-2)">${r.bestellungBezeichnung}</td>
         <td style="text-align:right;font-variant-numeric:tabular-nums" class="${r.bezahlt ? 'betrag-bezahlt' : 'betrag-offen'}">${eur(r.gesamtbetrag)}</td>
         <td style="text-align:right">${r.erwartetEinsatzstunden > 0 ? r.erwartetEinsatzstunden : '–'}</td>
         <td>${statusBadge}</td>
@@ -213,7 +219,7 @@ function renderTabelle() {
           ${bezahltBtn}
         </td>
       </tr>`;
-  }).join('');
+  })}`);
 
   // ── Event-Handler ─────────────────────────────────────────────
 
@@ -260,8 +266,16 @@ async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
     bezahltDatum: bezahlt ? new Date().toISOString().slice(0, 10) : null,
   };
 
-  save(STORAGE_KEY_B, bestellungen);
-  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  if (gespeichert.sync?.pending) {
+    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  }
 
   renderTabelle();
 }
@@ -279,10 +293,15 @@ async function init() {
   bestellungen = load(STORAGE_KEY_B) || [];
 
   if (client) {
-    const r = await client.readJson(NC_PFAD_B);
-    if (r.ok && Array.isArray(r.data) && r.data.length > 0) {
+    const r = await hydrateJsonFromSync({
+      scope: SYNC_SCOPE_B,
+      storageKey: STORAGE_KEY_B,
+      client,
+      remotePath: NC_PFAD_B,
+      isValidRemote: data => Array.isArray(data),
+    });
+    if (Array.isArray(r.data)) {
       bestellungen = r.data;
-      save(STORAGE_KEY_B, bestellungen);
     }
   }
 

@@ -103,16 +103,20 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script type="module">
-import { load, save }          from './src/storage.js';
+import { load }                from './src/storage.js';
 import { createWebDavClient }  from './src/webdav.js';
 import { berechneKassenwartZeilen } from './src/kassenwart.js';
-import { esc }                 from './src/dom.js';
+import { html, setHTML }       from './src/dom.js';
+import { hydrateJsonFromSync } from './src/sync.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const NC_PFAD_A     = '/LifeguardOrders/artikel.json';
+const SYNC_SCOPE_B  = 'bestellungen';
+const SYNC_SCOPE_A  = 'artikel';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
 let bestellungen  = [];
@@ -151,12 +155,10 @@ function befuelleFilter() {
   const members  = [...new Map(alleZeilen.map(z => [z.mitgliedId, z.mitgliedName]))];
 
   const selJahr = document.getElementById('filter-jahr');
-  selJahr.innerHTML = '<option value="">Alle Jahre</option>' +
-    jahre.map(j => `<option value="${j}">${j}</option>`).join('');
+  setHTML(selJahr, html`<option value="">Alle Jahre</option>${jahre.map(j => html`<option value="${j}">${j}</option>`)}`);
 
   const selMgl = document.getElementById('filter-mitglied');
-  selMgl.innerHTML = '<option value="">Alle Mitglieder</option>' +
-    members.map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('');
+  setHTML(selMgl, html`<option value="">Alle Mitglieder</option>${members.map(([id, name]) => html`<option value="${id}">${name}</option>`)}`);
 }
 
 /* ── Statistik aktualisieren ─────────────────────────────────── */
@@ -197,12 +199,12 @@ function renderTabelle() {
   tabelle.style.display = '';
 
   const tbody = document.getElementById('kassenwart-tbody');
-  tbody.innerHTML = zeilen.map(z => `
+  setHTML(tbody, html`${zeilen.map(z => html`
     <tr>
-      <td>${esc(z.mitgliedName)}</td>
-      <td class="text-sm" style="color:var(--text-2)">${esc(z.bestellungBez)}</td>
-      <td>${esc(z.artikelName)}</td>
-      <td>${z.variante ? esc(z.variante) : '–'}</td>
+      <td>${z.mitgliedName}</td>
+      <td class="text-sm" style="color:var(--text-2)">${z.bestellungBez}</td>
+      <td>${z.artikelName}</td>
+      <td>${z.variante || '–'}</td>
       <td class="preis">${z.menge}</td>
       <td class="preis">${eur(z.brutto)}</td>
       <td class="preis" style="color:var(--text-2)">${z.bv ? eur(z.bv) : '–'}</td>
@@ -210,12 +212,12 @@ function renderTabelle() {
       <td class="preis" style="color:var(--text-2)">${z.og ? eur(z.og) : '–'}</td>
       <td class="preis" style="font-weight:600">${eur(z.anteil)}</td>
       <td><span class="${z.bezahlt ? 'badge-bezahlt' : 'badge-offen'}">${z.bezahlt ? 'Bezahlt' : 'Offen'}</span></td>
-    </tr>`).join('');
+    </tr>`)}`);
 
   // Summenzeile
   const sum = (f) => zeilen.reduce((s, z) => s + (z[f] || 0), 0);
   const tfoot = document.getElementById('kassenwart-tfoot');
-  tfoot.innerHTML = `
+  setHTML(tfoot, html`
     <tr class="summen-zeile">
       <td colspan="5">Summe (${zeilen.length} Positionen)</td>
       <td class="preis">${eur(sum('brutto'))}</td>
@@ -224,7 +226,7 @@ function renderTabelle() {
       <td class="preis">${eur(sum('og'))}</td>
       <td class="preis">${eur(sum('anteil'))}</td>
       <td></td>
-    </tr>`;
+    </tr>`);
 }
 
 /* ── CSV-Export ──────────────────────────────────────────────── */
@@ -337,16 +339,26 @@ async function init() {
 
   if (client) {
     const [rB, rA] = await Promise.all([
-      client.readJson(NC_PFAD_B),
-      client.readJson('/LifeguardOrders/artikel.json'),
+      hydrateJsonFromSync({
+        scope: SYNC_SCOPE_B,
+        storageKey: STORAGE_KEY_B,
+        client,
+        remotePath: NC_PFAD_B,
+        isValidRemote: data => Array.isArray(data),
+      }),
+      hydrateJsonFromSync({
+        scope: SYNC_SCOPE_A,
+        storageKey: STORAGE_KEY_A,
+        client,
+        remotePath: NC_PFAD_A,
+        isValidRemote: data => Array.isArray(data),
+      }),
     ]);
-    if (rB.ok && Array.isArray(rB.data) && rB.data.length) {
+    if (Array.isArray(rB.data)) {
       bestellungen = rB.data;
-      save(STORAGE_KEY_B, bestellungen);
     }
-    if (rA.ok && Array.isArray(rA.data) && rA.data.length) {
+    if (Array.isArray(rA.data)) {
       artikelListe = rA.data;
-      save(STORAGE_KEY_A, artikelListe);
     }
   }
 

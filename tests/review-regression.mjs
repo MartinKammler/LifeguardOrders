@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import {
   berechneStunden,
   verechneSchuld,
@@ -5,6 +7,12 @@ import {
 } from '../src/stunden.js';
 import { berechneKassenwartZeilen } from '../src/kassenwart.js';
 import { bauePositionenAusAbgleich } from '../src/abgleich.js';
+import {
+  persistJsonWithSync,
+  hydrateJsonFromSync,
+  hasPendingSync,
+  pendingSyncScopes,
+} from '../src/sync.js';
 
 const tests = [];
 
@@ -241,6 +249,106 @@ test('bauePositionenAusAbgleich uebernimmt OG-Kosten separat', () => {
   assertEqual(positionen[0].typ, 'og-kosten', 'OG-Kosten muessen den passenden Typ behalten');
   assertEqual(positionen[0].einzelpreis, 6.5, 'OG-Kosten muessen Preiswerte behalten');
 });
+
+test('kritische UI-Dateien verwenden keine direkten HTML-Injection-APIs mehr', async () => {
+  const dateien = [
+    'bestellungen.html',
+    'bestellung-abgleich.html',
+    'bestellung-neu.html',
+    'bestellung-sammeln.html',
+    'dashboard.html',
+    'index.html',
+    'kassenwart.html',
+    'rechnungen.html',
+    path.join('src', 'artikel-app.js'),
+  ];
+  const verbotenePatterns = [
+    /\binnerHTML\b/,
+    /\binsertAdjacentHTML\b/,
+    /\bouterHTML\b/,
+    /\bdocument\.write\b/,
+  ];
+
+  for (const datei of dateien) {
+    const inhalt = await fs.readFile(new URL(`../${datei}`, import.meta.url), 'utf8');
+    const treffer = verbotenePatterns.find(pattern => pattern.test(inhalt));
+    assert(!treffer, `${datei} verwendet weiterhin ${treffer}`);
+  }
+});
+
+test('persistJsonWithSync behaelt Pending-Status bei Remote-Fehler', async () => {
+  const storage = createMemoryStorage();
+  const result = await persistJsonWithSync({
+    scope: 'bestellungen',
+    storageKey: 'lo_bestellungen',
+    data: [{ id: 'b1' }],
+    client: {
+      async writeJson() {
+        return { ok: false, error: 'Nextcloud nicht erreichbar.' };
+      },
+    },
+    remotePath: '/LifeguardOrders/bestellungen.json',
+    storage,
+  });
+
+  assertEqual(result.remote.ok, false, 'Remote-Fehler muss sichtbar bleiben');
+  assertEqual(storage.load('lo_bestellungen').length, 1, 'Lokale Daten muessen trotz Sync-Fehler gespeichert werden');
+  assert(hasPendingSync(storage.load('lo_sync_status'), 'bestellungen'), 'Sync-Status muss pending bleiben');
+});
+
+test('hydrateJsonFromSync retryt lokale Pending-Daten vor Remote-Read', async () => {
+  const storage = createMemoryStorage({
+    lo_bestellungen: [{ id: 'lokal' }],
+    lo_sync_status: {
+      bestellungen: {
+        scope: 'bestellungen',
+        pending: true,
+        mode: 'pending',
+        remotePath: '/LifeguardOrders/bestellungen.json',
+      },
+    },
+  });
+  let writeCount = 0;
+  let readCount = 0;
+  const result = await hydrateJsonFromSync({
+    scope: 'bestellungen',
+    storageKey: 'lo_bestellungen',
+    client: {
+      async writeJson(path, data) {
+        writeCount += 1;
+        assertEqual(path, '/LifeguardOrders/bestellungen.json', 'Retry muss denselben Pfad verwenden');
+        assertEqual(data[0].id, 'lokal', 'Retry muss lokale Daten schreiben');
+        return { ok: true };
+      },
+      async readJson() {
+        readCount += 1;
+        return { ok: true, data: [{ id: 'remote' }] };
+      },
+    },
+    remotePath: '/LifeguardOrders/bestellungen.json',
+    isValidRemote: data => Array.isArray(data),
+    storage,
+  });
+
+  assertEqual(result.source, 'local-retried', 'Bei Pending-Retry muss lokal autoritativ bleiben');
+  assertEqual(result.data[0].id, 'lokal', 'Remote-Daten duerfen Pending-Local nicht ueberschreiben');
+  assertEqual(writeCount, 1, 'Es muss genau ein Retry-Write passieren');
+  assertEqual(readCount, 0, 'Vor erfolgreichem Retry darf kein Remote-Read stattfinden');
+  assertEqual(pendingSyncScopes(storage.load('lo_sync_status')).length, 0, 'Erfolgreicher Retry muss Pending-Status aufloesen');
+});
+
+function createMemoryStorage(seed = {}) {
+  const map = new Map(Object.entries(seed));
+  return {
+    load(key) {
+      const value = map.get(key);
+      return value == null ? null : JSON.parse(JSON.stringify(value));
+    },
+    save(key, value) {
+      map.set(key, JSON.parse(JSON.stringify(value)));
+    },
+  };
+}
 
 let passed = 0;
 for (const { name, fn } of tests) {

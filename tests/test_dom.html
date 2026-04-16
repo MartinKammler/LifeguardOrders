@@ -3,7 +3,7 @@
 <head><meta charset="UTF-8"><title>Tests – dom</title></head>
 <body><pre id="out"></pre>
 <script type="module">
-import { esc, el, setText } from '../src/dom.js';
+import { esc, el, setText, html, raw } from '../src/dom.js';
 let ok = 0, fail = 0;
 function assert(label, cond) {
   document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
@@ -38,6 +38,16 @@ assert('setText: setzt textContent', (() => {
   const d = document.createElement('div');
   setText(d, 'Hallo <Welt>');
   return d.textContent === 'Hallo <Welt>' && !d.innerHTML.includes('<Welt>');
+})());
+
+// html()
+assert('html: escaped dynamische Werte', (() => {
+  const markup = html`<p>${'<b>böse</b>'}</p>`;
+  return markup === '<p>&lt;b&gt;böse&lt;/b&gt;</p>';
+})());
+assert('html: raw erlaubt nur explizite trusted Fragmente', (() => {
+  const markup = html`<p>${raw('<strong>ok</strong>')}</p>`;
+  return markup === '<p><strong>ok</strong></p>';
 })());
 
 document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;

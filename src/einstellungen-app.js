@@ -7,33 +7,39 @@ import { createWebDavClient }                        from './webdav.js';
 import { parseMitglieder }                           from './mitglieder.js';
 import { ladeDefaultEinstellungen, downloadAlsJson } from './defaults.js';
 import { load, save }                                from './storage.js';
+import {
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './sync.js';
 
 const STORAGE_KEY = 'lo_einstellungen';
 const NC_PFAD     = '/LifeguardOrders/einstellungen.json';
+const SYNC_SCOPE_E = 'einstellungen';
 
 const DEFAULTS = {
   nc: {
-    url:  'https://cloud.goddyhome.de',
-    user: 'martin',
+    url:  '',
+    user: '',
     pass: '',
   },
   og: {
-    name:        'OG-Schellbronn e.V.',
-    lv:          'Landesverband Baden',
-    bezirk:      'Bezirk Enz',
-    strasse:     'Nagoldstr. 47',
-    plz:         '75242',
-    ort:         'Neuhausen',
-    email:       'kasse@schellbronn.dlrg.de',
-    web:         'www.schellbronn.dlrg.de',
-    iban:        'DE57 6619 0000 0033 5861 08',
-    bic:         'GENODE61KA1',
-    bank:        'Volksbank pur eG',
-    amtsgericht: 'Mannheim 501097',
-    steuernr:    '41435/55802',
-    vorstand1:   'Martin Kammler',
-    vorstand2:   'Yannick Rehberg',
-    finanzen:    'Dorit Storzum',
+    name:        'OG Beispielstadt e.V.',
+    lv:          'Landesverband Beispiel',
+    bezirk:      'Bezirk Muster',
+    strasse:     'Musterstr. 1',
+    plz:         '12345',
+    ort:         'Beispielstadt',
+    email:       'kasse@example.org',
+    web:         'www.example.org',
+    iban:        'DE00 0000 0000 0000 0000 00',
+    bic:         'GENODE00XXX',
+    bank:        'Beispielbank',
+    amtsgericht: 'Musterstadt VR 12345',
+    steuernr:    '00/000/00000',
+    vorstand1:   'Max Beispiel',
+    vorstand2:   'Erika Beispiel',
+    finanzen:    'Pat Beispiel',
   },
   stundenRate: { stunden: 3, euro: 10 },
   einsatztypen: ['wachdienst', 'sanitaetsdienst', 'helfer', 'verwaltung'],
@@ -63,15 +69,6 @@ function ladeClient(einstellungen) {
 
 function leseLokal()      { return load(STORAGE_KEY); }
 function schreibeLokal(d) { save(STORAGE_KEY, d); }
-
-async function leseVonNc(client) {
-  const r = await client.readJson(NC_PFAD);
-  return r.ok ? r.data : null;
-}
-
-async function schreibeAufNc(client, daten) {
-  return client.writeJson(NC_PFAD, daten);
-}
 
 /* ── DOM ↔ Daten ────────────────────────────────────────────── */
 
@@ -216,16 +213,25 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
   const pass = gesamt.nc?.pass || '';
   if (pass) sessionStorage.setItem('lo_nc_pass', pass);
   const gesamtOhnePass = { ...gesamt, nc: { ...gesamt.nc, pass: '' } };
-  schreibeLokal(gesamtOhnePass);
 
   const ncPass = pass || sessionStorage.getItem('lo_nc_pass') || '';
-  const client = createWebDavClient({ ...daten.nc, pass: ncPass });
+  const client = daten.nc?.url && daten.nc?.user && ncPass
+    ? createWebDavClient({ ...daten.nc, pass: ncPass })
+    : null;
   zeigeStatus('speichern-status', 'Speichern…', 'info');
-  const r = await schreibeAufNc(client, gesamtOhnePass);
-  if (r.ok) {
-    zeigeStatus('speichern-status', '✓ Gespeichert', 'ok');
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_E,
+    storageKey: STORAGE_KEY,
+    data: gesamtOhnePass,
+    client,
+    remotePath: NC_PFAD,
+  });
+  if (gespeichert.sync?.pending) {
+    zeigeStatus('speichern-status', syncHinweisText(gespeichert.sync, 'Einstellungen'), 'warn');
+  } else if (gespeichert.remote?.skipped) {
+    zeigeStatus('speichern-status', '✓ Lokal gespeichert', 'ok');
   } else {
-    zeigeStatus('speichern-status', '⚠ Lokal gespeichert, NC: ' + r.error, 'warn');
+    zeigeStatus('speichern-status', '✓ Gespeichert', 'ok');
   }
 });
 
@@ -263,15 +269,21 @@ async function init() {
     const ncPass = lokal.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
     if (lokal.nc?.url && lokal.nc?.user && ncPass) {
       const client = ladeClient({ ...lokal, nc: { ...lokal.nc, pass: ncPass } });
-      const ncDaten = await leseVonNc(client);
-      if (ncDaten) {
-        formularFuellen(ncDaten);
+      const geladen = await hydrateJsonFromSync({
+        scope: SYNC_SCOPE_E,
+        storageKey: STORAGE_KEY,
+        client,
+        remotePath: NC_PFAD,
+        isValidRemote: data => !!data && typeof data === 'object' && !Array.isArray(data),
+      });
+      if (geladen.data) {
+        formularFuellen(geladen.data);
         // Passwort aus sessionStorage nach NC-Sync erneut eintragen (ncDaten hat kein pass)
         if (sessionPass) {
           const passField = document.getElementById('nc-pass');
           if (passField) passField.value = sessionPass;
         }
-        const ncDatenOhnePass = { ...ncDaten, nc: { ...ncDaten.nc, pass: '' } };
+        const ncDatenOhnePass = { ...geladen.data, nc: { ...geladen.data.nc, pass: '' } };
         schreibeLokal(ncDatenOhnePass);
       }
     }

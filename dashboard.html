@@ -118,7 +118,7 @@
 </div>
 
 <script type="module">
-import { load, save }                                 from './src/storage.js';
+import { load }                                       from './src/storage.js';
 import { createWebDavClient }                         from './src/webdav.js';
 import {
   berechneStunden,
@@ -127,13 +127,15 @@ import {
   ampelStatus,
   schuldFrist,
 } from './src/stunden.js';
-import { esc }                                        from './src/dom.js';
+import { html, raw, setHTML }                         from './src/dom.js';
+import { hydrateJsonFromSync }                        from './src/sync.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
 const NC_DIR_LGC    = '/LifeguardClock/';
+const SYNC_SCOPE_B  = 'bestellungen';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
 let bestellungen  = [];
@@ -191,8 +193,10 @@ async function berechneDashboard() {
   const unbContainer = document.getElementById('unbekannte-container');
   if (unbekannt.length) {
     unbContainer.style.display = '';
-    document.getElementById('unbekannte-liste').innerHTML =
-      unbekannt.map(id => `<span class="badge badge-amber" style="margin-right:6px">${esc(id)}</span>`).join('');
+    setHTML(
+      document.getElementById('unbekannte-liste'),
+      html`${unbekannt.map(id => html`<span class="badge badge-amber" style="margin-right:6px">${id}</span>`)}`
+    );
   } else {
     unbContainer.style.display = 'none';
   }
@@ -236,12 +240,12 @@ function renderDashboard() {
     : dashboard;
 
   if (!gefiltert.length && !mitglieder.length) {
-    grid.innerHTML = '<div class="hinweis hinweis-warn">Keine Mitglieder geladen. Bitte in den Einstellungen importieren.</div>';
+    setHTML(grid, '<div class="hinweis hinweis-warn">Keine Mitglieder geladen. Bitte in den Einstellungen importieren.</div>');
     return;
   }
 
   if (!gefiltert.length) {
-    grid.innerHTML = '<div class="hinweis hinweis-info">Alle Mitglieder haben ihre Stundenschuld erfüllt.</div>';
+    setHTML(grid, '<div class="hinweis hinweis-info">Alle Mitglieder haben ihre Stundenschuld erfüllt.</div>');
     return;
   }
 
@@ -251,41 +255,39 @@ function renderDashboard() {
 
   const dotKlasse = { gruen: 'dot-gruen', gelb: 'dot-gelb', rot: 'dot-rot', keine: 'dot-keine' };
 
-  grid.innerHTML = sortiert.map(d => {
+  setHTML(grid, html`${sortiert.map(d => {
     const fristStr = d.frist.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const geleistetH = d.geleisteteStunden.toFixed(1);
     const schuld     = d.gesamtSchuldStunden;
     const offen      = d.restSchuldStunden;
 
-    let vrHtml = '';
+    let vrHtml = raw('');
     if (mitDetails && d.verrechnungen.length) {
-      vrHtml = `<div class="verrechnung-liste">
-        ${d.verrechnungen.map(v => `
+      vrHtml = raw(html`<div class="verrechnung-liste">
+        ${d.verrechnungen.map(v => html`
           <div class="vr-row">
-            <span>${esc(v.rechnungNummer)}</span>
+            <span>${v.rechnungNummer}</span>
             <span>${v.offenStunden > 0
-              ? `<span style="color:var(--amber)">${v.offenStunden} Std. offen</span>`
-              : `<span style="color:var(--green)">getilgt</span>`}</span>
-          </div>`).join('')}
-      </div>`;
+              ? raw(html`<span style="color:var(--amber)">${v.offenStunden} Std. offen</span>`)
+              : raw('<span style="color:var(--green)">getilgt</span>')}</span>
+          </div>`)}
+      </div>`);
     }
 
-    return `
+    return html`
       <div class="ampel-card ${d.ampel}">
         <div class="ac-name">
-          <span class="ampel-dot ${dotKlasse[d.ampel]}"></span>${esc(d.name)}
+          <span class="ampel-dot ${dotKlasse[d.ampel]}"></span>${d.name}
         </div>
-        ${schuld > 0 ? `
+        ${schuld > 0 ? raw(html`
           <div class="ac-row"><span>Geleistete Stunden</span><span class="wert">${geleistetH} Std.</span></div>
           <div class="ac-row"><span>Schuld gesamt</span><span class="wert">${schuld} Std.</span></div>
           <div class="ac-row"><span>Noch offen</span><span class="wert" style="color:${offen > 0 ? 'var(--amber)' : 'var(--green)'}">${offen} Std.</span></div>
           <div class="ac-row"><span>Frist</span><span class="wert">${fristStr}</span></div>
-        ` : `
-          <div class="ac-row" style="color:var(--text-2)">Kein OG-Anteil</div>
-        `}
+        `) : raw('<div class="ac-row" style="color:var(--text-2)">Kein OG-Anteil</div>')}
         ${vrHtml}
       </div>`;
-  }).join('');
+  })}`);
 }
 
 /* ── Event-Listener ──────────────────────────────────────────── */
@@ -305,10 +307,15 @@ async function init() {
   bestellungen = load(STORAGE_KEY_B) || [];
 
   if (client) {
-    const r = await client.readJson(NC_PFAD_B);
-    if (r.ok && Array.isArray(r.data) && r.data.length) {
+    const r = await hydrateJsonFromSync({
+      scope: SYNC_SCOPE_B,
+      storageKey: STORAGE_KEY_B,
+      client,
+      remotePath: NC_PFAD_B,
+      isValidRemote: data => Array.isArray(data),
+    });
+    if (Array.isArray(r.data)) {
       bestellungen = r.data;
-      save(STORAGE_KEY_B, bestellungen);
     }
   }
 

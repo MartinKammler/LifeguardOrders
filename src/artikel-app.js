@@ -7,12 +7,18 @@ import { createWebDavClient }                   from './webdav.js';
 import { parseBestellung }                     from './parser.js';
 import { ladeDefaultArtikel, downloadAlsJson } from './defaults.js';
 import { load, save }                          from './storage.js';
-import { esc }                                 from './dom.js';
+import { html, raw, setHTML }                  from './dom.js';
+import { validateArtikel }                     from './validation.js';
+import {
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './sync.js';
 
 const STORAGE_KEY_E  = 'lo_einstellungen';
 const STORAGE_KEY_A  = 'lo_artikel';
-const NC_PFAD_E      = '/LifeguardOrders/einstellungen.json';
 const NC_PFAD_A      = '/LifeguardOrders/artikel.json';
+const SYNC_SCOPE_A   = 'artikel';
 
 /* ── Zustand ────────────────────────────────────────────────── */
 let artikel    = [];   // aktueller Katalog
@@ -48,7 +54,13 @@ export function fuegeArtikelHinzu(katalog, neueArtikel) {
   const vorhanden   = new Set(katalog.map(artikelKey));
   const hinzugefuegt = [];
   const duplikate    = [];
+  const ungueltig    = [];
   for (const a of neueArtikel) {
+    const validierung = validateArtikel(a);
+    if (!validierung.ok) {
+      ungueltig.push({ artikel: a, fehler: validierung.fehler });
+      continue;
+    }
     if (vorhanden.has(artikelKey(a))) {
       duplikate.push(a.artikelNr);
     } else {
@@ -57,7 +69,7 @@ export function fuegeArtikelHinzu(katalog, neueArtikel) {
       vorhanden.add(artikelKey(a));
     }
   }
-  return { katalog: [...katalog, ...hinzugefuegt], duplikate };
+  return { katalog: [...katalog, ...hinzugefuegt], duplikate, ungueltig };
 }
 
 export function loescheArtikel(katalog, id) {
@@ -83,20 +95,28 @@ async function ladeArtikel() {
   }
 
   if (client) {
-    const r = await client.readJson(NC_PFAD_A);
-    if (r.ok && Array.isArray(r.data) && r.data.length) {
-      artikel = r.data;
-      save(STORAGE_KEY_A, artikel);
+    const geladen = await hydrateJsonFromSync({
+      scope: SYNC_SCOPE_A,
+      storageKey: STORAGE_KEY_A,
+      client,
+      remotePath: NC_PFAD_A,
+      isValidRemote: data => Array.isArray(data),
+    });
+    if (Array.isArray(geladen.data)) {
+      artikel = geladen.data;
     }
   }
   renderKatalog();
 }
 
 async function speichereArtikel() {
-  save(STORAGE_KEY_A, artikel);
-  if (client) {
-    await client.writeJson(NC_PFAD_A, artikel);
-  }
+  return persistJsonWithSync({
+    scope: SYNC_SCOPE_A,
+    storageKey: STORAGE_KEY_A,
+    data: artikel,
+    client,
+    remotePath: NC_PFAD_A,
+  });
 }
 
 /* ── Render ─────────────────────────────────────────────────── */
@@ -104,18 +124,18 @@ async function speichereArtikel() {
 function renderKatalog() {
   const el = document.getElementById('katalog-inhalt');
   if (!artikel.length) {
-    el.innerHTML = `
+    setHTML(el, `
       <div class="leer-hinweis">
         <p>Noch keine Artikel im Katalog.</p>
         <p class="text-sm">Importiere Artikel aus einer Auftragsbestätigung oder lege sie manuell an.</p>
         <button class="btn btn-ghost" onclick="document.getElementById('btn-import-toggle').click()">
           Aus Materialstelle importieren
         </button>
-      </div>`;
+      </div>`);
     return;
   }
 
-  el.innerHTML = `
+  setHTML(el, html`
     <table>
       <thead>
         <tr>
@@ -130,41 +150,42 @@ function renderKatalog() {
         </tr>
       </thead>
       <tbody>
-        ${artikel.map(a => `
+        ${artikel.map(a => html`
           <tr>
-            <td class="artikel-nr">${esc(a.artikelNr)}</td>
-            <td class="artikel-nr">${a.variante ? esc(a.variante) : '–'}</td>
-            <td>${esc(a.name)}</td>
+            <td class="artikel-nr">${a.artikelNr}</td>
+            <td class="artikel-nr">${a.variante || '–'}</td>
+            <td>${a.name}</td>
             <td class="preis">${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="foerder">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
             <td class="foerder">
               ${a.ogUebernimmtRest
-                ? '<span class="og-chip">übernimmt Rest</span>'
+                ? raw('<span class="og-chip">übernimmt Rest</span>')
                 : a.ogFoerderung ? eur(a.ogFoerderung) : '–'}
             </td>
             <td class="text-right" style="white-space:nowrap">
-              <button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${esc(a.id)}">Bearbeiten</button>
-              <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${esc(a.id)}">Löschen</button>
+              <button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${a.id}">Bearbeiten</button>
+              <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${a.id}">Löschen</button>
             </td>
-          </tr>`).join('')}
+          </tr>`)}
       </tbody>
-    </table>`;
+    </table>`);
 }
 
 function renderImportVorschau(geparst) {
   const el = document.getElementById('import-vorschau');
   if (!geparst.artikel.length && !geparst.ogKosten.length) {
-    el.innerHTML = '<p class="text-sm" style="margin-top:10px;color:var(--red)">Keine Artikel erkannt.</p>';
+    setHTML(el, '<p class="text-sm" style="margin-top:10px;color:var(--red)">Keine Artikel erkannt.</p>');
     return;
   }
 
   const ogZeilen = geparst.ogKosten.length
-    ? `<p class="text-sm" style="margin-top:8px;color:var(--text-2)">
-        OG-Kosten (nicht importiert): ${geparst.ogKosten.map(k => esc(k.name)).join(', ')}
-       </p>` : '';
+    ? raw(html`<p class="text-sm" style="margin-top:8px;color:var(--text-2)">
+        OG-Kosten (nicht importiert): ${geparst.ogKosten.map(k => k.name).join(', ')}
+       </p>`)
+    : raw('');
 
-  el.innerHTML = `
+  setHTML(el, html`
     <table style="margin-top:12px">
       <thead>
         <tr>
@@ -178,20 +199,22 @@ function renderImportVorschau(geparst) {
         </tr>
       </thead>
       <tbody>
-        ${geparst.artikel.map((a, i) => `
+        ${geparst.artikel.map(a => html`
           <tr>
-            <td class="artikel-nr">${esc(a.artikelNr)}</td>
-            <td class="artikel-nr">${a.variante ? esc(a.variante) : '–'}</td>
-            <td>${esc(a.name)}</td>
+            <td class="artikel-nr">${a.artikelNr}</td>
+            <td class="artikel-nr">${a.variante || '–'}</td>
+            <td>${a.name}</td>
             <td class="preis">${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="foerder">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
             <td>${a.menge}</td>
-          </tr>`).join('')}
+          </tr>`)}
       </tbody>
     </table>
     ${ogZeilen}
-    ${geparst.fehler.length ? `<p class="text-sm" style="margin-top:8px;color:var(--amber)">${geparst.fehler.length} Zeile(n) nicht erkannt.</p>` : ''}`;
+    ${geparst.fehler.length
+      ? raw(html`<p class="text-sm" style="margin-top:8px;color:var(--amber)">${geparst.fehler.length} Zeile(n) nicht erkannt.</p>`)
+      : raw('')}`);
 }
 
 /* ── Modal ──────────────────────────────────────────────────── */
@@ -241,8 +264,9 @@ document.getElementById('modal-speichern').addEventListener('click', async () =>
     ogUebernimmtRest: document.getElementById('m-og-rest').checked,
   };
 
-  if (!geaendert.artikelNr || !geaendert.name) {
-    alert('Bitte Artikel-Nr. und Bezeichnung ausfüllen.');
+  const validierung = validateArtikel(geaendert);
+  if (!validierung.ok) {
+    alert(validierung.fehler);
     return;
   }
 
@@ -250,9 +274,12 @@ document.getElementById('modal-speichern').addEventListener('click', async () =>
     ? aktualisiereArtikel(artikel, geaendert)
     : [...artikel, geaendert];
 
-  await speichereArtikel();
+  const gespeichert = await speichereArtikel();
   renderKatalog();
   document.getElementById('modal-backdrop').classList.remove('open');
+  if (gespeichert.sync?.pending) {
+    alert(syncHinweisText(gespeichert.sync, 'Artikelkatalog'));
+  }
 });
 
 /* ── Import ─────────────────────────────────────────────────── */
@@ -269,34 +296,47 @@ document.getElementById('btn-parsen').addEventListener('click', () => {
     return;
   }
   const geparst = parseBestellung(text);
-  importiert = geparst.artikel;
+  const ungueltig = geparst.artikel.filter(a => !validateArtikel(a).ok);
+  importiert = geparst.artikel.filter(a => validateArtikel(a).ok);
 
   if (!importiert.length) {
     zeigeStatus('import-status', 'Keine Artikel erkannt', 'error');
     document.getElementById('btn-uebernehmen').style.display = 'none';
-    document.getElementById('import-vorschau').innerHTML = '';
+    setHTML(document.getElementById('import-vorschau'), '');
     return;
   }
 
   renderImportVorschau(geparst);
   document.getElementById('btn-uebernehmen').style.display = 'inline-flex';
-  zeigeStatus('import-status', `${importiert.length} Artikel erkannt`, 'ok');
+  zeigeStatus(
+    'import-status',
+    `${importiert.length} Artikel erkannt${ungueltig.length ? `, ${ungueltig.length} ungültig verworfen` : ''}`,
+    ungueltig.length ? 'warn' : 'ok'
+  );
 });
 
 document.getElementById('btn-uebernehmen').addEventListener('click', async () => {
-  const { katalog: neu, duplikate } = fuegeArtikelHinzu(artikel, importiert);
+  const { katalog: neu, duplikate, ungueltig } = fuegeArtikelHinzu(artikel, importiert);
   artikel = neu;
-  await speichereArtikel();
+  const gespeichert = await speichereArtikel();
   renderKatalog();
 
   document.getElementById('import-bereich').classList.remove('open');
   document.getElementById('import-text').value = '';
-  document.getElementById('import-vorschau').innerHTML = '';
+  setHTML(document.getElementById('import-vorschau'), '');
   document.getElementById('btn-uebernehmen').style.display = 'none';
 
+  const meldungen = [];
   if (duplikate.length) {
-    alert(`${duplikate.length} Artikel-Nr. bereits vorhanden und übersprungen:\n${duplikate.join(', ')}`);
+    meldungen.push(`${duplikate.length} Artikel-Nr. bereits vorhanden und übersprungen:\n${duplikate.join(', ')}`);
   }
+  if (ungueltig.length) {
+    meldungen.push(`${ungueltig.length} ungültige Artikel verworfen.`);
+  }
+  if (gespeichert.sync?.pending) {
+    meldungen.push(syncHinweisText(gespeichert.sync, 'Artikelkatalog'));
+  }
+  if (meldungen.length) alert(meldungen.join('\n\n'));
 });
 
 document.getElementById('btn-neu').addEventListener('click', () => oeffneModal(null));

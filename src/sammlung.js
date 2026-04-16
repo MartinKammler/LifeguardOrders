@@ -3,6 +3,8 @@
  * Aggregation, CSV-Export und Validierung von Bestellwünschen.
  */
 
+import { validateWunsch } from './validation.js';
+
 /**
  * Summiert Mengen je artikelNr+variante und sortiert das Ergebnis.
  *
@@ -57,20 +59,7 @@ export function exportiereCSV(aggregiert) {
  * @returns {{ ok: true } | { ok: false, fehler: string }}
  */
 export function validiereWunsch(wunsch) {
-  if (!wunsch.mitgliedId) {
-    return { ok: false, fehler: 'mitgliedId darf nicht leer sein' };
-  }
-  if (!wunsch.artikelNr) {
-    return { ok: false, fehler: 'artikelNr darf nicht leer sein' };
-  }
-  if (
-    typeof wunsch.menge !== 'number' ||
-    !Number.isInteger(wunsch.menge)  ||
-    wunsch.menge <= 0
-  ) {
-    return { ok: false, fehler: 'menge muss eine positive ganze Zahl sein' };
-  }
-  return { ok: true };
+  return validateWunsch(wunsch);
 }
 
 /**

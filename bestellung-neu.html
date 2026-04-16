@@ -99,16 +99,23 @@
 </div>
 
 <script type="module">
-import { load, save }         from './src/storage.js';
+import { load }               from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { parseBestellung }    from './src/parser.js';
 import { berechneFoerderung } from './src/berechnung.js';
-import { esc }                from './src/dom.js';
+import { html, raw, setHTML } from './src/dom.js';
+import { validateListe, validatePosition } from './src/validation.js';
+import {
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './src/sync.js';
 
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const STORAGE_KEY_B = 'lo_bestellungen';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const SYNC_SCOPE_B  = 'bestellungen';
 
 let client      = null;
 let bestellungen = [];
@@ -176,10 +183,10 @@ export function validiereZuweisung(position, zuweisungen) {
 function renderImportVorschau(geparst) {
   const el = document.getElementById('import-vorschau');
   if (!geparst.artikel.length) {
-    el.innerHTML = '<p class="text-sm" style="margin-top:8px;color:var(--red)">Keine Artikel erkannt.</p>';
+    setHTML(el, '<p class="text-sm" style="margin-top:8px;color:var(--red)">Keine Artikel erkannt.</p>');
     return;
   }
-  el.innerHTML = `
+  setHTML(el, html`
     <table style="margin-top:12px">
       <thead><tr>
         <th>Artikel-Nr.</th><th>Bezeichnung</th>
@@ -187,21 +194,21 @@ function renderImportVorschau(geparst) {
         <th style="text-align:right">Menge</th>
       </tr></thead>
       <tbody>
-        ${geparst.artikel.map(a => `
+        ${geparst.artikel.map(a => html`
           <tr>
-            <td class="pos-nr">${esc(a.artikelNr)}</td>
-            <td>${esc(a.name)}</td>
+            <td class="pos-nr">${a.artikelNr}</td>
+            <td>${a.name}</td>
             <td class="pos-preis">${eur(a.einzelpreis)}</td>
             <td class="pos-foerd">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="pos-foerd">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
             <td style="text-align:right">${a.menge}</td>
-          </tr>`).join('')}
+          </tr>`)}
       </tbody>
     </table>
     ${geparst.ogKosten.length
-      ? `<p class="text-sm" style="margin-top:6px;color:var(--text-2)">
-           OG-Kosten: ${geparst.ogKosten.map(k => esc(k.name) + ' ' + eur(k.einzelpreis)).join(', ')}
-         </p>` : ''}`;
+      ? raw(html`<p class="text-sm" style="margin-top:6px;color:var(--text-2)">
+           OG-Kosten: ${geparst.ogKosten.map(k => `${k.name} ${eur(k.einzelpreis)}`).join(', ')}
+         </p>`) : raw('')}`);
 }
 
 /* ── Render: Positionen & Zuweisung ─────────────────────────── */
@@ -222,14 +229,15 @@ function renderPositionen() {
 
   const ogZeile = document.getElementById('og-kosten-zeile');
   if (ogKosten.length) {
-    ogZeile.innerHTML = 'OG-Kosten (nicht zuweisbar): ' +
-      ogKosten.map(k => `<strong>${esc(k.name)}</strong> ${eur(k.einzelpreis)}`).join(' · ');
+    setHTML(ogZeile, html`OG-Kosten (nicht zuweisbar): ${
+      ogKosten.map(k => raw(html`<strong>${k.name}</strong> ${eur(k.einzelpreis)}`)).join(' · ')
+    }`);
   } else {
     ogZeile.textContent = '';
   }
 
   const inhalt = document.getElementById('positionen-inhalt');
-  inhalt.innerHTML = '';
+  setHTML(inhalt, '');
 
   positionen.forEach(pos => {
     const zugewiesen = pos.zuweisung.reduce((s, z) => s + z.menge, 0);
@@ -245,13 +253,13 @@ function renderPositionen() {
           ogUebernimmtRest: false },
         z.menge
       );
-      return `
+      return html`
         <div class="zuw-zeile" data-zi="${zi}">
           <select class="zuw-mitglied" data-pos="${pos.id}" data-zi="${zi}">
             <option value="">– Mitglied wählen –</option>
             ${[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de')).map(m =>
-              `<option value="${esc(m.id)}" ${m.id === z.mitgliedId ? 'selected' : ''}>${esc(m.name)}</option>`
-            ).join('')}
+              html`<option value="${m.id}" ${m.id === z.mitgliedId ? raw('selected') : raw('')}>${m.name}</option>`
+            )}
           </select>
           <input type="number" class="zuw-menge" data-pos="${pos.id}" data-zi="${zi}"
             min="1" max="${pos.menge}" value="${z.menge}" style="width:70px">
@@ -259,23 +267,23 @@ function renderPositionen() {
           <div class="foerd-info">
             <span title="Mitglied zahlt">M: ${eur(f.mitglied)}</span>
             <span title="BV">BV: ${eur(f.bv)}</span>
-            ${f.lv ? `<span title="LV">LV: ${eur(f.lv)}</span>` : ''}
+            ${f.lv ? raw(html`<span title="LV">LV: ${eur(f.lv)}</span>`) : raw('')}
             <span title="OG">OG: ${eur(f.og)}</span>
           </div>
         </div>`;
-    }).join('');
+    });
 
-    div.innerHTML = `
+    setHTML(div, html`
       <div class="flex gap-8" style="align-items:baseline;margin-bottom:6px">
-        <span class="pos-nr">${esc(pos.artikelNr)}</span>
-        <strong style="flex:1">${esc(pos.name)}</strong>
+        <span class="pos-nr">${pos.artikelNr}</span>
+        <strong style="flex:1">${pos.name}</strong>
         <span style="font-size:.82rem">${eur(pos.einzelpreis)} × ${pos.menge} = ${eur(pos.einzelpreis * pos.menge)}</span>
         <span class="${vollstaendig ? 'vollst' : 'unvollst'}" style="font-size:.8rem;font-weight:700">
           ${zugewiesen}/${pos.menge}
         </span>
       </div>
-      <div class="zuw-block" id="zuw-${pos.id}">${zuweisungsHtml}</div>
-      <button class="zuw-add" data-pos="${pos.id}" style="margin-top:6px">+ Mitglied hinzufügen</button>`;
+      <div class="zuw-block" id="zuw-${pos.id}">${zuteilungsHtmlOrRaw(zuweisungsHtml)}</div>
+      <button class="zuw-add" data-pos="${pos.id}" style="margin-top:6px">+ Mitglied hinzufügen</button>`);
 
     inhalt.appendChild(div);
   });
@@ -338,7 +346,7 @@ document.getElementById('btn-parsen').addEventListener('click', () => {
     statusEl.textContent = 'Keine Artikel erkannt';
     statusEl.style.color = 'var(--red)';
     btn.style.display = 'none';
-    document.getElementById('import-vorschau').innerHTML = '';
+    setHTML(document.getElementById('import-vorschau'), '');
     return;
   }
   statusEl.textContent = `${importPuffer.artikel.length} Artikel erkannt`;
@@ -367,11 +375,15 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
 
   importPuffer = null;
   document.getElementById('import-text').value = '';
-  document.getElementById('import-vorschau').innerHTML = '';
+  setHTML(document.getElementById('import-vorschau'), '');
   document.getElementById('import-status').textContent = '';
   document.getElementById('btn-hinzufuegen').style.display = 'none';
   renderPositionen();
 });
+
+function zuteilungsHtmlOrRaw(zuweisungen) {
+  return raw(zuweisungen.join(''));
+}
 
 /* ── Speichern ───────────────────────────────────────────────── */
 
@@ -404,6 +416,14 @@ async function speichern() {
       typ: 'og-kosten', zuweisung: [],
     })),
   ];
+  const validierung = validateListe(
+    allePos.filter(p => p.typ === 'artikel'),
+    validatePosition
+  );
+  if (!validierung.ok) {
+    alert(`Ungültige Position in Zeile ${validierung.index + 1}: ${validierung.fehler}`);
+    return;
+  }
 
   if (bestellungId) {
     // bestehende aktualisieren
@@ -417,17 +437,19 @@ async function speichern() {
     });
   }
 
-  save(STORAGE_KEY_B, bestellungen);
   const statusEl = document.getElementById('speichern-status');
 
-  if (client) {
-    const r = await client.writeJson(NC_PFAD_B, bestellungen);
-    statusEl.textContent = r.ok ? 'Gespeichert' : 'Lokal gespeichert (NC-Fehler)';
-    statusEl.style.color = r.ok ? 'var(--green)' : 'var(--amber)';
-  } else {
-    statusEl.textContent = 'Lokal gespeichert';
-    statusEl.style.color = 'var(--green)';
-  }
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  statusEl.textContent = gespeichert.sync?.pending
+    ? syncHinweisText(gespeichert.sync, 'Bestellungen')
+    : (gespeichert.remote?.skipped ? 'Lokal gespeichert' : 'Gespeichert');
+  statusEl.style.color = gespeichert.sync?.pending ? 'var(--amber)' : 'var(--green)';
 
   setTimeout(() => { window.location.href = 'bestellungen.html'; }, 800);
 }
@@ -454,10 +476,15 @@ async function init() {
   const lokal = load(STORAGE_KEY_B);
   if (lokal) bestellungen = lokal;
   if (client) {
-    const r = await client.readJson(NC_PFAD_B);
-    if (r.ok && Array.isArray(r.data)) {
+    const r = await hydrateJsonFromSync({
+      scope: SYNC_SCOPE_B,
+      storageKey: STORAGE_KEY_B,
+      client,
+      remotePath: NC_PFAD_B,
+      isValidRemote: data => Array.isArray(data),
+    });
+    if (Array.isArray(r.data)) {
       bestellungen = r.data;
-      save(STORAGE_KEY_B, bestellungen);
     }
   }
 

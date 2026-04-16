@@ -295,16 +295,25 @@
 
 <script type="module">
 import { OG_ID }              from './src/konstanten.js';
-import { load, save }         from './src/storage.js';
+import { load }               from './src/storage.js';
 import { aggregiereWuensche, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
-import { esc }                from './src/dom.js';
+import { html, raw, setHTML } from './src/dom.js';
+import { validateListe }      from './src/validation.js';
+import {
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './src/sync.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const NC_PFAD_A     = '/LifeguardOrders/artikel.json';
+const SYNC_SCOPE_B  = 'bestellungen';
+const SYNC_SCOPE_A  = 'artikel';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
 let bestellungen    = [];
@@ -361,34 +370,34 @@ function renderWunschliste() {
 
   // Tabelle
   const tbody = document.getElementById('wunsch-tbody');
-  tbody.innerHTML = wuensche.map(w => `
+  setHTML(tbody, html`${wuensche.map(w => html`
     <tr>
-      <td>${esc(mitgliedName(w.mitgliedId))}</td>
+      <td>${mitgliedName(w.mitgliedId)}</td>
       <td>
-        ${esc(w.name)}
-        ${w.ogKostenlos ? '<span class="badge badge-amber" style="font-size:.72rem;margin-left:4px;vertical-align:middle">OG-kostenlos</span>' : ''}
+        ${w.name}
+        ${w.ogKostenlos ? raw('<span class="badge badge-amber" style="font-size:.72rem;margin-left:4px;vertical-align:middle">OG-kostenlos</span>') : raw('')}
       </td>
-      <td><span class="badge badge-blue">${esc(w.variante) || '–'}</span></td>
+      <td><span class="badge badge-blue">${w.variante || '–'}</span></td>
       <td style="text-align:right;white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" data-action="minus" data-id="${esc(w.id)}" style="padding:2px 8px">−</button>
+        <button class="btn btn-ghost btn-sm" data-action="minus" data-id="${w.id}" style="padding:2px 8px">−</button>
         <span style="display:inline-block;min-width:20px;text-align:center">${w.menge}</span>
-        <button class="btn btn-ghost btn-sm" data-action="plus"  data-id="${esc(w.id)}" style="padding:2px 8px">+</button>
+        <button class="btn btn-ghost btn-sm" data-action="plus"  data-id="${w.id}" style="padding:2px 8px">+</button>
       </td>
       <td style="text-align:right;white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" data-action="og-toggle" data-id="${esc(w.id)}"
+        <button class="btn btn-ghost btn-sm" data-action="og-toggle" data-id="${w.id}"
           title="OG übernimmt Kosten ein/aus"
           style="padding:2px 8px;${w.ogKostenlos ? 'color:var(--amber);font-weight:700' : ''}">OG</button>
-        <button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${esc(w.id)}"
+        <button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${w.id}"
           style="padding:2px 8px" title="Bearbeiten">✎</button>
-        <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${esc(w.id)}">×</button>
+        <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${w.id}">×</button>
       </td>
-    </tr>`).join('');
+    </tr>`)}`);
 
   // Aggregiert
   const aggContainer = document.getElementById('aggregiert-container');
   const agg = aggregiereWuensche(wuensche);
 
-  aggContainer.innerHTML = `
+  setHTML(aggContainer, html`
     <table>
       <thead>
         <tr>
@@ -399,21 +408,21 @@ function renderWunschliste() {
       </thead>
       <tbody>
         ${agg.map(zeile => {
-          const variante = zeile.variante ? ' <span class="badge badge-blue">' + esc(zeile.variante) + '</span>' : '';
+          const variante = zeile.variante ? raw(html` <span class="badge badge-blue">${zeile.variante}</span>`) : raw('');
           // Mitglieder die diesen Wunsch haben
           const betroffene = wuensche
             .filter(w => w.artikelNr === zeile.artikelNr && w.variante === zeile.variante)
-            .map(w => esc(mitgliedName(w.mitgliedId)))
+            .map(w => mitgliedName(w.mitgliedId))
             .join(', ');
-          return `
+          return html`
             <tr>
-              <td>${esc(zeile.name)}${variante}</td>
+              <td>${zeile.name}${variante}</td>
               <td style="text-align:right"><strong>${zeile.menge}</strong></td>
               <td class="aggregiert-mitglieder">${betroffene}</td>
             </tr>`;
-        }).join('')}
+        })}
       </tbody>
-    </table>`;
+    </table>`);
 
   // CSV-Vorschau
   const csvText = exportiereCSV(agg);
@@ -448,21 +457,21 @@ function aktualisiereArtikelListeEdit(suche) {
     : [];
 
   if (!gefiltert.length) {
-    dropdown.innerHTML = '';
+    setHTML(dropdown, '');
     dropdown.classList.remove('open');
     return;
   }
 
-  dropdown.innerHTML = gefiltert.map(a => {
+  setHTML(dropdown, html`${gefiltert.map(a => {
     const varianteBadge = a.variante
-      ? `<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${esc(a.variante)}</span>`
-      : '';
+      ? raw(html`<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${a.variante}</span>`)
+      : raw('');
     const preis = a.einzelpreis != null ? eur(a.einzelpreis) : '';
-    return `<div class="artikel-option" data-id="${esc(a.id)}">
-      <div class="ao-name">${esc(a.name)}${varianteBadge}</div>
-      <div class="ao-meta">${esc(a.artikelNr)}${preis ? ' · ' + preis : ''}</div>
+    return html`<div class="artikel-option" data-id="${a.id}">
+      <div class="ao-name">${a.name}${varianteBadge}</div>
+      <div class="ao-meta">${a.artikelNr}${preis ? ' · ' + preis : ''}</div>
     </div>`;
-  }).join('');
+  })}`);
 
   dropdown.querySelectorAll('.artikel-option').forEach(el => {
     el.addEventListener('mousedown', e => {
@@ -492,21 +501,21 @@ function aktualisiereArtikelListe(suche) {
     : [];
 
   if (!gefiltert.length) {
-    dropdown.innerHTML = '';
+    setHTML(dropdown, '');
     dropdown.classList.remove('open');
     return;
   }
 
-  dropdown.innerHTML = gefiltert.map(a => {
+  setHTML(dropdown, html`${gefiltert.map(a => {
     const varianteBadge = a.variante
-      ? `<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${esc(a.variante)}</span>`
-      : '';
+      ? raw(html`<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${a.variante}</span>`)
+      : raw('');
     const preis = a.einzelpreis != null ? eur(a.einzelpreis) : '';
-    return `<div class="artikel-option" data-id="${esc(a.id)}">
-      <div class="ao-name">${esc(a.name)}${varianteBadge}</div>
-      <div class="ao-meta">${esc(a.artikelNr)}${preis ? ' · ' + preis : ''}</div>
+    return html`<div class="artikel-option" data-id="${a.id}">
+      <div class="ao-name">${a.name}${varianteBadge}</div>
+      <div class="ao-meta">${a.artikelNr}${preis ? ' · ' + preis : ''}</div>
     </div>`;
-  }).join('');
+  })}`);
 
   dropdown.querySelectorAll('.artikel-option').forEach(el => {
     el.addEventListener('mousedown', e => {
@@ -545,10 +554,11 @@ function oeffneBearbeitenModal(id) {
 
   // Mitglied-Select befüllen
   const selMitglied = document.getElementById('sel-mitglied-edit');
-  selMitglied.innerHTML =
-    `<option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>` +
-    [...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
-      .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
+  setHTML(selMitglied, html`
+    <option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>
+    ${[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+      .map(m => html`<option value="${m.id}">${m.name}</option>`)}
+  `);
   selMitglied.value = gefundener.mitgliedId;
 
   // Artikel vorbelegen (Suche nach artikelNr + variante)
@@ -597,8 +607,7 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
     return;
   }
 
-  // Bestehenden Wunsch aktualisieren, dann mergen (falls Edit einen Duplikat erzeugt)
-  wuensche = wuensche.map(w => {
+  const neuerWunsch = wuensche.map(w => {
     if (w.id !== bearbeitenId) return w;
     return {
       ...w,
@@ -610,7 +619,14 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
       ogKostenlos,
     };
   });
-  wuensche = mergeWuensche(wuensche);
+  const geaendert = neuerWunsch.find(w => w.id === bearbeitenId);
+  const validierung = validiereWunsch(geaendert);
+  if (!validierung.ok) {
+    alert(validierung.fehler);
+    return;
+  }
+
+  wuensche = mergeWuensche(neuerWunsch);
 
   schliesseBearbeitenModal();
   renderWunschliste();
@@ -632,10 +648,10 @@ function befuelleSelects() {
     document.getElementById('wunsch-formular').style.display = 'none';
   } else {
     hinweisMitglied.style.display = 'none';
-    selMitglied.innerHTML = '<option value="">– bitte wählen –</option>' +
-      `<option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>` +
-      [...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
-        .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
+    setHTML(selMitglied, html`<option value="">– bitte wählen –</option>
+      <option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>
+      ${[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+        .map(m => html`<option value="${m.id}">${m.name}</option>`)}`);
   }
 
   // Artikel
@@ -725,6 +741,12 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
   if (!datum) { alert('Bitte ein Datum angeben.'); return; }
   if (!bezeichnung) { alert('Bitte eine Bezeichnung angeben.'); return; }
 
+  const validierung = validateListe(wuensche, validiereWunsch);
+  if (!validierung.ok) {
+    alert(`Ungültiger Wunsch in Zeile ${validierung.index + 1}: ${validierung.fehler}`);
+    return;
+  }
+
   const id = bestellungId || uuid();
   const bestehendeIdx = bestellungen.findIndex(b => b.id === id);
 
@@ -744,10 +766,16 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     bestellungen = [...bestellungen, bestellung];
   }
 
-  save(STORAGE_KEY_B, bestellungen);
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
 
-  if (client) {
-    await client.writeJson(NC_PFAD_B, bestellungen);
+  if (gespeichert.sync?.pending) {
+    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
   }
 
   location.href = 'bestellungen.html';
@@ -761,8 +789,16 @@ document.getElementById('btn-bestellt').addEventListener('click', async () => {
   if (!confirm('Bestellung als "Bestellt" markieren? Sie wird dann zum Abgleich weitergeleitet.')) return;
 
   bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt' };
-  save(STORAGE_KEY_B, bestellungen);
-  if (client) await client.writeJson(NC_PFAD_B, bestellungen);
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  if (gespeichert.sync?.pending) {
+    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  }
 
   location.href = `bestellung-abgleich.html?id=${bestellungId}`;
 });
@@ -783,16 +819,26 @@ async function init() {
   // NC-Sync: Bestellungen + Artikel parallel nachladen
   if (client) {
     const [rB, rA] = await Promise.all([
-      client.readJson(NC_PFAD_B),
-      client.readJson('/LifeguardOrders/artikel.json'),
+      hydrateJsonFromSync({
+        scope: SYNC_SCOPE_B,
+        storageKey: STORAGE_KEY_B,
+        client,
+        remotePath: NC_PFAD_B,
+        isValidRemote: data => Array.isArray(data),
+      }),
+      hydrateJsonFromSync({
+        scope: SYNC_SCOPE_A,
+        storageKey: STORAGE_KEY_A,
+        client,
+        remotePath: NC_PFAD_A,
+        isValidRemote: data => Array.isArray(data),
+      }),
     ]);
-    if (rB.ok && Array.isArray(rB.data) && rB.data.length > 0) {
+    if (Array.isArray(rB.data)) {
       bestellungen = rB.data;
-      save(STORAGE_KEY_B, bestellungen);
     }
-    if (rA.ok && Array.isArray(rA.data) && rA.data.length > 0) {
+    if (Array.isArray(rA.data)) {
       artikelListe = rA.data;
-      save(STORAGE_KEY_A, artikelListe);
     }
   }
 
