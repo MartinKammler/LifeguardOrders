@@ -261,9 +261,10 @@
 </div>
 
 <!-- Modal: Wunsch bearbeiten -->
-<div class="modal-overlay" id="modal-bearbeiten">
+<div class="modal-overlay" id="modal-bearbeiten"
+     role="dialog" aria-modal="true" aria-labelledby="modal-bearbeiten-titel">
   <div class="modal-card">
-    <p class="modal-title">Wunsch bearbeiten</p>
+    <p class="modal-title" id="modal-bearbeiten-titel">Wunsch bearbeiten</p>
     <div class="form-grid triple">
       <div class="field">
         <label for="sel-mitglied-edit">Mitglied</label>
@@ -314,6 +315,7 @@ let client          = null;
 let artikelListe    = [];
 let mitglieder      = [];
 let sortierteArtikel = [];
+let bearbeitenId = null; // ID des aktuell bearbeiteten Wunsches
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function uuid() { return crypto.randomUUID(); }
@@ -424,6 +426,55 @@ function schliesseDropdown() {
   document.getElementById('artikel-dropdown').classList.remove('open');
 }
 
+/* ── Artikel-Suche im Edit-Modal ─────────────────────────────── */
+function schliesseDropdownEdit() {
+  document.getElementById('artikel-dropdown-edit').classList.remove('open');
+}
+
+function waehleArtikelEdit(id) {
+  const art = artikelListe.find(a => a.id === id);
+  if (!art) return;
+  document.getElementById('sel-artikel-id-edit').value    = art.id;
+  document.getElementById('inp-artikel-suche-edit').value = artikelLabel(art);
+  schliesseDropdownEdit();
+}
+
+function aktualisiereArtikelListeEdit(suche) {
+  const dropdown  = document.getElementById('artikel-dropdown-edit');
+  const suchLower = suche.toLowerCase().trim();
+  const gefiltert = suchLower
+    ? sortierteArtikel.filter(a =>
+        (a.name + ' ' + (a.variante || '') + ' ' + (a.artikelNr || ''))
+          .toLowerCase().includes(suchLower))
+    : [];
+
+  if (!gefiltert.length) {
+    dropdown.innerHTML = '';
+    dropdown.classList.remove('open');
+    return;
+  }
+
+  dropdown.innerHTML = gefiltert.map(a => {
+    const varianteBadge = a.variante
+      ? `<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${esc(a.variante)}</span>`
+      : '';
+    const preis = a.einzelpreis != null ? eur(a.einzelpreis) : '';
+    return `<div class="artikel-option" data-id="${esc(a.id)}">
+      <div class="ao-name">${esc(a.name)}${varianteBadge}</div>
+      <div class="ao-meta">${esc(a.artikelNr)}${preis ? ' · ' + preis : ''}</div>
+    </div>`;
+  }).join('');
+
+  dropdown.querySelectorAll('.artikel-option').forEach(el => {
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      waehleArtikelEdit(el.dataset.id);
+    });
+  });
+
+  dropdown.classList.add('open');
+}
+
 function waehleArtikel(id) {
   const art = artikelListe.find(a => a.id === id);
   if (!art) return;
@@ -476,6 +527,102 @@ document.getElementById('inp-artikel-suche').addEventListener('input', e => {
 document.getElementById('inp-artikel-suche').addEventListener('blur', () => {
   // kleiner Delay damit mousedown-Handler zuerst feuert
   setTimeout(schliesseDropdown, 150);
+});
+
+document.getElementById('inp-artikel-suche-edit').addEventListener('input', e => {
+  aktualisiereArtikelListeEdit(e.target.value);
+  document.getElementById('sel-artikel-id-edit').value = '';
+});
+
+document.getElementById('inp-artikel-suche-edit').addEventListener('blur', () => {
+  setTimeout(schliesseDropdownEdit, 150);
+});
+
+/* ── Edit-Modal öffnen / schließen / speichern ───────────────── */
+function oeffneBearbeitenModal(id) {
+  const w = wuensche.find(w => w.id === id);
+  if (!w) return;
+  bearbeitenId = id;
+
+  // Mitglied-Select befüllen
+  const selMitglied = document.getElementById('sel-mitglied-edit');
+  selMitglied.innerHTML =
+    `<option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>` +
+    [...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+      .map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
+  selMitglied.value = w.mitgliedId;
+
+  // Artikel vorbelegen (Suche nach artikelNr + variante)
+  const art = artikelListe.find(a =>
+    a.artikelNr === w.artikelNr && (a.variante || '') === w.variante);
+  if (art) {
+    document.getElementById('sel-artikel-id-edit').value    = art.id;
+    document.getElementById('inp-artikel-suche-edit').value = artikelLabel(art);
+  } else {
+    // Artikel nicht mehr im Katalog: Freitext zeigen, ID leer lassen
+    document.getElementById('sel-artikel-id-edit').value    = '';
+    document.getElementById('inp-artikel-suche-edit').value =
+      w.name + (w.variante ? ' ' + w.variante : '');
+  }
+
+  document.getElementById('inp-menge-edit').value          = w.menge;
+  document.getElementById('chk-og-kostenlos-edit').checked = !!w.ogKostenlos;
+
+  document.getElementById('modal-bearbeiten').classList.add('open');
+  selMitglied.focus();
+}
+
+function schliesseBearbeitenModal() {
+  bearbeitenId = null;
+  document.getElementById('modal-bearbeiten').classList.remove('open');
+}
+
+document.getElementById('btn-bearbeiten-abbrechen').addEventListener('click', schliesseBearbeitenModal);
+
+document.getElementById('btn-bearbeiten-speichern').addEventListener('click', () => {
+  if (!bearbeitenId) return;
+
+  const mitgliedId  = document.getElementById('sel-mitglied-edit').value;
+  const artikelId   = document.getElementById('sel-artikel-id-edit').value;
+  const menge       = parseInt(document.getElementById('inp-menge-edit').value, 10);
+  const ogKostenlos = document.getElementById('chk-og-kostenlos-edit').checked;
+
+  const artikel = artikelListe.find(a => a.id === artikelId);
+  if (!artikel) {
+    alert('Bitte einen gültigen Artikel aus der Suche auswählen.');
+    return;
+  }
+  if (!mitgliedId) {
+    alert('Bitte ein Mitglied auswählen.');
+    return;
+  }
+  if (isNaN(menge) || menge < 1) {
+    alert('Menge muss mindestens 1 sein.');
+    return;
+  }
+
+  // Bestehenden Wunsch aktualisieren, dann mergen (falls Edit einen Duplikat erzeugt)
+  wuensche = wuensche.map(w => {
+    if (w.id !== bearbeitenId) return w;
+    return {
+      ...w,
+      mitgliedId,
+      artikelNr:  artikel.artikelNr,
+      variante:   artikel.variante || '',
+      name:       artikel.name,
+      menge,
+      ogKostenlos,
+    };
+  });
+  wuensche = mergeWuensche(wuensche);
+
+  schliesseBearbeitenModal();
+  renderWunschliste();
+});
+
+// Escape-Taste schließt Modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') schliesseBearbeitenModal();
 });
 
 /* ── Selects befüllen ────────────────────────────────────────── */
@@ -691,6 +838,11 @@ async function init() {
         if (w.id !== id) return w;
         return w.menge > 1 ? { ...w, menge: w.menge - 1 } : null;
       }).filter(Boolean);
+    } else if (action === 'og-toggle') {
+      wuensche = wuensche.map(w => w.id === id ? { ...w, ogKostenlos: !w.ogKostenlos } : w);
+    } else if (action === 'bearbeiten') {
+      oeffneBearbeitenModal(id);
+      return; // kein renderWunschliste() — Modal übernimmt nach Speichern
     }
     renderWunschliste();
   });
