@@ -17,12 +17,18 @@ function runde(wert) {
  *
  * @param {object} artikel        Artikel-Objekt aus artikel.json
  * @param {number} menge          Zugewiesene Menge (für dieses Mitglied)
+ * @param {{ ogKostenlos?: boolean }} [opts]
  * @returns {{ bv, lv, og, mitglied, gesamt }}  Alle Beträge in €
  */
-export function berechneFoerderung(artikel, menge) {
+export function berechneFoerderung(artikel, menge, opts = {}) {
   const gesamt = runde(artikel.einzelpreis * menge);
   const bv     = runde(artikel.bvFoerderung * menge);
   const lv     = runde(artikel.lvFoerderung * menge);
+
+  if (opts.ogKostenlos) {
+    const og = runde(gesamt - bv - lv);
+    return { bv, lv, og, mitglied: 0, gesamt };
+  }
 
   let og;
   if (artikel.ogUebernimmtRest) {

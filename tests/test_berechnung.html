@@ -242,6 +242,33 @@ await test('mitglied = 0 wenn Summe Förderungen = Preis', () => {
   assertEqual(res.mitglied, 0);
 });
 
+suite('berechneFoerderung — ogKostenlos');
+
+await test('ogKostenlos: mitglied = 0', () => {
+  const artikel = { einzelpreis: 20, bvFoerderung: 5, lvFoerderung: 0, ogFoerderung: 0, ogUebernimmtRest: false };
+  const res = berechneFoerderung(artikel, 1, { ogKostenlos: true });
+  assertEqual(res.mitglied, 0);
+});
+
+await test('ogKostenlos: og = gesamt - bv - lv', () => {
+  const artikel = { einzelpreis: 20, bvFoerderung: 5, lvFoerderung: 3, ogFoerderung: 0, ogUebernimmtRest: false };
+  const res = berechneFoerderung(artikel, 1, { ogKostenlos: true });
+  // gesamt=20, bv=5, lv=3 → og=12
+  assertEqual(res.og, 12);
+});
+
+await test('ogKostenlos: gesamt bleibt korrekt', () => {
+  const artikel = { einzelpreis: 10, bvFoerderung: 2, lvFoerderung: 0, ogFoerderung: 0, ogUebernimmtRest: false };
+  const res = berechneFoerderung(artikel, 2, { ogKostenlos: true });
+  assertEqual(res.gesamt, 20);
+});
+
+await test('ohne opts: Verhalten unverändert', () => {
+  const artikel = { einzelpreis: 10, bvFoerderung: 2, lvFoerderung: 0, ogFoerderung: 0, ogUebernimmtRest: false };
+  const res = berechneFoerderung(artikel, 1);
+  assert(res.mitglied === 8 && res.og === 0, `mitglied=${res.mitglied}, og=${res.og}`);
+});
+
 /* ── Render ─────────────────────────────────────────────────── */
 const out = document.getElementById('output');
 let html = '';
