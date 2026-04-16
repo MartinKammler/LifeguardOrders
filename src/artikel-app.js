@@ -7,6 +7,7 @@ import { createWebDavClient }                   from './webdav.js';
 import { parseBestellung }                     from './parser.js';
 import { ladeDefaultArtikel, downloadAlsJson } from './defaults.js';
 import { load, save }                          from './storage.js';
+import { esc }                                 from './dom.js';
 
 const STORAGE_KEY_E  = 'lo_einstellungen';
 const STORAGE_KEY_A  = 'lo_artikel';
@@ -131,9 +132,9 @@ function renderKatalog() {
       <tbody>
         ${artikel.map(a => `
           <tr>
-            <td class="artikel-nr">${a.artikelNr}</td>
-            <td class="artikel-nr">${a.variante || '–'}</td>
-            <td>${a.name}</td>
+            <td class="artikel-nr">${esc(a.artikelNr)}</td>
+            <td class="artikel-nr">${a.variante ? esc(a.variante) : '–'}</td>
+            <td>${esc(a.name)}</td>
             <td class="preis">${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="foerder">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
@@ -143,8 +144,8 @@ function renderKatalog() {
                 : a.ogFoerderung ? eur(a.ogFoerderung) : '–'}
             </td>
             <td class="text-right" style="white-space:nowrap">
-              <button class="btn btn-ghost btn-sm" onclick="oeffneModal('${a.id}')">Bearbeiten</button>
-              <button class="btn btn-danger btn-sm" onclick="loescheArtikelUI('${a.id}')">Löschen</button>
+              <button class="btn btn-ghost btn-sm" onclick="oeffneModal('${esc(a.id)}')">Bearbeiten</button>
+              <button class="btn btn-danger btn-sm" onclick="loescheArtikelUI('${esc(a.id)}')">Löschen</button>
             </td>
           </tr>`).join('')}
       </tbody>
@@ -160,7 +161,7 @@ function renderImportVorschau(geparst) {
 
   const ogZeilen = geparst.ogKosten.length
     ? `<p class="text-sm" style="margin-top:8px;color:var(--text-2)">
-        OG-Kosten (nicht importiert): ${geparst.ogKosten.map(k => k.name).join(', ')}
+        OG-Kosten (nicht importiert): ${geparst.ogKosten.map(k => esc(k.name)).join(', ')}
        </p>` : '';
 
   el.innerHTML = `
@@ -179,9 +180,9 @@ function renderImportVorschau(geparst) {
       <tbody>
         ${geparst.artikel.map((a, i) => `
           <tr>
-            <td class="artikel-nr">${a.artikelNr}</td>
-            <td class="artikel-nr">${a.variante || '–'}</td>
-            <td>${a.name}</td>
+            <td class="artikel-nr">${esc(a.artikelNr)}</td>
+            <td class="artikel-nr">${a.variante ? esc(a.variante) : '–'}</td>
+            <td>${esc(a.name)}</td>
             <td class="preis">${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="foerder">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>

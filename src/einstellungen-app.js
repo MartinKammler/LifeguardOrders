@@ -7,6 +7,7 @@ import { createWebDavClient }                        from './webdav.js';
 import { parseMitglieder }                           from './mitglieder.js';
 import { ladeDefaultEinstellungen, downloadAlsJson } from './defaults.js';
 import { load, save }                                from './storage.js';
+import { esc }                                       from './dom.js';
 
 const STORAGE_KEY = 'lo_einstellungen';
 const NC_PFAD     = '/LifeguardOrders/einstellungen.json';
@@ -151,13 +152,23 @@ export { parseMitglieder } from './mitglieder.js';
 function zeigeNcMitglieder(mitglieder) {
   const el = document.getElementById('mitglieder-liste');
   if (!el || !mitglieder.length) return;
-  el.innerHTML = `
-    <p class="text-sm" style="margin-bottom:8px">${mitglieder.length} Mitglieder geladen:</p>
-    <div style="display:flex;flex-wrap:wrap;gap:6px">
-      ${mitglieder.map(m =>
-        `<span class="badge badge-blue">${m.name}</span>`
-      ).join('')}
-    </div>`;
+  el.innerHTML = '';
+
+  const p = document.createElement('p');
+  p.className = 'text-sm';
+  p.style.marginBottom = '8px';
+  p.textContent = `${mitglieder.length} Mitglieder geladen:`;
+  el.appendChild(p);
+
+  const flex = document.createElement('div');
+  flex.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px';
+  for (const m of mitglieder) {
+    const span = document.createElement('span');
+    span.className = 'badge badge-blue';
+    span.textContent = m.name;
+    flex.appendChild(span);
+  }
+  el.appendChild(flex);
 }
 
 /* ── Event-Handler ──────────────────────────────────────────── */

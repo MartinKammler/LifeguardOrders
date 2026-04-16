@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>Tests – dom</title></head>
+<body><pre id="out"></pre>
+<script type="module">
+import { esc, el, setText } from '../src/dom.js';
+let ok = 0, fail = 0;
+function assert(label, cond) {
+  document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
+  cond ? ok++ : fail++;
+}
+
+// esc()
+assert('esc: kein HTML-Zeichen → unverändert', esc('Hallo Welt') === 'Hallo Welt');
+assert('esc: < wird escaped', esc('<script>') === '&lt;script&gt;');
+assert('esc: & wird escaped', esc('A & B') === 'A &amp; B');
+assert('esc: " wird escaped', esc('"Hallo"') === '&quot;Hallo&quot;');
+assert('esc: null → leerer String', esc(null) === '');
+assert('esc: undefined → leerer String', esc(undefined) === '');
+
+// el()
+assert('el: erstellt Element mit Tag', (() => {
+  const d = el('div');
+  return d instanceof HTMLElement && d.tagName === 'DIV';
+})());
+assert('el: setzt Text-Content sicher', (() => {
+  const span = el('span', { text: '<b>böse</b>' });
+  return span.textContent === '<b>böse</b>' && span.innerHTML === '&lt;b&gt;böse&lt;/b&gt;';
+})());
+assert('el: setzt className', (() => {
+  const d = el('div', { className: 'badge badge-blue' });
+  return d.className === 'badge badge-blue';
+})());
+
+// setText()
+assert('setText: setzt textContent', (() => {
+  const d = document.createElement('div');
+  setText(d, 'Hallo <Welt>');
+  return d.textContent === 'Hallo <Welt>' && !d.innerHTML.includes('<Welt>');
+})());
+
+document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;
+</script></body></html>
