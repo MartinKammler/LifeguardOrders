@@ -28,6 +28,7 @@ function eur(v) {
  * @returns {object|null}           Rechnung oder null wenn kein Anteil
  */
 export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, artikelListe, alleRechnungen) {
+  if (mitgliedId === '__og__') return null;
   const meinePositionen = [];
 
   for (const pos of (bestellung.positionen || [])) {
@@ -42,7 +43,7 @@ export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, ar
 
     let eigenanteil, ogAnteilPos;
     if (katalogArtikel) {
-      const f  = berechneFoerderung(katalogArtikel, zuw.menge);
+      const f  = berechneFoerderung(katalogArtikel, zuw.menge, { ogKostenlos: zuw.ogKostenlos || false });
       eigenanteil = f.mitglied;
       ogAnteilPos = f.og;
     } else {

@@ -234,6 +234,7 @@ const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const OG_ID         = '__og__';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
 let bestellungen  = [];
@@ -254,6 +255,7 @@ function eur(v) {
 }
 
 function mitgliedName(id) {
+  if (id === OG_ID) return 'Ortsgruppe';
   const m = mitglieder.find(m => m.id === id);
   return m ? m.name : id;
 }
@@ -280,14 +282,15 @@ function berechneZuweisung(artikelNr, variante, geliefertMenge) {
   if (!relevant.length) return [];
 
   const totalWunsch = relevant.reduce((s, w) => s + w.menge, 0);
-  if (totalWunsch === 0) return relevant.map(w => ({ mitgliedId: w.mitgliedId, name: mitgliedName(w.mitgliedId), wunschMenge: 0, zugeteiltMenge: 0 }));
+  if (totalWunsch === 0) return relevant.map(w => ({ mitgliedId: w.mitgliedId, name: mitgliedName(w.mitgliedId), wunschMenge: 0, zugeteiltMenge: 0, ogKostenlos: w.ogKostenlos || false }));
 
   // Proportionale Verteilung, Rest geht an den mit höchstem Wunsch
   const zugeteilt = relevant.map(w => ({
-    mitgliedId: w.mitgliedId,
-    name: mitgliedName(w.mitgliedId),
-    wunschMenge: w.menge,
+    mitgliedId:     w.mitgliedId,
+    name:           mitgliedName(w.mitgliedId),
+    wunschMenge:    w.menge,
     zugeteiltMenge: Math.floor(geliefertMenge * w.menge / totalWunsch),
+    ogKostenlos:    w.ogKostenlos || false,
   }));
   const zugeteiltTotal = zugeteilt.reduce((s, z) => s + z.zugeteiltMenge, 0);
   const rest = geliefertMenge - zugeteiltTotal;
@@ -457,7 +460,7 @@ function bauePositionen() {
       lvFoerderung: m.position.lvFoerderung || 0,
       ogFoerderung: 0,
       typ:          'artikel',
-      zuweisung:    zuw.map(z => ({ mitgliedId: z.mitgliedId, menge: z.zugeteiltMenge, ogAnteil: 0 })),
+      zuweisung:    zuw.map(z => ({ mitgliedId: z.mitgliedId, menge: z.zugeteiltMenge, ogAnteil: 0, ogKostenlos: z.ogKostenlos || false })),
     });
   }
 
@@ -480,7 +483,7 @@ function bauePositionen() {
         lvFoerderung: a.position.lvFoerderung || 0,
         ogFoerderung: 0,
         typ:          'artikel',
-        zuweisung:    zuw.map(z => ({ mitgliedId: z.mitgliedId, menge: z.zugeteiltMenge, ogAnteil: 0 })),
+        zuweisung:    zuw.map(z => ({ mitgliedId: z.mitgliedId, menge: z.zugeteiltMenge, ogAnteil: 0, ogKostenlos: z.ogKostenlos || false })),
       });
     }
   }
@@ -512,7 +515,7 @@ function betroffeneMitgliederIds() {
   for (const p of (bestellung.positionen || [])) {
     if (p.typ === 'og-kosten') continue;
     for (const z of (p.zuweisung || [])) {
-      if (z.menge > 0) ids.add(z.mitgliedId);
+      if (z.menge > 0 && z.mitgliedId !== OG_ID) ids.add(z.mitgliedId);
     }
   }
   return [...ids];
