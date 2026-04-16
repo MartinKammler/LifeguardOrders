@@ -112,6 +112,31 @@
     .artikel-option:hover, .artikel-option.aktiv { background: var(--bg); }
     .ao-name { font-size: .88rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .ao-meta { font-size: .76rem; color: var(--text-2); margin-top: 2px; }
+
+    /* Edit-Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      width: min(480px, 90vw);
+      box-shadow: 0 12px 40px rgba(0,0,0,.6);
+    }
+    .modal-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
   </style>
 </head>
 <body>
@@ -235,6 +260,39 @@
   </div>
 </div>
 
+<!-- Modal: Wunsch bearbeiten -->
+<div class="modal-overlay" id="modal-bearbeiten">
+  <div class="modal-card">
+    <p class="modal-title">Wunsch bearbeiten</p>
+    <div class="form-grid triple">
+      <div class="field">
+        <label for="sel-mitglied-edit">Mitglied</label>
+        <select id="sel-mitglied-edit"></select>
+      </div>
+      <div class="field artikel-field-wrap">
+        <label for="inp-artikel-suche-edit">Artikel</label>
+        <input type="text" id="inp-artikel-suche-edit" placeholder="Suche…" autocomplete="off">
+        <div id="artikel-dropdown-edit" class="artikel-dropdown"></div>
+        <input type="hidden" id="sel-artikel-id-edit">
+      </div>
+      <div class="field">
+        <label for="inp-menge-edit">Menge</label>
+        <input type="number" id="inp-menge-edit" min="1" value="1">
+      </div>
+    </div>
+    <div class="field" style="margin-top:4px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem">
+        <input type="checkbox" id="chk-og-kostenlos-edit">
+        OG übernimmt Kosten (Mitglied zahlt nichts)
+      </label>
+    </div>
+    <div class="flex gap-8 mt-16" style="justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" id="btn-bearbeiten-abbrechen">Abbrechen</button>
+      <button class="btn btn-primary btn-sm" id="btn-bearbeiten-speichern">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <script type="module">
 import { OG_ID }              from './src/konstanten.js';
 import { load, save }         from './src/storage.js';
@@ -315,7 +373,12 @@ function renderWunschliste() {
         <span style="display:inline-block;min-width:20px;text-align:center">${w.menge}</span>
         <button class="btn btn-ghost btn-sm" data-action="plus"  data-id="${esc(w.id)}" style="padding:2px 8px">+</button>
       </td>
-      <td style="text-align:right">
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" data-action="og-toggle" data-id="${esc(w.id)}"
+          title="OG übernimmt Kosten ein/aus"
+          style="padding:2px 8px;${w.ogKostenlos ? 'color:var(--amber);font-weight:700' : ''}">OG</button>
+        <button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${esc(w.id)}"
+          style="padding:2px 8px" title="Bearbeiten">✎</button>
         <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${esc(w.id)}">×</button>
       </td>
     </tr>`).join('');
