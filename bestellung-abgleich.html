@@ -260,7 +260,7 @@ function mitgliedName(id) {
 
 function statusLabel(s) {
   const map = { sammlung: 'Sammlung läuft', bestellt: 'Bestellt', abgeschlossen: 'Abgeschlossen' };
-  return map[s] || s;
+  return map[s] || 'Unbekannt';
 }
 
 function abweichKey(a) {
