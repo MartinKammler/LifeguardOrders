@@ -310,7 +310,7 @@ function renderAbgleich() {
     const zuw = berechneZuweisung(m.wunsch.artikelNr, m.wunsch.variante, m.position.menge);
     const zuwHtml = zuw.map(z => `<span>${esc(z.name)} ×${z.zugeteiltMenge}</span>`).join('');
     rows += `
-      <tr class="abgleich-row-match" data-key="${key}">
+      <tr class="abgleich-row-match" data-key="${esc(key)}">
         <td><span class="status-dot dot-green"></span></td>
         <td>${esc(m.wunsch.name)}${m.wunsch.variante ? ' <span class="badge badge-blue">' + esc(m.wunsch.variante) + '</span>' : ''}</td>
         <td style="text-align:right">${m.wunsch.menge}</td>
@@ -343,10 +343,10 @@ function renderAbgleich() {
 
       if (!istAufgeloest) {
         aktionenHtml = `<div class="aufloes-aktion">
-          <button class="btn btn-sm btn-primary" data-aktion="accept-menge" data-key="${key}" data-menge="${a.geliefert}">
+          <button class="btn btn-sm btn-primary" data-aktion="accept-menge" data-key="${esc(key)}" data-menge="${a.geliefert}">
             ${a.geliefert} übernehmen
           </button>
-          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${key}">Ignorieren</button>
+          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${esc(key)}">Ignorieren</button>
         </div>`;
       } else {
         aktionenHtml = '<span class="badge badge-green">Aufgelöst</span>';
@@ -358,7 +358,7 @@ function renderAbgleich() {
 
       if (!istAufgeloest) {
         aktionenHtml = `<div class="aufloes-aktion">
-          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${key}">Ignorieren</button>
+          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${esc(key)}">Ignorieren</button>
         </div>`;
       } else {
         aktionenHtml = '<span class="badge badge-green">Aufgelöst</span>';
@@ -370,7 +370,7 @@ function renderAbgleich() {
 
       if (!istAufgeloest) {
         aktionenHtml = `<div class="aufloes-aktion">
-          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${key}">Ignorieren</button>
+          <button class="btn btn-sm btn-ghost" data-aktion="ignorieren" data-key="${esc(key)}">Ignorieren</button>
         </div>`;
       } else {
         aktionenHtml = '<span class="badge badge-green">Aufgelöst</span>';
@@ -378,7 +378,7 @@ function renderAbgleich() {
     }
 
     rows += `
-      <tr class="${rowCls}" data-key="${key}">
+      <tr class="${rowCls}" data-key="${esc(key)}">
         <td><span class="status-dot ${dotCls}"></span></td>
         <td>
           ${a.wunsch ? (esc(a.wunsch.name) + (a.wunsch.variante ? ' <span class="badge badge-blue">' + esc(a.wunsch.variante) + '</span>' : '')) : (a.position ? esc(a.position.name) : '–')}

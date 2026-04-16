@@ -186,7 +186,7 @@ async function berechneDashboard() {
   if (unbekannt.length) {
     unbContainer.style.display = '';
     document.getElementById('unbekannte-liste').innerHTML =
-      unbekannt.map(id => `<span class="badge badge-amber" style="margin-right:6px">${id}</span>`).join('');
+      unbekannt.map(id => `<span class="badge badge-amber" style="margin-right:6px">${esc(id)}</span>`).join('');
   } else {
     unbContainer.style.display = 'none';
   }
@@ -265,7 +265,7 @@ function renderDashboard() {
       vrHtml = `<div class="verrechnung-liste">
         ${d.verrechnungen.map(v => `
           <div class="vr-row">
-            <span>${v.rechnungNummer}</span>
+            <span>${esc(v.rechnungNummer)}</span>
             <span>${v.offenStunden > 0
               ? `<span style="color:var(--amber)">${v.offenStunden} Std. offen</span>`
               : `<span style="color:var(--green)">getilgt</span>`}</span>

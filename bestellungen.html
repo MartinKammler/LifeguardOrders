@@ -80,15 +80,15 @@ function mengenInfo(b) {
 function aktionenHtml(b) {
   switch (b.status) {
     case 'sammlung':
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${b.id}">Bearbeiten</a>`;
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${esc(b.id)}">Bearbeiten</a>`;
     case 'bestellt':
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${b.id}">Bearbeiten</a>
-              <a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${b.id}">Abgleich</a>`;
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${esc(b.id)}">Bearbeiten</a>
+              <a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${esc(b.id)}">Abgleich</a>`;
     case 'abgeschlossen':
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-abgleich.html?id=${b.id}">Ansehen</a>
-              <button class="btn btn-ghost btn-sm" onclick="oeffneWieder('${b.id}')">Wieder öffnen</button>`;
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-abgleich.html?id=${esc(b.id)}">Ansehen</a>
+              <button class="btn btn-ghost btn-sm" onclick="oeffneWieder('${esc(b.id)}')">Wieder öffnen</button>`;
     default:
-      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${b.id}">Bearbeiten</a>`;
+      return `<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${esc(b.id)}">Bearbeiten</a>`;
   }
 }
 
