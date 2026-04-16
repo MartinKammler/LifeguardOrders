@@ -6,6 +6,7 @@
  *   berechneStunden(logEintraege, einsatztypen, mitglieder?) → { stundenMap, unbekannt }
  *   verechneSchuld(mitgliedId, bestellungen, geleisteteStunden, einstellungen)
  *     → { gesamtSchuldStunden, restSchuldStunden, verrechnungen }
+ *   fristDerAeltestenOffenenSchuld(verrechnungen) → Date | null
  *   ampelStatus(restSchuld, frist, heute?) → 'gruen' | 'gelb' | 'rot'
  *   schuldFrist(bestellungDatum) → Date (31.12. Bestelljahr + 1)
  */
@@ -26,6 +27,9 @@ export function berechneStunden(logEintraege, einsatztypen, mitglieder = []) {
   const stundenMap  = new Map();
   const typenSet    = new Set((einsatztypen || []).map(t => t.toLowerCase().trim()));
   const bekannteIds = mitglieder.length ? new Set(mitglieder.map(m => m.id)) : null;
+  const namenZuIds  = mitglieder.length
+    ? new Map(mitglieder.map(m => [normalisiereName(m.name), m.id]))
+    : null;
   const unbekannt   = new Set();
 
   for (const entry of (logEintraege || [])) {
@@ -34,8 +38,12 @@ export function berechneStunden(logEintraege, einsatztypen, mitglieder = []) {
     const typ = (entry.typ || entry.type || '').toLowerCase().trim();
     if (!typenSet.has(typ)) continue;
 
-    const userId = entry.userId || entry.user_id || '';
-    if (!userId) continue;
+    const userId = entry.userId || entry.user_id || resolveUserId(entry, namenZuIds) || '';
+    if (!userId) {
+      const name = String(entry.nutzer || entry.user || '').trim();
+      if (name) unbekannt.add(name);
+      continue;
+    }
 
     if (bekannteIds && !bekannteIds.has(userId)) {
       unbekannt.add(userId);
@@ -47,6 +55,16 @@ export function berechneStunden(logEintraege, einsatztypen, mitglieder = []) {
   }
 
   return { stundenMap, unbekannt: [...unbekannt] };
+}
+
+function normalisiereName(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function resolveUserId(entry, namenZuIds) {
+  if (!namenZuIds) return '';
+  const name = normalisiereName(entry.nutzer || entry.user || '');
+  return name ? (namenZuIds.get(name) || '') : '';
 }
 
 /**
@@ -103,10 +121,20 @@ export function verechneSchuld(mitgliedId, bestellungen, geleisteteStunden, eins
       schuldStunden:  d.schuldStunden,
       getilgtStunden: getilgt,
       offenStunden:   offen,
+      frist:          schuldFrist(d.bestellungDatum),
     });
   }
 
   return { gesamtSchuldStunden, restSchuldStunden, verrechnungen };
+}
+
+export function fristDerAeltestenOffenenSchuld(verrechnungen) {
+  const offene = (verrechnungen || []).filter(v => (v.offenStunden || 0) > 0);
+  if (!offene.length) return null;
+
+  return offene
+    .map(v => v.frist instanceof Date ? v.frist : new Date(v.frist))
+    .reduce((frueheste, aktuelle) => aktuelle < frueheste ? aktuelle : frueheste);
 }
 
 /**

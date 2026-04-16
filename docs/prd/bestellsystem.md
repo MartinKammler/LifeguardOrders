@@ -47,6 +47,7 @@ einstellungen.html        ← Konfiguration (NC, OG-Stammdaten, Mitglieder, Stun
 Phase 1 — Sammlung:
   Admin legt Sammelbestellung an →
   Erfasst Wünsche: Mitglied + Artikel (aus Katalog) + Größe + Menge →
+  Optional: markiert Wunsch als "OG übernimmt Kosten" →
   System aggregiert: Artikel XL: 3 Stk. gesamt →
   CSV-Export: "18507110,XL,3" pro Zeile → Admin kopiert in Materialstelle-Bestellformular
 
@@ -54,7 +55,7 @@ Phase 2 — Eingang (nach Lieferung):
   Admin öffnet Sammelbestellung →
   Importiert Materialstelle-Rechnung (gleicher Parser) →
   System gleicht ab: Rechnung ↔ Wunschliste (nach artikelNr + variante) →
-  Abweichungen (mehr/weniger geliefert) → Review-Ansicht →
+  Abweichungen (mehr/weniger geliefert) → Review-Ansicht mit "Menge übernehmen" oder "Ignorieren" →
   Gematchte Positionen → Rechnungen je Mitglied erzeugen
 ```
 
@@ -117,86 +118,95 @@ werden — der Parser versteht beide Formate.
 21. Als Admin möchte ich eine bestehende Sammelbestellung nachträglich bearbeiten
     (Wünsche hinzufügen, ändern, löschen), solange Phase 2 noch nicht begonnen hat.
 22. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können.
+23. Als Admin möchte ich einen Wunsch als "OG übernimmt Kosten" markieren können,
+    damit der Mitgliedsanteil auf 0 € gesetzt und der Rest vollständig der OG zugerechnet wird.
 
 ### Sammelbestellung — Phase 2: Eingang & Abgleich
 
-23. Als Admin möchte ich nach Lieferung die Materialstelle-Rechnung in die Sammelbestellung
+24. Als Admin möchte ich nach Lieferung die Materialstelle-Rechnung in die Sammelbestellung
     importieren (gleicher Parser wie Artikelkatalog).
-24. Als Admin möchte ich, dass das System die importierten Rechnungspositionen automatisch
+25. Als Admin möchte ich, dass das System die importierten Rechnungspositionen automatisch
     den Mitgliederwünschen zuordnet (nach artikelNr + variante).
-25. Als Admin möchte ich Abweichungen zwischen Rechnung und Wunschliste in einer
+26. Als Admin möchte ich Abweichungen zwischen Rechnung und Wunschliste in einer
     Review-Ansicht sehen: zu viel geliefert, zu wenig geliefert, nicht bestellt.
-26. Als Admin möchte ich Abweichungen manuell auflösen: Position neu zuweisen, Menge
-    anpassen oder Position ignorieren.
-27. Als Admin möchte ich nach dem Abgleich für jedes betroffene Mitglied eine Rechnung
+27. Als Admin möchte ich Mengenabweichungen bewusst entweder als gelieferte Menge
+    übernehmen oder vollständig ignorieren können, damit "Ignorieren" keine stillschweigende
+    Mengenanpassung auslöst.
+28. Als Admin möchte ich nach dem Abgleich für jedes betroffene Mitglied eine Rechnung
     erzeugen (einzeln oder alle auf einmal).
-28. Als Admin möchte ich, dass Versandkosten und Eilauftrag in der Bestellung sichtbar sind,
+29. Als Admin möchte ich, dass Versandkosten und Eilauftrag in der Bestellung sichtbar sind,
     als OG-Kosten ausgewiesen werden und nicht in Mitgliedsrechnungen fließen.
-29. Als Admin möchte ich eine Sammelbestellung als "abgeschlossen" markieren, sobald alle
+30. Als Admin möchte ich eine Sammelbestellung als "abgeschlossen" markieren, sobald alle
     Positionen verrechnet und alle Rechnungen erstellt sind.
 
 ### Rechnungen
 
-30. Als Admin möchte ich alle Rechnungen in einer Übersicht sehen (Mitglied, Nummer,
+31. Als Admin möchte ich alle Rechnungen in einer Übersicht sehen (Mitglied, Nummer,
     Betrag, Datum, Status: offen / bezahlt).
-31. Als Admin möchte ich, dass die Rechnung das Layout der bestehenden Vorlage hat:
+32. Als Admin möchte ich, dass die Rechnung das Layout der bestehenden Vorlage hat:
     DLRG-Logo, OG-Adresse, Empfängeradresse, Positionstabelle, Gesamtbetrag,
     MwSt.-Hinweis, Zahlungsfrist 14 Tage, Bankdaten, Fußbereich.
-32. Als Admin möchte ich, dass Rechnungen automatisch nummeriert werden im Format
+33. Als Admin möchte ich, dass Rechnungen automatisch nummeriert werden im Format
     `R_YYYY_MM_NNN` (fortlaufend pro Monat).
-33. Als Admin möchte ich, dass auf der Rechnung nur der Mitgliedsanteil (nach Förderabzug)
+34. Als Admin möchte ich, dass auf der Rechnung nur der Mitgliedsanteil (nach Förderabzug)
     erscheint sowie die erwarteten Einsatzstunden für die OG-Förderung.
-34. Als Admin möchte ich die Rechnung als PDF herunterladen.
-35. Als Admin möchte ich eine bereits erzeugte Rechnung erneut als PDF abrufen.
-36. Als Admin möchte ich eine Rechnung als "bezahlt" markieren (mit Zahlungsdatum).
-37. Als Admin möchte ich eine Zahlung rückgängig machen können (zurück auf offen).
-38. Als Admin möchte ich sehen, wie viel Gesamtbetrag noch offen ist.
+35. Als Admin möchte ich die Rechnung als PDF herunterladen.
+36. Als Admin möchte ich eine bereits erzeugte Rechnung erneut als PDF abrufen.
+37. Als Admin möchte ich eine Rechnung als "bezahlt" markieren (mit Zahlungsdatum).
+38. Als Admin möchte ich eine Zahlung rückgängig machen können (zurück auf offen).
+39. Als Admin möchte ich sehen, wie viel Gesamtbetrag noch offen ist.
 
 ### Kassenwart-Übersicht
 
-39. Als Admin möchte ich eine Kassenwart-Übersicht mit allen Positionen aller Bestellungen:
+40. Als Admin möchte ich eine Kassenwart-Übersicht mit allen Positionen aller Bestellungen:
     Mitglied, Artikel, Bruttobetrag, BV, LV, OG, Mitgliedsanteil, Zahlungsstatus.
-40. Als Admin möchte ich Summenzeilen sehen: BV-Gesamt, LV-Gesamt, OG-Gesamt,
+41. Als Admin möchte ich Summenzeilen sehen: BV-Gesamt, LV-Gesamt, OG-Gesamt,
     Mitglieder-Gesamt, davon offen / bezahlt.
-41. Als Admin möchte ich die Übersicht nach Kalenderjahr filtern.
-42. Als Admin möchte ich die Übersicht als PDF exportieren.
-43. Als Admin möchte ich die Übersicht als CSV exportieren (für Excel).
+42. Als Admin möchte ich, dass die Kassenwart-Übersicht historische Förderwerte aus der
+    gespeicherten Bestellung verwendet, damit spätere Katalogänderungen alte Abschlüsse
+    nicht rückwirkend verfälschen.
+43. Als Admin möchte ich die Übersicht nach Kalenderjahr filtern.
+44. Als Admin möchte ich die Übersicht als PDF exportieren.
+45. Als Admin möchte ich die Übersicht als CSV exportieren (für Excel).
 
 ### Einsatzstunden-Dashboard
 
-44. Als Admin möchte ich beim Öffnen des Dashboards automatisch alle LifeguardClock-JSON-Dateien
+46. Als Admin möchte ich beim Öffnen des Dashboards automatisch alle LifeguardClock-JSON-Dateien
     aus `/LifeguardClock/` einlesen, ohne manuellen Import.
-45. Als Admin möchte ich je Mitglied die Summe der geleisteten Einsatzstunden sehen
+47. Als Admin möchte ich je Mitglied die Summe der geleisteten Einsatzstunden sehen
     (zählende Typen: wachdienst, sanitaetsdienst, helfer, verwaltung — nicht anwesenheit).
-46. Als Admin möchte ich je Mitglied die offene Stundenschuld aus OG-Förderungen sehen
+48. Als Admin möchte ich je Mitglied die offene Stundenschuld aus OG-Förderungen sehen
     (OG-Betrag € ÷ 10 × 3 Stunden).
-47. Als Admin möchte ich sehen, bis wann die Stundenpflicht erfüllt sein muss:
+49. Als Admin möchte ich sehen, bis wann die Stundenpflicht erfüllt sein muss:
     31.12. des Bestelljahres + 1 Kulanzjahr.
-48. Als Admin möchte ich, dass bei mehreren offenen Bestellungen die geleisteten Stunden
+50. Als Admin möchte ich, dass bei mehreren offenen Bestellungen die geleisteten Stunden
     zuerst der ältesten Schuld angerechnet werden.
-49. Als Admin möchte ich je Mitglied eine Ampel sehen: grün = abgearbeitet, gelb = Frist
+51. Als Admin möchte ich, dass die Ampel die Frist der ältesten noch offenen Schuld
+    verwendet und nicht bereits erledigte Altlasten berücksichtigt.
+52. Als Admin möchte ich je Mitglied eine Ampel sehen: grün = abgearbeitet, gelb = Frist
     läuft, rot = Frist überschritten.
-50. Als Admin möchte ich je Mitglied den genauen Stand sehen: geleistete / benötigte
+53. Als Admin möchte ich je Mitglied den genauen Stand sehen: geleistete / benötigte
     Stunden, Differenz, Frist.
-51. Als Admin möchte ich Mitglieder ohne OG-Förderung ausblenden können.
-52. Als Admin möchte ich LifeguardClock-Einträge mit unbekanntem Nutzernamen markiert sehen.
+54. Als Admin möchte ich Mitglieder ohne OG-Förderung ausblenden können.
+55. Als Admin möchte ich LifeguardClock-Einträge über `userId` oder über das Feld `nutzer`
+    (Vollname, normalisiert) zuordnen können und unbekannte Namen markiert sehen.
 
 ### Einstellungen
 
-53. Als Admin möchte ich alle OG-Stammdaten pflegen: Name, LV, Bezirk, Adresse, E-Mail,
+56. Als Admin möchte ich alle OG-Stammdaten pflegen: Name, LV, Bezirk, Adresse, E-Mail,
     Website, IBAN, BIC, Bank, Amtsgericht, Steuernummer, Vorstandsnamen, Finanzverantwortliche.
-54. Als Admin möchte ich den Einsatzstunden-Umrechnungsschlüssel konfigurieren
+57. Als Admin möchte ich den Einsatzstunden-Umrechnungsschlüssel konfigurieren
     (Standard: 3 Stunden = 10 €).
-55. Als Admin möchte ich konfigurieren, welche Einsatztypen für die Stundenpflicht zählen.
-56. Als Admin möchte ich die Nextcloud-Zugangsdaten ändern können.
-57. Als Admin möchte ich die Einstellungen lokal im `localStorage` speichern.
+58. Als Admin möchte ich konfigurieren, welche Einsatztypen für die Stundenpflicht zählen.
+59. Als Admin möchte ich die Nextcloud-Zugangsdaten ändern können.
+60. Als Admin möchte ich die Einstellungen lokal im `localStorage` speichern.
 
 ### Fehler- und Leerzustände
 
-58. Als Admin möchte ich bei fehlendem Netzwerk eine klare Fehlermeldung sehen und mit
+61. Als Admin möchte ich bei fehlendem Netzwerk eine klare Fehlermeldung sehen und mit
     gecachten Daten weiterarbeiten können.
-59. Als Admin möchte ich bei fehlerhaftem Import-Text eine verständliche Fehlermeldung erhalten.
-60. Als Admin möchte ich auf jeder leeren Listenseite einen erklärenden Hinweis sehen.
+62. Als Admin möchte ich bei fehlerhaftem Import-Text eine verständliche Fehlermeldung erhalten.
+63. Als Admin möchte ich auf jeder leeren Listenseite einen erklärenden Hinweis sehen.
 
 ---
 
@@ -231,6 +241,7 @@ wuensche[]              — Phase 1: Mitgliederwünsche
   variante    string
   name        string
   menge       number
+  ogKostenlos boolean   — true = Mitglied zahlt 0 €, OG übernimmt den Rest
 positionen[]            — Phase 2: aus Rechnungsimport (nach Abgleich)
   id          string
   artikelNr   string
@@ -241,8 +252,13 @@ positionen[]            — Phase 2: aus Rechnungsimport (nach Abgleich)
   bvFoerderung number
   lvFoerderung number
   ogFoerderung number
+  ogUebernimmtRest boolean
+  foerderungGespeichert boolean — true = Snapshot enthält vollständige Förderdaten
   typ         enum      — "artikel" | "og-kosten"
-  wunschId    string    — Referenz auf den gematchten Wunsch (oder null)
+  zuweisung[]           — Verteilung auf Mitglieder
+    mitgliedId string
+    menge      number
+    ogKostenlos boolean
 rechnungen[]
   id          string
   nummer      string    — "R_YYYY_MM_NNN"
@@ -294,20 +310,26 @@ Format: `artikelNr,variante,menge` — eine Zeile pro aggregierter Artikel+Varia
 Match-Schlüssel: `artikelNr + variante`. Algorithmus:
 - Für jede Rechnungsposition: suche Wunsch mit gleichem Schlüssel
 - Menge stimmt → direkt zuweisen
-- Menge weicht ab → Review-Flag
+- Menge weicht ab → Review-Flag mit expliziter Aktion `uebernehmen` oder `ignorieren`
 - Keine Wunsch-Entsprechung → Review-Flag "nicht bestellt"
 - Wunsch ohne Rechnungsposition → Review-Flag "nicht geliefert"
+- Nur `uebernehmen` erzeugt beim Abschließen eine reale Positionszeile; `ignorieren`
+  dokumentiert die Abweichung, übernimmt aber keine Menge in die Bestellung
 
 ### Förderberechnung
 
-`berechneFoerderung(artikel, menge) → { bv, lv, og, mitglied, gesamt }`.
-`ogUebernimmtRest: true` → `og = einzelpreis − bv − lv`. Auf 2 Dezimalstellen gerundet.
+`berechneFoerderung(artikel, menge, opts?) → { bv, lv, og, mitglied, gesamt }`.
+`ogUebernimmtRest: true` → `og = einzelpreis − bv − lv`.
+`ogKostenlos: true` → `mitglied = 0`, OG übernimmt den verbleibenden Rest. Auf 2 Dezimalstellen gerundet.
 
 ### Einsatzstunden-Berechnung
 
 `berechneStunden(logEntries[], einsatztypen[]) → Map<mitgliedId, stunden>`.
+Zuordnung erfolgt über `userId`/`user_id` oder, falls nicht vorhanden, über das normalisierte
+`nutzer`-Feld gegen die Mitgliederliste.
 Schulden-Verrechnung: `verechneSchuld(mitgliedId, bestellungen[], geleisteteStunden)`
-→ chronologisch, älteste Schuld zuerst.
+→ chronologisch, älteste Schuld zuerst. Die Ampel-Frist richtet sich nach der ältesten
+noch offenen Schuld.
 
 ### PDF-Erzeugung
 
@@ -333,10 +355,11 @@ Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Re
 
 1. **Import-Parser** — alle drei Formate, LV-Erkennung, Variantenzeile, Menge-0, ogKosten
 2. **Förderberechnung** — ogUebernimmtRest, Rundung, Menge > 1
-3. **Abgleich** — Match, Mengenabweichung, nicht bestellt, nicht geliefert
-4. **Stunden-Matching** — anwesenheit nicht zählen, unbekannte Nutzer
-5. **Schulden-Verrechnung** — chronologische Tilgung, Teilerfüllung
-6. **Rechnungsnummerierung** — Monatsreset, fortlaufend
+3. **Abgleich** — Match, Mengenabweichung, nicht bestellt, nicht geliefert, `uebernehmen` vs. `ignorieren`
+4. **Stunden-Matching** — anwesenheit nicht zählen, unbekannte Nutzer, `nutzer`-Fallback
+5. **Schulden-Verrechnung** — chronologische Tilgung, Teilerfüllung, Frist der ältesten offenen Schuld
+6. **Kassenwart-Snapshots** — gespeicherte Förderwerte vor Live-Katalog
+7. **Rechnungsnummerierung** — Monatsreset, fortlaufend
 
 ---
 

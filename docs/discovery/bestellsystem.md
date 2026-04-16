@@ -61,6 +61,9 @@ System, das:
     damit ich keine Bestellung vergesse.
 13. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können
     (z. B. März und Oktober desselben Jahres), damit der Jahresablauf der OG abgebildet wird.
+14. Als Admin möchte ich einen Wunsch als "OG übernimmt Kosten" markieren können,
+    damit Mitgliedsanteil, Rechnung und Kassenwart-Auswertung konsistent 0 € für das
+    Mitglied und den Rest als OG-Anteil ausweisen.
 
 ### Rechnungen
 
@@ -131,6 +134,12 @@ System, das:
 - **WebDAV nicht erreichbar:** Klare Fehlermeldung; lokal zwischengespeicherte Daten werden angezeigt.
 - **Mitgliedername in LifeguardClock weicht ab:** Matching über `nutzer`-Feld (Vollname) gegen ID-Lookup; nicht zuordenbare Einträge werden als "unbekannt" markiert.
 - **Zwei Sammelbestellungen, Stunden reichen nicht für beide:** Älteste Schuld wird zuerst getilgt; verbleibende Schuld bleibt offen.
+- **Alte Schuld bereits getilgt, neue noch offen:** Ampel und Frist richten sich nach der ältesten
+  noch offenen Schuld, nicht nach erledigten Alt-Rechnungen.
+- **Artikelkatalog wurde später geändert:** Kassenwart-Übersicht nutzt gespeicherte Förder-Snapshots
+  aus der Bestellung, damit alte Abschlüsse stabil bleiben.
+- **Mengenabweichung wird ignoriert:** Ignorieren dokumentiert den Review-Entscheid, übernimmt
+  aber keine gelieferte Menge in die finale Position.
 
 ---
 
@@ -174,6 +183,8 @@ System, das:
 - Versandkosten und Eilauftrag-Zuschläge trägt immer die OG (keine Ausnahmen).
 - Es gibt keine MwSt.-Ausweisung in der Mitgliedsrechnung (Kleinunternehmer-Regelung oder Verein mit Hinweis "19% MwSt. enthalten").
 - Der Abarbeitungsschlüssel (3 h / 10 €) kann sich ändern — er ist konfigurierbar.
+- Förderwerte, die beim Abschluss einer Bestellung verwendet wurden, werden als Snapshot in der
+  Bestellung gespeichert und später nicht mehr aus dem Live-Katalog rekonstruiert.
 
 ---
 

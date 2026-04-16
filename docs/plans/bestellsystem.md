@@ -13,7 +13,17 @@
 | **Rechnungsnummern** | Format `R_YYYY_MM_NNN`; Zähler live aus `bestellungen.json` berechnet |
 | **Mitgliederliste** | Einmalig aus Stempeluhr `config.js` importiert, in `einstellungen.json` gespeichert |
 | **Artikelkatalog** | Deduplizierung per `artikelNr + variante`; `variante` = Größen-/Variantencode (z.B. "XL", "MAGNET") |
-| **Tests** | HTML-Testseiten mit plain JS `assert`, kein Framework, nur reine Logik-Funktionen |
+| **Tests** | HTML-Testseiten mit plain JS `assert`; ergänzend Node-Regressionen für extrahierte Kernmodule |
+
+---
+
+## Test Commands
+
+```powershell
+run-tests.bat
+node tests\run-html-tests.mjs
+node tests\review-regression.mjs
+```
 
 ---
 
@@ -36,7 +46,7 @@
 **Ziel:** Admin erfasst Mitgliederwünsche, sieht die aggregierte Bestellmenge und exportiert
 die CSV-Liste für das Materialstelle-Bestellformular.
 
-**Stories:** 16–22
+**Stories:** 16–23
 
 **Erreicht:**
 - `src/sammlung.js`: `aggregiereWuensche`, `exportiereCSV`, `validiereWunsch` (mit Tests)
@@ -53,13 +63,14 @@ die CSV-Liste für das Materialstelle-Bestellformular.
 **Ziel:** Admin importiert die Materialstelle-Rechnung, gleicht sie mit den Wünschen ab
 und löst Abweichungen auf.
 
-**Stories:** 23–29
+**Stories:** 24–30
 
 **Erreicht:**
-- `src/abgleich.js`: `gleiche_ab` (Match, Mengenabweichung, nicht bestellt, nicht geliefert, OG-Kosten) mit Tests
+- `src/abgleich.js`: `gleiche_ab`, `bauePositionenAusAbgleich` (Match, Mengenabweichung, nicht bestellt, nicht geliefert, OG-Kosten) mit Tests
 - `bestellung-abgleich.html`: Rechnungsimport, Abgleich-UI, Review, Zuweisung, OG-Kosten-Ansicht
 - Zusatz: "Wünsche direkt übernehmen" für Artikel ohne externe Rechnung (z.B. Lehrgänge)
 - Zusatz: "Bestellung wieder öffnen" setzt Status zurück
+- Nachschärfung: Mengenabweichung `ignorieren` erzeugt keine finale Position; nur `uebernehmen` übernimmt gelieferte Mengen
 
 **Seiten:** `bestellung-abgleich.html`
 
@@ -69,7 +80,7 @@ und löst Abweichungen auf.
 
 **Ziel:** Admin erzeugt PDF-Rechnungen je Mitglied und verfolgt Zahlungen.
 
-**Stories:** 30–38
+**Stories:** 31–39
 
 **Erreicht:**
 - `src/pdf.js`: `erstelleRechnungsDaten`, `druckePDF` via jsPDF
@@ -84,12 +95,14 @@ und löst Abweichungen auf.
 
 **Ziel:** Vollständige Unterlagen für die Kasse + Einsatzstunden-Tracking.
 
-**Stories:** 39–52
+**Stories:** 40–55
 
 **Erreicht:**
-- `src/stunden.js`: `berechneStunden`, `verechneSchuld`, `ampelStatus`, `schuldFrist` mit Tests
+- `src/stunden.js`: `berechneStunden`, `verechneSchuld`, `fristDerAeltestenOffenenSchuld`, `ampelStatus`, `schuldFrist` mit Tests
+- `src/kassenwart.js`: Kassenwart-Zeilen aus gespeicherten Positions-Snapshots, `ogKostenlos`-Berücksichtigung
 - `kassenwart.html`: Tabelle mit Förderanteilen, Summenzeilen, Jahresfilter, CSV/PDF-Export
 - `dashboard.html`: Ampel-Karten je Mitglied, automatischer LifeguardClock-Import, Ausblenden ohne OG-Schuld
+- Nachschärfung: LifeguardClock-Matching via `userId` oder normalisiertem `nutzer`; Frist aus ältester noch offener Schuld
 
 **Seiten:** `kassenwart.html`, `dashboard.html`
 

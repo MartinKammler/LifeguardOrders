@@ -225,7 +225,12 @@ import { OG_ID }                            from './src/konstanten.js';
 import { load, save }                        from './src/storage.js';
 import { parseBestellung }                  from './src/parser.js';
 import { aggregiereWuensche }               from './src/sammlung.js';
-import { gleiche_ab }                       from './src/abgleich.js';
+import {
+  gleiche_ab,
+  abweichKey,
+  verteileGelieferteMenge,
+  bauePositionenAusAbgleich,
+} from './src/abgleich.js';
 import { createWebDavClient }               from './src/webdav.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
 import { esc }                              from './src/dom.js';
@@ -246,7 +251,7 @@ let einstellungen = null;
 
 // Abgleich-Ergebnis + Auflösungs-Status
 let abgleichResult = null;
-// Map: key (artikelNr\x00variante) → { aufgeloest: bool, geliefertMenge: number }
+// Map: key (artikelNr\x00variante) → 'uebernehmen' | 'ignorieren'
 const aufgeloest = new Map();
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
@@ -265,40 +270,14 @@ function statusLabel(s) {
   return map[s] || 'Unbekannt';
 }
 
-function abweichKey(a) {
-  const nr = (a.wunsch || a.position || {}).artikelNr || '';
-  const va = (a.wunsch || a.position || {}).variante  || '';
-  return `${nr}\x00${va}`;
-}
-
 /* ── Zuweisung berechnen ─────────────────────────────────────── */
 /**
  * Verteilt `geliefertMenge` proportional auf die Wunsch-Mitglieder.
  * Gibt Array von { mitgliedId, name, wunschMenge, zugeteiltMenge } zurück.
  */
 function berechneZuweisung(artikelNr, variante, geliefertMenge) {
-  const wuensche = bestellung.wuensche || [];
-  const relevant = wuensche.filter(w => w.artikelNr === artikelNr && (w.variante || '') === (variante || ''));
-  if (!relevant.length) return [];
-
-  const totalWunsch = relevant.reduce((s, w) => s + w.menge, 0);
-  if (totalWunsch === 0) return relevant.map(w => ({ mitgliedId: w.mitgliedId, name: mitgliedName(w.mitgliedId), wunschMenge: 0, zugeteiltMenge: 0, ogKostenlos: w.ogKostenlos || false }));
-
-  // Proportionale Verteilung, Rest geht an den mit höchstem Wunsch
-  const zugeteilt = relevant.map(w => ({
-    mitgliedId:     w.mitgliedId,
-    name:           mitgliedName(w.mitgliedId),
-    wunschMenge:    w.menge,
-    zugeteiltMenge: Math.floor(geliefertMenge * w.menge / totalWunsch),
-    ogKostenlos:    w.ogKostenlos || false,
-  }));
-  const zugeteiltTotal = zugeteilt.reduce((s, z) => s + z.zugeteiltMenge, 0);
-  const rest = geliefertMenge - zugeteiltTotal;
-  if (rest > 0) {
-    const maxIdx = zugeteilt.reduce((best, cur, i) => cur.wunschMenge > zugeteilt[best].wunschMenge ? i : best, 0);
-    zugeteilt[maxIdx].zugeteiltMenge += rest;
-  }
-  return zugeteilt;
+  return verteileGelieferteMenge(bestellung.wuensche || [], artikelNr, variante, geliefertMenge)
+    .map(z => ({ ...z, name: mitgliedName(z.mitgliedId) }));
 }
 
 /* ── Render: Abgleich-Tabelle ────────────────────────────────── */
@@ -326,7 +305,7 @@ function renderAbgleich() {
   // Abweichungen
   for (const a of abweichungen) {
     const key   = abweichKey(a);
-    const istAufgeloest = aufgeloest.get(key);
+    const istAufgeloest = aufgeloest.has(key);
     const rowCls = istAufgeloest ? 'abgleich-row-abweich abgleich-row-aufgeloest' : 'abgleich-row-abweich';
 
     let dotCls   = 'dot-red';
@@ -417,8 +396,13 @@ function renderAbgleich() {
     btn.addEventListener('click', () => {
       const aktion = btn.dataset.aktion;
       const key    = btn.dataset.key;
-      if (aktion === 'accept-menge' || aktion === 'ignorieren') {
-        aufgeloest.set(key, true);
+      if (aktion === 'accept-menge') {
+        aufgeloest.set(key, 'uebernehmen');
+        renderAbgleich();
+        pruefAbschliessen();
+      }
+      if (aktion === 'ignorieren') {
+        aufgeloest.set(key, 'ignorieren');
         renderAbgleich();
         pruefAbschliessen();
       }
@@ -443,69 +427,7 @@ function pruefAbschliessen() {
 
 /* ── Positionen aus Abgleich-Ergebnis bauen ─────────────────── */
 function bauePositionen() {
-  const { gematch, abweichungen, og_kosten } = abgleichResult;
-  const positionen = [];
-
-  // Exakte Matches
-  for (const m of gematch) {
-    const zuw = berechneZuweisung(m.wunsch.artikelNr, m.wunsch.variante, m.position.menge);
-    positionen.push({
-      id:           crypto.randomUUID(),
-      artikelNr:    m.position.artikelNr,
-      variante:     m.position.variante || '',
-      name:         m.position.name,
-      menge:        m.position.menge,
-      einzelpreis:  m.position.einzelpreis || 0,
-      bvFoerderung: m.position.bvFoerderung || 0,
-      lvFoerderung: m.position.lvFoerderung || 0,
-      ogFoerderung: 0,
-      typ:          'artikel',
-      zuweisung:    zuw.map(z => ({ mitgliedId: z.mitgliedId, menge: z.zugeteiltMenge, ogAnteil: 0, ogKostenlos: z.ogKostenlos || false })),
-    });
-  }
-
-  // Aufgelöste Abweichungen mit accept-menge
-  for (const a of abweichungen) {
-    const key = abweichKey(a);
-    if (!aufgeloest.get(key)) continue;
-    if (a.typ === 'nicht_geliefert' || a.typ === 'nicht_bestellt') continue; // ignoriert
-
-    if (a.typ === 'menge') {
-      const zuw = berechneZuweisung(a.wunsch.artikelNr, a.wunsch.variante, a.geliefert);
-      positionen.push({
-        id:           crypto.randomUUID(),
-        artikelNr:    a.position.artikelNr,
-        variante:     a.position.variante || '',
-        name:         a.position.name,
-        menge:        a.geliefert,
-        einzelpreis:  a.position.einzelpreis || 0,
-        bvFoerderung: a.position.bvFoerderung || 0,
-        lvFoerderung: a.position.lvFoerderung || 0,
-        ogFoerderung: 0,
-        typ:          'artikel',
-        zuweisung:    zuw.map(z => ({ mitgliedId: z.mitgliedId, menge: z.zugeteiltMenge, ogAnteil: 0, ogKostenlos: z.ogKostenlos || false })),
-      });
-    }
-  }
-
-  // OG-Kosten
-  for (const k of og_kosten) {
-    positionen.push({
-      id:           crypto.randomUUID(),
-      artikelNr:    k.artikelNr || '',
-      variante:     '',
-      name:         k.name,
-      menge:        k.menge,
-      einzelpreis:  k.einzelpreis || 0,
-      bvFoerderung: 0,
-      lvFoerderung: 0,
-      ogFoerderung: 0,
-      typ:          'og-kosten',
-      zuweisung:    [],
-    });
-  }
-
-  return positionen;
+  return bauePositionenAusAbgleich(abgleichResult, bestellung.wuensche || [], artikelListe, aufgeloest);
 }
 
 /* ── Abgeschlossen: Positionen & Rechnungen ─────────────────── */

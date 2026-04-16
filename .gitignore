@@ -186,3 +186,6 @@ skills-manifest.txt
 # Lokale Konfigurationsdaten (enthalten ggf. Zugangsdaten)
 data/einstellungen.json
 data/bestellungen.json
+
+# Temporäre Test-Artefakte
+tests/.tmp_test_*.mjs

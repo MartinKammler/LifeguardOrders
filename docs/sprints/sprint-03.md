@@ -30,6 +30,10 @@ den automatischen Abgleich mit den Wünschen sehen und Abweichungen manuell aufl
 
 // berechneOgAnteil(position, wunsch) → number
 //   OG-Kosten werden der Bestellung zugerechnet, nicht dem Mitglied
+
+// bauePositionenAusAbgleich(abgleichResult, wuensche, artikelListe, aufloesungen)
+//   - Mengenabweichung nur bei Aktion 'uebernehmen' in finale Positionen übernehmen
+//   - Aktion 'ignorieren' dokumentiert Review, erzeugt aber keine Positionszeile
 ```
 
 ---
@@ -40,7 +44,7 @@ den automatischen Abgleich mit den Wünschen sehen und Abweichungen manuell aufl
 - [x] Automatischer Match nach artikelNr + variante
 - [x] Gematchte Positionen grün markiert, Mitglied daneben sichtbar
 - [x] Abweichungen rot/gelb markiert mit Typ-Hinweis
-- [x] Abweichung auflösen: Menge anpassen, Mitglied neu zuweisen oder ignorieren
+- [x] Abweichung auflösen: Menge bewusst übernehmen oder ignorieren; Ignorieren bucht nichts in finale Positionen
 - [x] OG-Kosten (Versand, Eilauftrag) sichtbar, aber nicht zuweisbar
 - [x] Bestellung auf "abgeschlossen" setzen möglich wenn alle Positionen aufgelöst
 - [x] Gespeichert in `lo_bestellungen` + Nextcloud
@@ -58,3 +62,4 @@ den automatischen Abgleich mit den Wünschen sehen und Abweichungen manuell aufl
 
 - **"Wünsche direkt übernehmen"** in `bestellung-abgleich.html`: Für Artikel ohne externe Rechnung (z.B. Lehrgänge) synthetisiert der Button Abgleich-Ergebnis direkt aus den Wünschen → sofortiges Abschließen ohne Datei-Import möglich.
 - **"Bestellung wieder öffnen"** (amber) im Rechnungen-Card: setzt Status zurück auf "bestellt".
+- **Explizite Auflösungssemantik bei Mengenabweichungen:** `uebernehmen` erzeugt Positions-Snapshot, `ignorieren` markiert nur den Review-Entscheid.

@@ -1,0 +1,83 @@
+import { berechneFoerderung } from './berechnung.js';
+
+function runde(v) {
+  return Math.round((v || 0) * 100) / 100;
+}
+
+function resolveMitgliedName(mitglieder, id) {
+  const mitglied = (mitglieder || []).find(m => m.id === id);
+  return mitglied ? mitglied.name : id;
+}
+
+export function berechneKassenwartZeilen(bestellungen, artikelListe, mitglieder) {
+  const zeilen = [];
+
+  for (const bestellung of (bestellungen || [])) {
+    if (bestellung.status !== 'abgeschlossen') continue;
+    const jahr = (bestellung.datum || '').slice(0, 4);
+
+    for (const position of (bestellung.positionen || [])) {
+      if (position.typ === 'og-kosten') continue;
+
+      const artikel = (artikelListe || []).find(
+        a => a.artikelNr === position.artikelNr && (a.variante || '') === (position.variante || '')
+      );
+
+      for (const zuweisung of (position.zuweisung || [])) {
+        if (zuweisung.menge === 0) continue;
+
+        const quelle = waehleFoerderQuelle(position, artikel);
+        const foerderung = berechneFoerderung(quelle, zuweisung.menge, {
+          ogKostenlos: !!zuweisung.ogKostenlos,
+        });
+
+        const rechnung = (bestellung.rechnungen || []).find(r => r.mitgliedId === zuweisung.mitgliedId);
+
+        zeilen.push({
+          jahr,
+          bestellungId:   bestellung.id,
+          bestellungBez:  bestellung.bezeichnung,
+          mitgliedId:     zuweisung.mitgliedId,
+          mitgliedName:   resolveMitgliedName(mitglieder, zuweisung.mitgliedId),
+          artikelName:    position.name,
+          variante:       position.variante || '',
+          menge:          zuweisung.menge,
+          einzelpreis:    position.einzelpreis || 0,
+          brutto:         runde((position.einzelpreis || 0) * zuweisung.menge),
+          bv:             foerderung.bv,
+          lv:             foerderung.lv,
+          og:             foerderung.og,
+          anteil:         foerderung.mitglied,
+          bezahlt:        rechnung?.bezahlt ?? false,
+          rechnungNummer: rechnung?.nummer ?? '',
+        });
+      }
+    }
+  }
+
+  return zeilen;
+}
+
+function waehleFoerderQuelle(position, artikel) {
+  if (hatGespeicherteFoerderung(position) || !artikel) {
+    return {
+      einzelpreis:      position.einzelpreis || 0,
+      bvFoerderung:     position.bvFoerderung || 0,
+      lvFoerderung:     position.lvFoerderung || 0,
+      ogFoerderung:     position.ogFoerderung || 0,
+      ogUebernimmtRest: !!position.ogUebernimmtRest,
+    };
+  }
+
+  return artikel;
+}
+
+function hatGespeicherteFoerderung(position) {
+  return (
+    position?.foerderungGespeichert === true ||
+    position?.ogUebernimmtRest !== undefined ||
+    (position?.ogFoerderung || 0) !== 0 ||
+    (position?.bvFoerderung || 0) !== 0 ||
+    (position?.lvFoerderung || 0) !== 0
+  );
+}

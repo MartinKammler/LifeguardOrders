@@ -15,10 +15,12 @@ kann die Position auf mehrere Mitglieder aufgeteilt werden.
 - Zuweisungs-UI auf `bestellung-neu.html` (nach Import-Schritt):
   - Je Position: Dropdown "Mitglied" + Menge-Eingabe
   - "+" Button zum Hinzufügen weiterer Mitglieder für dieselbe Position
-  - Anzeige: zugewiesene Menge / Gesamtmenge, farblich wenn vollständig
-  - Förderanteile (BV/LV/OG/Mitglied) live berechnet und angezeigt
-  - Nicht vollständig zugewiesene Positionen: orange Markierung
+- Anzeige: zugewiesene Menge / Gesamtmenge, farblich wenn vollständig
+- Förderanteile (BV/LV/OG/Mitglied) live berechnet und angezeigt
+- Nicht vollständig zugewiesene Positionen: orange Markierung
 - Speichern schreibt `zuweisung[]` in die jeweilige Position in `bestellungen.json`
+- `zuweisung[]` trägt zusätzlich Flags wie `ogKostenlos`, damit Rechnungen und Kassenwart-Auswertung
+  denselben Snapshot verwenden
 
 ## Acceptance Criteria
 - Alle Mitglieder aus Einstellungen erscheinen im Dropdown

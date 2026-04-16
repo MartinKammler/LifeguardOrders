@@ -120,7 +120,13 @@
 <script type="module">
 import { load, save }                                 from './src/storage.js';
 import { createWebDavClient }                         from './src/webdav.js';
-import { berechneStunden, verechneSchuld, ampelStatus, schuldFrist } from './src/stunden.js';
+import {
+  berechneStunden,
+  verechneSchuld,
+  fristDerAeltestenOffenenSchuld,
+  ampelStatus,
+  schuldFrist,
+} from './src/stunden.js';
 import { esc }                                        from './src/dom.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
@@ -197,16 +203,7 @@ async function berechneDashboard() {
     const { gesamtSchuldStunden, restSchuldStunden, verrechnungen } =
       verechneSchuld(m.id, bestellungen, geleisteteStunden, einstellungen);
 
-    // Frist: älteste offene Schuld bestimmt die Frist
-    let frist = null;
-    for (const b of bestellungen) {
-      for (const r of (b.rechnungen || [])) {
-        if (r.mitgliedId !== m.id) continue;
-        if (!r.erwartetEinsatzstunden || r.erwartetEinsatzstunden <= 0) continue;
-        const f = schuldFrist(b.datum);
-        if (!frist || f < frist) frist = f;
-      }
-    }
+    let frist = fristDerAeltestenOffenenSchuld(verrechnungen);
     if (!frist) frist = schuldFrist(new Date().toISOString());
 
     const ampel = gesamtSchuldStunden === 0

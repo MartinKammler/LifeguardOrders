@@ -105,7 +105,7 @@
 <script type="module">
 import { load, save }          from './src/storage.js';
 import { createWebDavClient }  from './src/webdav.js';
-import { berechneFoerderung }  from './src/berechnung.js';
+import { berechneKassenwartZeilen } from './src/kassenwart.js';
 import { esc }                 from './src/dom.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
@@ -132,53 +132,7 @@ function mitgliedName(id) {
 
 /* ── Kassenwart-Daten aufbauen ───────────────────────────────── */
 function baueZeilen() {
-  const zeilen = [];
-  for (const b of bestellungen) {
-    if (b.status !== 'abgeschlossen') continue;
-    const jahr = (b.datum || '').slice(0, 4);
-
-    for (const pos of (b.positionen || [])) {
-      if (pos.typ === 'og-kosten') continue;
-
-      const artikel = artikelListe.find(
-        a => a.artikelNr === pos.artikelNr && (a.variante || '') === (pos.variante || '')
-      );
-
-      for (const zuw of (pos.zuweisung || [])) {
-        if (zuw.menge === 0) continue;
-
-        let bv, lv, og, anteil;
-        if (artikel) {
-          const f = berechneFoerderung(artikel, zuw.menge);
-          bv = f.bv; lv = f.lv; og = f.og; anteil = f.mitglied;
-        } else {
-          bv     = runde((pos.bvFoerderung || 0) * zuw.menge);
-          lv     = runde((pos.lvFoerderung || 0) * zuw.menge);
-          og     = runde((pos.ogFoerderung || 0) * zuw.menge);
-          anteil = runde((pos.einzelpreis  || 0) * zuw.menge - bv - lv - og);
-        }
-        const brutto = runde((pos.einzelpreis || 0) * zuw.menge);
-
-        const rechnung = (b.rechnungen || []).find(r => r.mitgliedId === zuw.mitgliedId);
-
-        zeilen.push({
-          jahr,
-          bestellungId:   b.id,
-          bestellungBez:  b.bezeichnung,
-          mitgliedId:     zuw.mitgliedId,
-          mitgliedName:   mitgliedName(zuw.mitgliedId),
-          artikelName:    pos.name,
-          variante:       pos.variante || '',
-          menge:          zuw.menge,
-          einzelpreis:    pos.einzelpreis || 0,
-          brutto, bv, lv, og, anteil,
-          bezahlt:        rechnung?.bezahlt ?? false,
-          rechnungNummer: rechnung?.nummer  ?? '',
-        });
-      }
-    }
-  }
-  return zeilen;
+  return berechneKassenwartZeilen(bestellungen, artikelListe, mitglieder);
 }
 
 /* ── Filter ──────────────────────────────────────────────────── */

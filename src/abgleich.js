@@ -77,3 +77,117 @@ export function gleiche_ab(wuensche, positionen) {
 
   return { gematch, abweichungen, og_kosten };
 }
+
+export function abweichKey(abweichung) {
+  const basis = abweichung?.wunsch || abweichung?.position || {};
+  return `${basis.artikelNr || ''}\x00${basis.variante || ''}`;
+}
+
+export function verteileGelieferteMenge(wuensche, artikelNr, variante, geliefertMenge) {
+  const relevanteWuensche = (wuensche || []).filter(
+    w => w.artikelNr === artikelNr && (w.variante || '') === (variante || '')
+  );
+  if (!relevanteWuensche.length) return [];
+
+  const gesamtGewuenscht = relevanteWuensche.reduce((summe, w) => summe + w.menge, 0);
+  if (gesamtGewuenscht === 0) {
+    return relevanteWuensche.map(w => ({
+      mitgliedId: w.mitgliedId,
+      wunschMenge: 0,
+      zugeteiltMenge: 0,
+      ogKostenlos: !!w.ogKostenlos,
+    }));
+  }
+
+  const verteilung = relevanteWuensche.map(w => ({
+    mitgliedId: w.mitgliedId,
+    wunschMenge: w.menge,
+    zugeteiltMenge: Math.floor(geliefertMenge * w.menge / gesamtGewuenscht),
+    ogKostenlos: !!w.ogKostenlos,
+  }));
+
+  const bereitsZugewiesen = verteilung.reduce((summe, eintrag) => summe + eintrag.zugeteiltMenge, 0);
+  const rest = geliefertMenge - bereitsZugewiesen;
+  if (rest > 0) {
+    const maxIndex = verteilung.reduce(
+      (best, aktuell, index) => aktuell.wunschMenge > verteilung[best].wunschMenge ? index : best,
+      0
+    );
+    verteilung[maxIndex].zugeteiltMenge += rest;
+  }
+
+  return verteilung;
+}
+
+export function bauePositionenAusAbgleich(abgleichResult, wuensche, artikelListe, aufloesungen = new Map()) {
+  const positionen = [];
+  const { gematch = [], abweichungen = [], og_kosten = [] } = abgleichResult || {};
+
+  for (const match of gematch) {
+    positionen.push(baueArtikelPosition(match.position, wuensche, artikelListe));
+  }
+
+  for (const abweichung of abweichungen) {
+    if (abweichung.typ !== 'menge') continue;
+    if (aufloesungen.get(abweichKey(abweichung)) !== 'uebernehmen') continue;
+
+    positionen.push(baueArtikelPosition(
+      { ...abweichung.position, menge: abweichung.geliefert },
+      wuensche,
+      artikelListe
+    ));
+  }
+
+  for (const kosten of og_kosten) {
+    positionen.push({
+      id: crypto.randomUUID(),
+      artikelNr: kosten.artikelNr || '',
+      variante: '',
+      name: kosten.name,
+      menge: kosten.menge,
+      einzelpreis: kosten.einzelpreis || 0,
+      bvFoerderung: 0,
+      lvFoerderung: 0,
+      ogFoerderung: 0,
+      ogUebernimmtRest: false,
+      foerderungGespeichert: true,
+      typ: 'og-kosten',
+      zuweisung: [],
+    });
+  }
+
+  return positionen;
+}
+
+function baueArtikelPosition(position, wuensche, artikelListe) {
+  const artikel = (artikelListe || []).find(
+    a => a.artikelNr === position.artikelNr && (a.variante || '') === (position.variante || '')
+  );
+  const verteilung = verteileGelieferteMenge(
+    wuensche,
+    position.artikelNr,
+    position.variante || '',
+    position.menge
+  );
+
+  return {
+    id: crypto.randomUUID(),
+    artikelNr: position.artikelNr,
+    variante: position.variante || '',
+    name: position.name,
+    menge: position.menge,
+    einzelpreis: position.einzelpreis || 0,
+    bvFoerderung: position.bvFoerderung || 0,
+    lvFoerderung: position.lvFoerderung || 0,
+    ogFoerderung: artikel?.ogFoerderung || 0,
+    ogUebernimmtRest: !!artikel?.ogUebernimmtRest,
+    foerderungGespeichert: !!artikel,
+    typ: 'artikel',
+    zuweisung: verteilung.map(eintrag => ({
+      mitgliedId: eintrag.mitgliedId,
+      menge: eintrag.zugeteiltMenge,
+      ogAnteil: 0,
+      ogKostenlos: eintrag.ogKostenlos,
+    })),
+  };
+}
