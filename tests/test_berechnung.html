@@ -269,6 +269,12 @@ await test('ohne opts: Verhalten unverändert', () => {
   assert(res.mitglied === 8 && res.og === 0, `mitglied=${res.mitglied}, og=${res.og}`);
 });
 
+await test('ogKostenlos: og wird nicht negativ wenn bv+lv > gesamt', () => {
+  const artikel = { einzelpreis: 10, bvFoerderung: 7, lvFoerderung: 5, ogFoerderung: 0, ogUebernimmtRest: false };
+  const res = berechneFoerderung(artikel, 1, { ogKostenlos: true });
+  return res.og >= 0 && res.mitglied === 0;
+});
+
 /* ── Render ─────────────────────────────────────────────────── */
 const out = document.getElementById('output');
 let html = '';

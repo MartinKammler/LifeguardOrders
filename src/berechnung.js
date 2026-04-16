@@ -26,7 +26,7 @@ export function berechneFoerderung(artikel, menge, opts = {}) {
   const lv     = runde(artikel.lvFoerderung * menge);
 
   if (opts.ogKostenlos) {
-    const og = runde(gesamt - bv - lv);
+    const og = Math.max(0, runde(gesamt - bv - lv));
     return { bv, lv, og, mitglied: 0, gesamt };
   }
 
