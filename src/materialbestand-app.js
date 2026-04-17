@@ -35,9 +35,152 @@ let einstellungen = null;
 let mitglieder = [];
 let client = null;
 const offeneHistorien = new Set();
+let _artikelBasenCache = null;
+
+function eur(v) {
+  return Number(v || 0).toFixed(2).replace('.', ',') + ' €';
+}
+
+const LEERE_VARIANTE = '__OHNE_VARIANTE__';
 
 function materialKey(eintrag) {
   return `${eintrag.nummer}\x00${eintrag.variante || ''}\x00${eintrag.bezeichnung || ''}`;
+}
+
+function artikelBasisKey(artikel) {
+  return `${String(artikel?.artikelNr || '').trim()}|||${String(artikel?.name || '').trim()}`;
+}
+
+function artikelBasisLabel(artikel) {
+  return `${artikel?.name || ''} · ${artikel?.artikelNr || ''}`;
+}
+
+function gruppiereArtikelBasen() {
+  if (_artikelBasenCache) return _artikelBasenCache;
+  const map = new Map();
+  for (const artikel of artikelListe) {
+    const key = artikelBasisKey(artikel);
+    const variante = String(artikel?.variante || '').trim().toUpperCase();
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        artikelNr: String(artikel?.artikelNr || '').trim(),
+        name: String(artikel?.name || '').trim(),
+        varianten: new Set(),
+      });
+    }
+    map.get(key).varianten.add(variante);
+  }
+  _artikelBasenCache = [...map.values()].sort((a, b) =>
+    `${a.artikelNr}|||${a.name}`.localeCompare(`${b.artikelNr}|||${b.name}`, 'de')
+  );
+  return _artikelBasenCache;
+}
+
+function findePassendenArtikelZumFormular() {
+  return artikelListe.find(artikel =>
+    String(artikel.artikelNr || '').trim() === document.getElementById('m-nummer').value.trim() &&
+    String(artikel.variante || '').trim().toUpperCase() === document.getElementById('m-variante').value.trim().toUpperCase() &&
+    String(artikel.name || '').trim() === document.getElementById('m-bezeichnung').value.trim()
+  ) || null;
+}
+
+function findePassendeArtikelbasisZumFormular() {
+  return gruppiereArtikelBasen().find(artikel =>
+    artikel.artikelNr === document.getElementById('m-nummer').value.trim() &&
+    artikel.name === document.getElementById('m-bezeichnung').value.trim()
+  ) || null;
+}
+
+function schliesseArtikelDropdown() {
+  document.getElementById('m-artikel-dropdown').classList.remove('open');
+}
+
+function renderVarianteAuswahl(basisKey = '') {
+  const select = document.getElementById('m-variante-auswahl');
+  const basis = gruppiereArtikelBasen().find(artikel => artikel.key === basisKey);
+  const optionen = basis
+    ? [...basis.varianten].sort((a, b) => a.localeCompare(b, 'de'))
+    : [];
+  setHTML(select, html`
+    <option value="">Katalog-Variante wählen …</option>
+    ${optionen.map(variante => html`<option value="${variante || LEERE_VARIANTE}">${variante || 'Ohne Variante'}</option>`)}
+  `);
+
+  const aktuelleVariante = document.getElementById('m-variante').value.trim().toUpperCase();
+  select.value = optionen.includes(aktuelleVariante)
+    ? (aktuelleVariante || LEERE_VARIANTE)
+    : '';
+  select.disabled = optionen.length === 0;
+}
+
+function synchronisiereArtikelFeldAusFormular() {
+  const basis = findePassendeArtikelbasisZumFormular();
+  document.getElementById('m-artikel-basis-key').value = basis?.key || '';
+  document.getElementById('m-artikel-suche').value = basis ? artikelBasisLabel(basis) : '';
+  renderVarianteAuswahl(basis?.key || '');
+}
+
+function waehleArtikelFuerMaterialbestand(basisKey) {
+  const basis = gruppiereArtikelBasen().find(item => item.key === basisKey);
+  if (!basis) return;
+  document.getElementById('m-artikel-basis-key').value = basis.key;
+  document.getElementById('m-artikel-suche').value = artikelBasisLabel(basis);
+  document.getElementById('m-nummer').value = basis.artikelNr || '';
+  document.getElementById('m-bezeichnung').value = basis.name || '';
+  renderVarianteAuswahl(basis.key);
+  const optionen = [...basis.varianten];
+  const aktuelleVariante = document.getElementById('m-variante').value.trim().toUpperCase();
+  if (optionen.length === 1) {
+    document.getElementById('m-variante').value = optionen[0];
+    document.getElementById('m-variante-auswahl').value = optionen[0] || LEERE_VARIANTE;
+  } else if (!optionen.includes(aktuelleVariante)) {
+    document.getElementById('m-variante').value = '';
+    document.getElementById('m-variante-auswahl').value = '';
+  }
+  schliesseArtikelDropdown();
+}
+
+function aktualisiereArtikelDropdown(suche) {
+  const dropdown = document.getElementById('m-artikel-dropdown');
+  const suchLower = suche.toLowerCase().trim();
+  const gefiltert = suchLower
+    ? gruppiereArtikelBasen()
+        .filter(a => (
+          `${a.artikelNr || ''} ${(a.name || '')}`
+        ).toLowerCase().includes(suchLower))
+        .sort((a, b) => {
+          const aText = `${a.artikelNr || ''} ${(a.name || '')}`.toLowerCase();
+          const bText = `${b.artikelNr || ''} ${(b.name || '')}`.toLowerCase();
+          const aStarts = aText.startsWith(suchLower) ? 0 : 1;
+          const bStarts = bText.startsWith(suchLower) ? 0 : 1;
+          if (aStarts !== bStarts) return aStarts - bStarts;
+          return `${a.artikelNr || ''}|||${a.name || ''}`.localeCompare(`${b.artikelNr || ''}|||${b.name || ''}`, 'de');
+        })
+    : [];
+
+  if (!gefiltert.length) {
+    setHTML(dropdown, '');
+    dropdown.classList.remove('open');
+    return;
+  }
+
+  setHTML(dropdown, html`${gefiltert.map(a => {
+    const variantenAnzahl = a.varianten.size;
+    return html`<div class="artikel-option" data-key="${a.key}">
+      <div class="ao-name">${a.name}</div>
+      <div class="ao-meta">${a.artikelNr}${variantenAnzahl ? ` · ${variantenAnzahl} Variante${variantenAnzahl === 1 ? '' : 'n'}` : ''}</div>
+    </div>`;
+  })}`);
+
+  dropdown.querySelectorAll('.artikel-option').forEach(el => {
+    el.addEventListener('mousedown', event => {
+      event.preventDefault();
+      waehleArtikelFuerMaterialbestand(el.dataset.key);
+    });
+  });
+
+  dropdown.classList.add('open');
 }
 
 function mitgliedName(id) {
@@ -186,6 +329,8 @@ function oeffneModal(id = '') {
   const eintrag = id ? materialbestand.find(item => item.id === id) : null;
   document.getElementById('modal-titel').textContent = eintrag ? 'Bestandsposten bearbeiten' : 'Bestandsposten anlegen';
   document.getElementById('modal-id').value = eintrag?.id || '';
+  document.getElementById('m-artikel-basis-key').value = '';
+  document.getElementById('m-artikel-suche').value = '';
   document.getElementById('m-nummer').value = eintrag?.nummer || '';
   document.getElementById('m-variante').value = eintrag?.variante || '';
   document.getElementById('m-bezeichnung').value = eintrag?.bezeichnung || '';
@@ -194,10 +339,12 @@ function oeffneModal(id = '') {
   document.getElementById('m-lagerort').value = eintrag?.lagerort || '';
   document.getElementById('m-herkunft').value = eintrag?.herkunftBestellungId || '';
   document.getElementById('m-notiz').value = eintrag?.notiz || '';
+  synchronisiereArtikelFeldAusFormular();
   document.getElementById('modal-backdrop').classList.add('open');
 }
 
 function schliesseModal() {
+  schliesseArtikelDropdown();
   document.getElementById('modal-backdrop').classList.remove('open');
 }
 
@@ -409,6 +556,7 @@ async function init() {
   materialbestand = load(STORAGE_KEY_M) || [];
   bestellungen = load(STORAGE_KEY_B) || [];
   artikelListe = load(STORAGE_KEY_A) || [];
+  _artikelBasenCache = null;
   if (client) {
     const [materialLoaded, bestellungenLoaded, artikelLoaded] = await Promise.all([
       hydrateJsonFromSync({
@@ -441,6 +589,7 @@ async function init() {
     }
     if (Array.isArray(artikelLoaded.data)) {
       artikelListe = artikelLoaded.data;
+      _artikelBasenCache = null;
     }
   } else {
     materialbestand = materialbestand.map(normalisiereMaterialEintrag);
@@ -462,6 +611,29 @@ async function init() {
     if (event.target === event.currentTarget) {
       schliesseModal();
     }
+  });
+  document.getElementById('m-artikel-suche').addEventListener('input', event => {
+    document.getElementById('m-artikel-basis-key').value = '';
+    aktualisiereArtikelDropdown(event.target.value);
+  });
+  document.getElementById('m-artikel-suche').addEventListener('focus', event => {
+    if (event.target.value.trim()) {
+      aktualisiereArtikelDropdown(event.target.value);
+    }
+  });
+  ['m-nummer', 'm-bezeichnung'].forEach(id => {
+    document.getElementById(id).addEventListener('input', () => {
+      document.getElementById('m-artikel-basis-key').value = '';
+    });
+    document.getElementById(id).addEventListener('blur', synchronisiereArtikelFeldAusFormular);
+  });
+  document.getElementById('m-variante').addEventListener('input', () => {
+    renderVarianteAuswahl(document.getElementById('m-artikel-basis-key').value);
+  });
+  document.getElementById('m-variante').addEventListener('blur', synchronisiereArtikelFeldAusFormular);
+  document.getElementById('m-variante-auswahl').addEventListener('change', event => {
+    document.getElementById('m-variante').value = event.target.value === LEERE_VARIANTE ? '' : event.target.value;
+    synchronisiereArtikelFeldAusFormular();
   });
   document.getElementById('bewegung-abbrechen').addEventListener('click', schliesseBewegungModal);
   document.getElementById('bewegung-backdrop').addEventListener('click', event => {
@@ -515,6 +687,11 @@ async function init() {
 
   document.getElementById('filter-suche').addEventListener('input', render);
   document.getElementById('filter-status').addEventListener('change', render);
+  document.addEventListener('click', event => {
+    if (!event.target.closest('.artikel-field-wrap')) {
+      schliesseArtikelDropdown();
+    }
+  });
 
   document.getElementById('bestand-tbody').addEventListener('click', event => {
     const button = event.target.closest('[data-action]');

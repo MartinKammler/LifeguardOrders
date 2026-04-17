@@ -22,7 +22,7 @@
 <div id="summary"></div>
 
 <script type="module">
-import { aggregiereWuensche, exportiereCSV, validiereWunsch, mergeWuensche } from '../src/sammlung.js';
+import { aggregiereWuensche, berechneBestellsummen, exportiereCSV, validiereWunsch, mergeWuensche } from '../src/sammlung.js';
 
 /* ── Mini Test-Runner ───────────────────────────────────────── */
 const results = [];
@@ -224,6 +224,56 @@ await test('leeres Array → leerer String', () => {
 await test('menge 0 wird korrekt exportiert', () => {
   const csv = exportiereCSV([{ artikelNr: 'B002', variante: 'L', name: 'Y', menge: 0 }]);
   assertEqual(csv, 'B002,L,0');
+});
+
+/* ── Tests: berechneBestellsummen ───────────────────────────── */
+
+suite('berechneBestellsummen — Summenlogik');
+
+await test('zählt alle bestellten Gegenstände über alle Wünsche', () => {
+  const summen = berechneBestellsummen(wuensche, []);
+  assertEqual(summen.gegenstaende, 5);
+});
+
+await test('berechnet Normalpreis und Preis nach Förderung aus dem Artikelkatalog', () => {
+  const summen = berechneBestellsummen([
+    { artikelNr: '18507110', variante: 'XL', menge: 2 },
+    { artikelNr: '29509445', variante: '42', menge: 1 },
+  ], [
+    { artikelNr: '18507110', variante: 'XL', einzelpreis: 20, bvFoerderung: 2, lvFoerderung: 3, ogFoerderung: 1 },
+    { artikelNr: '29509445', variante: '42', einzelpreis: 50, bvFoerderung: 5, lvFoerderung: 10, ogFoerderung: 0 },
+  ]);
+
+  assertEqual(summen.normalpreis, 90);
+  assertEqual(summen.bv, 9);
+  assertEqual(summen.lv, 16);
+  assertEqual(summen.og, 2);
+  assertEqual(summen.preisNachFoerderung, 63);
+});
+
+await test('ignoriert ogKostenlos-Flags bewusst für die Gesamtsumme', () => {
+  const summen = berechneBestellsummen([
+    { artikelNr: 'A001', variante: 'M', menge: 2, ogKostenlos: true },
+  ], [
+    { artikelNr: 'A001', variante: 'M', einzelpreis: 10, bvFoerderung: 1, lvFoerderung: 2, ogFoerderung: 3 },
+  ]);
+
+  assertEqual(summen.normalpreis, 20);
+  assertEqual(summen.preisNachFoerderung, 8);
+  assertEqual(summen.og, 6);
+});
+
+await test('fehlende Artikel werden für Geldsummen übersprungen, die Stückzahl bleibt erhalten', () => {
+  const summen = berechneBestellsummen([
+    { artikelNr: 'A001', variante: 'M', menge: 2 },
+    { artikelNr: 'FEHLT', variante: '', menge: 3 },
+  ], [
+    { artikelNr: 'A001', variante: 'M', einzelpreis: 10, bvFoerderung: 1, lvFoerderung: 1, ogFoerderung: 1 },
+  ]);
+
+  assertEqual(summen.gegenstaende, 5);
+  assertEqual(summen.normalpreis, 20);
+  assertEqual(summen.preisNachFoerderung, 14);
 });
 
 /* ── Tests: validiereWunsch ─────────────────────────────────── */

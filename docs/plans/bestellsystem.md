@@ -52,6 +52,7 @@ die CSV-Liste für das Materialstelle-Bestellformular.
 - `src/sammlung.js`: `aggregiereWuensche`, `exportiereCSV`, `validiereWunsch` (mit Tests)
 - `bestellungen.html`: Übersicht mit Phase, Anzahl Wünsche, "Wieder öffnen"-Button
 - `bestellung-sammeln.html`: Wünsche erfassen, aggregierte Tabelle, CSV-Export
+- Nachschärfung: Artikelauswahl in der Sammelbestellung jetzt zweistufig über Basisartikel (`Nummer + Bezeichnung`) und separate Variante
 - `bestellung-neu.html`: eigene Seite zum Anlegen einer Sammelbestellung (zusätzlich)
 
 **Seiten:** `bestellung-neu.html` + `bestellung-sammeln.html` + `bestellungen.html`
@@ -116,6 +117,7 @@ und verfolgt Zahlungen.
 
 - **Workflow-Erweiterung Anprobe:** neuer Status `anprobe` zwischen `bestellt` und `abgeschlossen`; finale Verteilung, Retoure und Lagerbestand werden in `positionen[]` gepflegt bevor Rechnungen erzeugt werden
 - **Materialbestand:** neue Seite `materialbestand.html` plus `materialbestand.json` für manuell gepflegte Lagerposten mit Nummer, Bezeichnung, Variante, Menge und Status
+- **Einheitlicher Auswahl-Workflow:** Sammelbestellung und Materialbestand nutzen für Katalogartikel denselben Ablauf: erst Basisartikel (`Nummer + Bezeichnung`) suchen, dann Variante separat wählen
 - **Anprobe -> Materialbestand:** Abschluss einer Bestellung erhöht passende Lagerposten automatisch; Zuordnung über Nummer + Variante + Bezeichnung, gleiche Posten werden zusammengeführt
 - **Materialbewegungen:** Materialseite erlaubt manuelle Zu- und Abgänge; jede Buchung landet als Bewegungslog direkt am Bestandsposten
 - **Lagerverkauf:** Materialseite kann Bestand direkt an ein Mitglied verkaufen; dabei entstehen Bestandsabgang, abgeschlossene Bestellung und Rechnung in einem Schritt auf Basis des aktuellen Katalogpreises

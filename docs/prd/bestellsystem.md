@@ -48,7 +48,7 @@ einstellungen.html        ← Konfiguration (NC, OG-Stammdaten, Mitglieder, Stun
 ```
 Phase 1 — Sammlung:
   Admin legt Sammelbestellung an →
-  Erfasst Wünsche: Mitglied + Artikel (aus Katalog) + Größe + Menge →
+  Erfasst Wünsche: Mitglied + Basisartikel (Nummer + Bezeichnung aus Katalog) + Variante + Menge →
   Optional: markiert Wunsch als "OG übernimmt Kosten" →
   System aggregiert: Artikel XL: 3 Stk. gesamt →
   CSV-Export: "18507110,XL,3" pro Zeile → Admin kopiert in Materialstelle-Bestellformular
@@ -121,7 +121,8 @@ werden — der Parser versteht beide Formate.
 
 16. Als Admin möchte ich eine neue Sammelbestellung anlegen mit Datum und Bezeichnung.
 17. Als Admin möchte ich in einer Sammelbestellung Mitgliederwünsche erfassen:
-    Mitglied auswählen (Dropdown), Artikel aus dem Katalog wählen (mit Größe), Menge angeben.
+    Mitglied auswählen (Dropdown), Basisartikel aus dem Katalog suchen
+    (`Nummer + Bezeichnung`), danach die Variante wählen und die Menge angeben.
 18. Als Admin möchte ich in derselben Bestellung für verschiedene Mitglieder und Artikel
     beliebig viele Wunschzeilen hinzufügen.
 19. Als Admin möchte ich eine aggregierte Ansicht sehen: welche Artikel in welcher Variante
@@ -130,7 +131,8 @@ werden — der Parser versteht beide Formate.
     `artikelNr,variante,menge` (eine Zeile pro Artikel+Variante), den ich in das
     Bestellformular der Materialstelle einfügen kann.
 21. Als Admin möchte ich eine bestehende Sammelbestellung nachträglich bearbeiten
-    (Wünsche hinzufügen, ändern, löschen), solange Phase 2 noch nicht begonnen hat.
+    (Wünsche hinzufügen, ändern, löschen), solange Phase 2 noch nicht begonnen hat;
+    dabei soll dieselbe Artikel-/Varianten-Auswahl gelten wie beim Neuanlegen.
 22. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können.
 23. Als Admin möchte ich einen Wunsch als "OG übernimmt Kosten" markieren können,
     damit der Mitgliedsanteil auf 0 € gesetzt und der Rest vollständig der OG zugerechnet wird.
@@ -321,6 +323,11 @@ bewegungen[]        — Bestandsbewegungen, neueste zuerst
   notiz             string   — optional
 ```
 
+**Artikel-/Varianten-Auswahl in der UI**
+- Sammelbestellung (`bestellung-sammeln.html`): erst Suche nach Basisartikel über `Nummer + Bezeichnung`, danach separate Variantenauswahl
+- Materialbestand (`materialbestand.html`): gleicher Ablauf; alternativ bleiben Nummer, Bezeichnung und Variante manuell editierbar
+- Die fachliche Datenbasis bleibt trotzdem `artikelNr + variante`; die zweistufige Auswahl dient nur der besseren Bedienbarkeit bei vielen Größen
+
 ### Import-Parser
 
 Drei Formate, automatisch erkannt (`parseBestellung(text)`):
@@ -378,6 +385,10 @@ Manuelle Zugänge und Abgänge werden ebenfalls direkt am Lagerposten gebucht un
 Bestandsbewegungen protokolliert.
 Verkäufe aus dem Lager erzeugen eine eigene abgeschlossene Bestellung mit Rechnung; Preise und
 Förderungen kommen dabei aus dem aktuellen Artikelkatalog der Materialstelle.
+
+Beim manuellen Anlegen eines Lagerpostens wird optional derselbe Katalog-Workflow wie in der
+Sammelbestellung angeboten: erst Basisartikel suchen, dann Variante wählen. Freie Eingabe bleibt
+für Sonderfälle erlaubt.
 
 ### Rechnungen (Phase 4)
 

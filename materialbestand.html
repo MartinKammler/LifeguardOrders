@@ -73,6 +73,36 @@
       color: var(--text);
       font-size: .85rem;
     }
+    .artikel-field-wrap {
+      position: relative;
+    }
+    .artikel-dropdown {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: 100%;
+      min-width: 100%;
+      width: max-content;
+      max-width: 620px;
+      max-height: 300px;
+      overflow-y: auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+      z-index: 300;
+      margin-top: 2px;
+    }
+    .artikel-dropdown.open { display: block; }
+    .artikel-option {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+    }
+    .artikel-option:last-child { border-bottom: none; }
+    .artikel-option:hover, .artikel-option.aktiv { background: var(--bg); }
+    .ao-name { font-size: .88rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .ao-meta { font-size: .76rem; color: var(--text-2); margin-top: 2px; }
 
     .leer-hinweis {
       text-align: center;
@@ -187,6 +217,15 @@
     <h2 id="modal-titel">Bestandsposten anlegen</h2>
     <input type="hidden" id="modal-id">
     <div class="form-grid">
+      <div class="field span2 artikel-field-wrap">
+        <label for="m-artikel-suche">Artikel aus Katalog</label>
+        <input type="text" id="m-artikel-suche" placeholder="Nummer oder Bezeichnung suchen …" autocomplete="off">
+        <div id="m-artikel-dropdown" class="artikel-dropdown"></div>
+        <input type="hidden" id="m-artikel-basis-key">
+        <div class="text-sm" style="margin-top:6px;color:var(--text-2)">
+          Optional. Die Auswahl übernimmt Nummer und Bezeichnung. Die Variante wählst du danach separat oder trägst sie frei ein.
+        </div>
+      </div>
       <div class="field">
         <label for="m-nummer">Nummer der Materialstelle</label>
         <input type="text" id="m-nummer" placeholder="4711">
@@ -194,6 +233,9 @@
       <div class="field">
         <label for="m-variante">Variante / Größe</label>
         <input type="text" id="m-variante" placeholder="Gr 43">
+        <select id="m-variante-auswahl" style="margin-top:8px">
+          <option value="">Katalog-Variante wählen …</option>
+        </select>
       </div>
       <div class="field span2">
         <label for="m-bezeichnung">Bezeichnung</label>

@@ -80,6 +80,32 @@
       color: var(--text-2);
     }
 
+    .bestellsumme-box {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg);
+    }
+    .bestellsumme-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .bestellsumme-wert {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .bestellsumme-hinweis {
+      margin-top: 10px;
+      font-size: .78rem;
+      color: var(--text-2);
+    }
+    @media (max-width: 720px) {
+      .bestellsumme-grid { grid-template-columns: 1fr; }
+    }
+
     /* Artikel-Dropdown */
     .artikel-field-wrap {
       position: relative;
@@ -198,7 +224,10 @@
           <label for="inp-artikel-suche">Artikel</label>
           <input type="text" id="inp-artikel-suche" placeholder="Suche…" autocomplete="off">
           <div id="artikel-dropdown" class="artikel-dropdown"></div>
-          <input type="hidden" id="sel-artikel-id">
+          <input type="hidden" id="sel-artikel-basis">
+          <select id="sel-artikel-variante" style="margin-top:8px" disabled>
+            <option value="">Variante wählen …</option>
+          </select>
         </div>
         <div class="field">
           <label for="inp-menge">Menge</label>
@@ -274,7 +303,10 @@
         <label for="inp-artikel-suche-edit">Artikel</label>
         <input type="text" id="inp-artikel-suche-edit" placeholder="Suche…" autocomplete="off">
         <div id="artikel-dropdown-edit" class="artikel-dropdown"></div>
-        <input type="hidden" id="sel-artikel-id-edit">
+        <input type="hidden" id="sel-artikel-basis-edit">
+        <select id="sel-artikel-variante-edit" style="margin-top:8px" disabled>
+          <option value="">Variante wählen …</option>
+        </select>
       </div>
       <div class="field">
         <label for="inp-menge-edit">Menge</label>
@@ -297,7 +329,7 @@
 <script type="module">
 import { OG_ID }              from './src/konstanten.js';
 import { load }               from './src/storage.js';
-import { aggregiereWuensche, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
+import { aggregiereWuensche, berechneBestellsummen, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
 import { html, raw, setHTML } from './src/dom.js';
 import { validateListe }      from './src/validation.js';
@@ -324,7 +356,9 @@ let client          = null;
 let artikelListe    = [];
 let mitglieder      = [];
 let sortierteArtikel = [];
+let artikelBasen    = [];
 let bearbeitenId = null; // ID des aktuell bearbeiteten Wunsches
+const LEERE_VARIANTE = '__OHNE_VARIANTE__';
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function uuid() { return crypto.randomUUID(); }
@@ -364,6 +398,70 @@ function artikelLabel(a) {
   const preis = a.einzelpreis != null ? ' — ' + eur(a.einzelpreis) : '';
   const variante = a.variante ? ' ' + a.variante : '';
   return `${a.name}${variante}${preis}`;
+}
+
+function artikelBasisKey(a) {
+  return `${String(a?.artikelNr || '').trim()}|||${String(a?.name || '').trim()}`;
+}
+
+function artikelBasisLabel(a) {
+  return `${a?.name || ''} · ${a?.artikelNr || ''}`;
+}
+
+function gruppiereArtikelBasen(liste) {
+  const map = new Map();
+  for (const artikel of liste) {
+    const key = artikelBasisKey(artikel);
+    const variante = String(artikel?.variante || '').trim().toUpperCase();
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        artikelNr: String(artikel?.artikelNr || '').trim(),
+        name: String(artikel?.name || '').trim(),
+        varianten: new Set(),
+      });
+    }
+    map.get(key).varianten.add(variante);
+  }
+  return [...map.values()].sort((a, b) =>
+    `${a.name}|||${a.artikelNr}`.localeCompare(`${b.name}|||${b.artikelNr}`, 'de')
+  );
+}
+
+function findeArtikelbasis(key) {
+  return artikelBasen.find(artikel => artikel.key === key) || null;
+}
+
+function renderVariantenAuswahl(selectId, basisKey, aktuelleVariante = '') {
+  const select = document.getElementById(selectId);
+  const basis = findeArtikelbasis(basisKey);
+  const optionen = basis
+    ? [...basis.varianten].sort((a, b) => a.localeCompare(b, 'de'))
+    : [];
+
+  setHTML(select, html`
+    <option value="">Variante wählen …</option>
+    ${optionen.map(variante => html`<option value="${variante || LEERE_VARIANTE}">${variante || 'Ohne Variante'}</option>`)}
+  `);
+
+  const normalisierteVariante = String(aktuelleVariante || '').trim().toUpperCase();
+  select.value = optionen.includes(normalisierteVariante)
+    ? (normalisierteVariante || LEERE_VARIANTE)
+    : '';
+  select.disabled = optionen.length === 0;
+}
+
+function gewaehlteVariante(selectId) {
+  const wert = document.getElementById(selectId).value;
+  return wert === LEERE_VARIANTE ? '' : wert;
+}
+
+function findeArtikelZuAuswahl(basisKey, variante) {
+  if (!basisKey) return null;
+  return artikelListe.find(a =>
+    artikelBasisKey(a) === basisKey &&
+    String(a.variante || '').trim().toUpperCase() === String(variante || '').trim().toUpperCase()
+  ) || null;
 }
 
 /* ── URL-Parameter ───────────────────────────────────────────── */
@@ -416,6 +514,7 @@ function renderWunschliste() {
   // Aggregiert
   const aggContainer = document.getElementById('aggregiert-container');
   const agg = aggregiereWuensche(wuensche);
+  const summen = berechneBestellsummen(wuensche, artikelListe);
 
   setHTML(aggContainer, html`
     <table>
@@ -442,7 +541,27 @@ function renderWunschliste() {
             </tr>`;
         })}
       </tbody>
-    </table>`);
+    </table>
+    <div class="bestellsumme-box">
+      <div class="bestellsumme-grid">
+        <div>
+          <div class="section-label" style="margin-bottom:0">Bestellte Gegenstände</div>
+          <div class="bestellsumme-wert">${summen.gegenstaende}</div>
+        </div>
+        <div>
+          <div class="section-label" style="margin-bottom:0">Normalpreis</div>
+          <div class="bestellsumme-wert">${eur(summen.normalpreis)}</div>
+        </div>
+        <div>
+          <div class="section-label" style="margin-bottom:0">Preis nach Förderung</div>
+          <div class="bestellsumme-wert">${eur(summen.preisNachFoerderung)}</div>
+        </div>
+      </div>
+      <div class="bestellsumme-hinweis">
+        Förderung gesamt: Bund ${eur(summen.bv)}, Land ${eur(summen.lv)}, OG ${eur(summen.og)}.
+        OG-kostenlos-Markierungen einzelner Wünsche werden für diese Gesamtsumme bewusst ignoriert.
+      </div>
+    </div>`);
 
   // CSV-Vorschau
   const csvText = exportiereCSV(agg);
@@ -459,11 +578,16 @@ function schliesseDropdownEdit() {
   document.getElementById('artikel-dropdown-edit').classList.remove('open');
 }
 
-function waehleArtikelEdit(id) {
-  const art = artikelListe.find(a => a.id === id);
-  if (!art) return;
-  document.getElementById('sel-artikel-id-edit').value    = art.id;
-  document.getElementById('inp-artikel-suche-edit').value = artikelLabel(art);
+function waehleArtikelEdit(key) {
+  const basis = findeArtikelbasis(key);
+  if (!basis) return;
+  document.getElementById('sel-artikel-basis-edit').value = basis.key;
+  document.getElementById('inp-artikel-suche-edit').value = artikelBasisLabel(basis);
+  renderVariantenAuswahl('sel-artikel-variante-edit', basis.key);
+  if (basis.varianten.size === 1) {
+    const [variante] = [...basis.varianten];
+    document.getElementById('sel-artikel-variante-edit').value = variante || LEERE_VARIANTE;
+  }
   schliesseDropdownEdit();
 }
 
@@ -471,8 +595,8 @@ function aktualisiereArtikelListeEdit(suche) {
   const dropdown  = document.getElementById('artikel-dropdown-edit');
   const suchLower = suche.toLowerCase().trim();
   const gefiltert = suchLower
-    ? sortierteArtikel.filter(a =>
-        (a.name + ' ' + (a.variante || '') + ' ' + (a.artikelNr || ''))
+    ? artikelBasen.filter(a =>
+        (a.name + ' ' + (a.artikelNr || ''))
           .toLowerCase().includes(suchLower))
     : [];
 
@@ -483,31 +607,32 @@ function aktualisiereArtikelListeEdit(suche) {
   }
 
   setHTML(dropdown, html`${gefiltert.map(a => {
-    const varianteBadge = a.variante
-      ? raw(html`<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${a.variante}</span>`)
-      : raw('');
-    const preis = a.einzelpreis != null ? eur(a.einzelpreis) : '';
-    return html`<div class="artikel-option" data-id="${a.id}">
-      <div class="ao-name">${a.name}${varianteBadge}</div>
-      <div class="ao-meta">${a.artikelNr}${preis ? ' · ' + preis : ''}</div>
+    return html`<div class="artikel-option" data-key="${a.key}">
+      <div class="ao-name">${a.name}</div>
+      <div class="ao-meta">${a.artikelNr} · ${a.varianten.size} Variante${a.varianten.size === 1 ? '' : 'n'}</div>
     </div>`;
   })}`);
 
   dropdown.querySelectorAll('.artikel-option').forEach(el => {
     el.addEventListener('mousedown', e => {
       e.preventDefault();
-      waehleArtikelEdit(el.dataset.id);
+      waehleArtikelEdit(el.dataset.key);
     });
   });
 
   dropdown.classList.add('open');
 }
 
-function waehleArtikel(id) {
-  const art = artikelListe.find(a => a.id === id);
-  if (!art) return;
-  document.getElementById('sel-artikel-id').value    = art.id;
-  document.getElementById('inp-artikel-suche').value = artikelLabel(art);
+function waehleArtikel(key) {
+  const basis = findeArtikelbasis(key);
+  if (!basis) return;
+  document.getElementById('sel-artikel-basis').value = basis.key;
+  document.getElementById('inp-artikel-suche').value = artikelBasisLabel(basis);
+  renderVariantenAuswahl('sel-artikel-variante', basis.key);
+  if (basis.varianten.size === 1) {
+    const [variante] = [...basis.varianten];
+    document.getElementById('sel-artikel-variante').value = variante || LEERE_VARIANTE;
+  }
   schliesseDropdown();
 }
 
@@ -515,8 +640,8 @@ function aktualisiereArtikelListe(suche) {
   const dropdown  = document.getElementById('artikel-dropdown');
   const suchLower = suche.toLowerCase().trim();
   const gefiltert = suchLower
-    ? sortierteArtikel.filter(a =>
-        (a.name + ' ' + (a.variante || '') + ' ' + (a.artikelNr || ''))
+    ? artikelBasen.filter(a =>
+        (a.name + ' ' + (a.artikelNr || ''))
           .toLowerCase().includes(suchLower))
     : [];
 
@@ -527,20 +652,16 @@ function aktualisiereArtikelListe(suche) {
   }
 
   setHTML(dropdown, html`${gefiltert.map(a => {
-    const varianteBadge = a.variante
-      ? raw(html`<span class="badge badge-blue" style="font-size:.72rem;padding:1px 6px">${a.variante}</span>`)
-      : raw('');
-    const preis = a.einzelpreis != null ? eur(a.einzelpreis) : '';
-    return html`<div class="artikel-option" data-id="${a.id}">
-      <div class="ao-name">${a.name}${varianteBadge}</div>
-      <div class="ao-meta">${a.artikelNr}${preis ? ' · ' + preis : ''}</div>
+    return html`<div class="artikel-option" data-key="${a.key}">
+      <div class="ao-name">${a.name}</div>
+      <div class="ao-meta">${a.artikelNr} · ${a.varianten.size} Variante${a.varianten.size === 1 ? '' : 'n'}</div>
     </div>`;
   })}`);
 
   dropdown.querySelectorAll('.artikel-option').forEach(el => {
     el.addEventListener('mousedown', e => {
       e.preventDefault(); // blur verhindern damit Auswahl wirkt
-      waehleArtikel(el.dataset.id);
+      waehleArtikel(el.dataset.key);
     });
   });
 
@@ -549,7 +670,8 @@ function aktualisiereArtikelListe(suche) {
 
 document.getElementById('inp-artikel-suche').addEventListener('input', e => {
   aktualisiereArtikelListe(e.target.value);
-  document.getElementById('sel-artikel-id').value = '';
+  document.getElementById('sel-artikel-basis').value = '';
+  renderVariantenAuswahl('sel-artikel-variante', '');
 });
 
 document.getElementById('inp-artikel-suche').addEventListener('blur', () => {
@@ -559,7 +681,8 @@ document.getElementById('inp-artikel-suche').addEventListener('blur', () => {
 
 document.getElementById('inp-artikel-suche-edit').addEventListener('input', e => {
   aktualisiereArtikelListeEdit(e.target.value);
-  document.getElementById('sel-artikel-id-edit').value = '';
+  document.getElementById('sel-artikel-basis-edit').value = '';
+  renderVariantenAuswahl('sel-artikel-variante-edit', '');
 });
 
 document.getElementById('inp-artikel-suche-edit').addEventListener('blur', () => {
@@ -581,17 +704,18 @@ function oeffneBearbeitenModal(id) {
   `);
   selMitglied.value = gefundener.mitgliedId;
 
-  // Artikel vorbelegen (Suche nach artikelNr + variante)
-  const art = artikelListe.find(a =>
-    a.artikelNr === gefundener.artikelNr && (a.variante || '') === gefundener.variante);
-  if (art) {
-    document.getElementById('sel-artikel-id-edit').value    = art.id;
-    document.getElementById('inp-artikel-suche-edit').value = artikelLabel(art);
+  const basisKey = artikelBasisKey({ artikelNr: gefundener.artikelNr, name: gefundener.name });
+  const basis = findeArtikelbasis(basisKey);
+  if (basis) {
+    document.getElementById('sel-artikel-basis-edit').value = basis.key;
+    document.getElementById('inp-artikel-suche-edit').value = artikelBasisLabel(basis);
+    renderVariantenAuswahl('sel-artikel-variante-edit', basis.key, gefundener.variante || '');
   } else {
-    // Artikel nicht mehr im Katalog: Freitext zeigen, ID leer lassen
-    document.getElementById('sel-artikel-id-edit').value    = '';
+    // Artikel nicht mehr im Katalog: Freitext zeigen, Auswahl zurücksetzen
+    document.getElementById('sel-artikel-basis-edit').value = '';
     document.getElementById('inp-artikel-suche-edit').value =
-      gefundener.name + (gefundener.variante ? ' ' + gefundener.variante : '');
+      artikelBasisLabel({ artikelNr: gefundener.artikelNr, name: gefundener.name });
+    renderVariantenAuswahl('sel-artikel-variante-edit', '');
   }
 
   document.getElementById('inp-menge-edit').value          = gefundener.menge;
@@ -612,13 +736,14 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
   if (!bearbeitenId) return;
 
   const mitgliedId  = document.getElementById('sel-mitglied-edit').value;
-  const artikelId   = document.getElementById('sel-artikel-id-edit').value;
+  const basisKey    = document.getElementById('sel-artikel-basis-edit').value;
+  const variante    = gewaehlteVariante('sel-artikel-variante-edit');
   const menge       = parseInt(document.getElementById('inp-menge-edit').value, 10);
   const ogKostenlos = document.getElementById('chk-og-kostenlos-edit').checked;
 
-  const artikel = artikelListe.find(a => a.id === artikelId);
+  const artikel = findeArtikelZuAuswahl(basisKey, variante);
   if (!artikel) {
-    alert('Bitte einen gültigen Artikel aus der Suche auswählen.');
+    alert('Bitte einen gültigen Artikel und eine Variante auswählen.');
     return;
   }
   // mitgliedId ist immer gesetzt (Select hat keine Leer-Option, wird mit OG_ID vorbelegt)
@@ -686,7 +811,10 @@ function befuelleSelects() {
       const lb = (b.name + ' ' + (b.variante || '')).toLowerCase();
       return la.localeCompare(lb, 'de');
     });
+    artikelBasen = gruppiereArtikelBasen(sortierteArtikel);
     aktualisiereArtikelListe('');
+    renderVariantenAuswahl('sel-artikel-variante', '');
+    renderVariantenAuswahl('sel-artikel-variante-edit', '');
   }
 
   // Formular nur zeigen wenn beides vorhanden
@@ -698,15 +826,16 @@ function befuelleSelects() {
 /* ── Wunsch hinzufügen ───────────────────────────────────────── */
 document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
   const mitgliedId = document.getElementById('sel-mitglied').value;
-  const artikelId  = document.getElementById('sel-artikel-id').value;
+  const basisKey   = document.getElementById('sel-artikel-basis').value;
+  const variante   = gewaehlteVariante('sel-artikel-variante');
   const menge      = parseInt(document.getElementById('inp-menge').value, 10);
   const fehlerEl   = document.getElementById('wunsch-fehler');
 
   fehlerEl.style.display = 'none';
 
-  const artikel = artikelListe.find(a => a.id === artikelId);
+  const artikel = findeArtikelZuAuswahl(basisKey, variante);
   if (!artikel) {
-    fehlerEl.textContent = 'Bitte einen Artikel auswählen.';
+    fehlerEl.textContent = 'Bitte einen Artikel und eine Variante auswählen.';
     fehlerEl.style.display = 'inline';
     return;
   }
@@ -733,7 +862,8 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
 
   // Formular zurücksetzen (Mitglied behalten, Menge auf 1)
   document.getElementById('inp-artikel-suche').value = '';
-  document.getElementById('sel-artikel-id').value    = '';
+  document.getElementById('sel-artikel-basis').value = '';
+  renderVariantenAuswahl('sel-artikel-variante', '');
   schliesseDropdown();
   document.getElementById('inp-menge').value         = 1;
   document.getElementById('chk-og-kostenlos').checked = false;

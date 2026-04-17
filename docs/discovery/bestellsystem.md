@@ -55,78 +55,83 @@ System, das:
    zugeordnet werden und nicht in Mitgliedsrechnungen erscheinen.
 10. Als Admin möchte ich nach dem Import jede Zeile einer Sammelbestellung einem Mitglied
     zuweisen (Dropdown), damit klar ist wer was bestellt hat.
-11. Als Admin möchte ich eine Position mit Menge > 1 auf mehrere Mitglieder aufteilen können,
+11. Als Admin möchte ich in der Sammelbestellung Katalogartikel erst über `Nummer + Bezeichnung`
+    suchen und die Variante danach separat wählen, damit große Größenlisten übersichtlich bleiben.
+12. Als Admin möchte ich eine Position mit Menge > 1 auf mehrere Mitglieder aufteilen können,
     damit Sammelbestellungen korrekt abgebildet werden.
-12. Als Admin möchte ich sehen, welche Positionen noch keinem Mitglied zugewiesen sind,
+13. Als Admin möchte ich sehen, welche Positionen noch keinem Mitglied zugewiesen sind,
     damit ich keine Bestellung vergesse.
-13. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können
+14. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können
     (z. B. März und Oktober desselben Jahres), damit der Jahresablauf der OG abgebildet wird.
-14. Als Admin möchte ich einen Wunsch als "OG übernimmt Kosten" markieren können,
+15. Als Admin möchte ich einen Wunsch als "OG übernimmt Kosten" markieren können,
     damit Mitgliedsanteil, Rechnung und Kassenwart-Auswertung konsistent 0 € für das
     Mitglied und den Rest als OG-Anteil ausweisen.
-15. Als Admin möchte ich nach dem Wareneingang eine eigene Anprobe-Phase haben, in der
+16. Als Admin möchte ich nach dem Wareneingang eine eigene Anprobe-Phase haben, in der
     ich die finale Verteilung unabhängig vom ursprünglichen Besteller anpassen kann.
-16. Als Admin möchte ich in der Anprobe Teilmengen als Retoure oder Lagerbestand markieren
+17. Als Admin möchte ich in der Anprobe Teilmengen als Retoure oder Lagerbestand markieren
     können, damit diese Mengen nicht in Mitgliedsrechnungen landen.
 
 ### Rechnungen
 
-17. Als Admin möchte ich pro Mitglied eine PDF-Rechnung im bestehenden Layout erzeugen,
+18. Als Admin möchte ich pro Mitglied eine PDF-Rechnung im bestehenden Layout erzeugen,
     damit Mitglieder einen professionellen Zahlungsbeleg erhalten.
-18. Als Admin möchte ich, dass die Rechnung automatisch nummeriert wird (Format `R_YYYY_MM_NNN`),
+19. Als Admin möchte ich, dass die Rechnung automatisch nummeriert wird (Format `R_YYYY_MM_NNN`),
     damit Rechnungen eindeutig nachvollziehbar sind.
-19. Als Admin möchte ich, dass die Rechnung den Bruttobetrag zeigt und Förderabzüge bereits
+20. Als Admin möchte ich, dass die Rechnung den Bruttobetrag zeigt und Förderabzüge bereits
     verrechnet sind, damit der Mitglied nur seinen Eigenanteil sieht.
-20. Als Admin möchte ich die OG-Stammdaten (Name, Adresse, IBAN, Steuernr. etc.) in den
+21. Als Admin möchte ich die OG-Stammdaten (Name, Adresse, IBAN, Steuernr. etc.) in den
     Einstellungen pflegen, damit die Rechnungen korrekte Kopfdaten haben.
 
 ### Zahlungsverfolgung
 
-21. Als Admin möchte ich eine Rechnung manuell als "bezahlt" markieren (mit Datum), damit
+22. Als Admin möchte ich eine Rechnung manuell als "bezahlt" markieren (mit Datum), damit
     der Zahlungsstand jederzeit aktuell ist.
-22. Als Admin möchte ich alle offenen Rechnungen auf einen Blick sehen, damit ich
+23. Als Admin möchte ich alle offenen Rechnungen auf einen Blick sehen, damit ich
     Zahlungserinnerungen gezielt verschicken kann.
 
 ### Kassenwart-Übersicht
 
-23. Als Admin möchte ich eine Übersicht aller Bestellungen mit Mitglied, Artikel,
+24. Als Admin möchte ich eine Übersicht aller Bestellungen mit Mitglied, Artikel,
     Bruttobetrag, BV-/LV-/OG-Förderung, Mitgliedsanteil und Zahlungsstatus erzeugen,
     damit der Kassenwart einen vollständigen Überblick hat.
-24. Als Admin möchte ich Summenzeilen pro Fördertopf (BV gesamt, LV gesamt, OG gesamt,
+25. Als Admin möchte ich Summenzeilen pro Fördertopf (BV gesamt, LV gesamt, OG gesamt,
     Mitglieder gesamt), damit Mittelverwendung nachvollziehbar ist.
-25. Als Admin möchte ich die Kassenwart-Übersicht als PDF oder CSV exportieren, damit
+26. Als Admin möchte ich die Kassenwart-Übersicht als PDF oder CSV exportieren, damit
     sie abgelegt oder weitergeleitet werden kann.
 
 ### Einsatzstunden-Dashboard
 
-26. Als Admin möchte ich, dass das System beim Öffnen des Dashboards alle
+27. Als Admin möchte ich, dass das System beim Öffnen des Dashboards alle
     LifeguardClock-JSON-Dateien aus dem Nextcloud-Verzeichnis `/LifeguardClock/` automatisch
     einliest, damit ich keinen manuellen Import anstoßen muss.
-27. Als Admin möchte ich die geleisteten Einsatzstunden je Mitglied sehen (alle Typen außer
+28. Als Admin möchte ich die geleisteten Einsatzstunden je Mitglied sehen (alle Typen außer
     `anwesenheit` zählen: `wachdienst`, `sanitaetsdienst`, `helfer`, `verwaltung`), damit
     ich den Einsatzstand kenne.
-28. Als Admin möchte ich je Mitglied die offene Stundenschuld aus OG-Förderungen sehen
+29. Als Admin möchte ich je Mitglied die offene Stundenschuld aus OG-Förderungen sehen
     (Umrechnungsrate: 3 Stunden = 10 €), damit ich erkennen kann, ob die Verpflichtung
     erfüllt ist.
-29. Als Admin möchte ich sehen, bis wann jede Stundenverpflichtung erfüllt sein muss
+30. Als Admin möchte ich sehen, bis wann jede Stundenverpflichtung erfüllt sein muss
     (Kalenderjahr der Bestellung + 1 Kulanzjahr), damit ich Fristüberschreitungen erkenne.
-30. Als Admin möchte ich, dass bei mehreren offenen Sammelbestellungen die Stunden
+31. Als Admin möchte ich, dass bei mehreren offenen Sammelbestellungen die Stunden
     chronologisch verrechnet werden (älteste Schuld zuerst), damit die Tilgungsreihenfolge
     fair ist.
-31. Als Admin möchte ich eine Ampel-Anzeige (grün/gelb/rot) je Mitglied und Verpflichtung,
+32. Als Admin möchte ich eine Ampel-Anzeige (grün/gelb/rot) je Mitglied und Verpflichtung,
     damit der Status auf einen Blick erkennbar ist.
 
 ### Einstellungen & Konfiguration
 
-32. Als Admin möchte ich OG-Stammdaten, Fördersätze und Einsatztypen in einer
+33. Als Admin möchte ich OG-Stammdaten, Fördersätze und Einsatztypen in einer
     Einstellungsseite konfigurieren, damit ich das System ohne Code-Änderungen anpassen kann.
-33. Als Admin möchte ich die Mitgliederliste aus der `config.js` der Stempeluhr als Quelle
+34. Als Admin möchte ich die Mitgliederliste aus der `config.js` der Stempeluhr als Quelle
     nutzen (gleiche IDs, gleiche Namen), damit beide Apps konsistent bleiben und
     LifeguardClock-Einträge automatisch gematchet werden.
-34. Als Admin möchte ich einen Materialbestand mit Nummer, Bezeichnung, Variante und Menge
+35. Als Admin möchte ich einen Materialbestand mit Nummer, Bezeichnung, Variante und Menge
     separat von Bestellungen pflegen, damit Lagerposten sauber unabhängig von einzelnen
     Sammelbestellungen geführt werden.
-35. Als Admin möchte ich Bestandsposten als aktiv, aufgebraucht oder ausgesondert markieren
+36. Als Admin möchte ich beim manuellen Anlegen von Lagerposten Katalogartikel erst über
+    `Nummer + Bezeichnung` suchen und die Variante danach separat wählen können, ohne die
+    Möglichkeit freier Eingaben zu verlieren.
+37. Als Admin möchte ich Bestandsposten als aktiv, aufgebraucht oder ausgesondert markieren
     können, damit der reale Lagerstatus nachvollziehbar bleibt.
 
 ---

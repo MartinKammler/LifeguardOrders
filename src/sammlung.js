@@ -3,6 +3,7 @@
  * Aggregation, CSV-Export und Validierung von Bestellwünschen.
  */
 
+import { berechneFoerderung } from './berechnung.js';
 import { validateWunsch } from './validation.js';
 
 /**
@@ -50,6 +51,47 @@ export function exportiereCSV(aggregiert) {
   return aggregiert
     .map(r => `${r.artikelNr},${r.variante},${r.menge}`)
     .join('\n');
+}
+
+/**
+ * Ermittelt Gesamtstückzahl und Preissummen einer Sammelbestellung.
+ *
+ * Die Summe ignoriert bewusst das Wunsch-Flag ogKostenlos, damit sie die
+ * Bestellung fachlich immer nach Katalogpreis und regulärer Förderung zeigt.
+ *
+ * @param {Array<{artikelNr: string, variante: string, menge: number, ogKostenlos?: boolean}>} wuensche
+ * @param {Array<{artikelNr: string, variante: string, einzelpreis: number, bvFoerderung?: number, lvFoerderung?: number, ogFoerderung?: number, ogUebernimmtRest?: boolean}>} artikelListe
+ * @returns {{ gegenstaende: number, normalpreis: number, bv: number, lv: number, og: number, preisNachFoerderung: number }}
+ */
+export function berechneBestellsummen(wuensche, artikelListe) {
+  const summen = {
+    gegenstaende: 0,
+    normalpreis: 0,
+    bv: 0,
+    lv: 0,
+    og: 0,
+    preisNachFoerderung: 0,
+  };
+
+  for (const wunsch of wuensche) {
+    const menge = Number(wunsch.menge) || 0;
+    summen.gegenstaende += menge;
+
+    const artikel = artikelListe.find(a =>
+      a.artikelNr === wunsch.artikelNr &&
+      (a.variante || '') === (wunsch.variante || '')
+    );
+    if (!artikel) continue;
+
+    const foerderung = berechneFoerderung(artikel, menge, { ogKostenlos: false });
+    summen.normalpreis += foerderung.gesamt;
+    summen.bv += foerderung.bv;
+    summen.lv += foerderung.lv;
+    summen.og += foerderung.og;
+    summen.preisNachFoerderung += foerderung.mitglied;
+  }
+
+  return summen;
 }
 
 /**
