@@ -22,6 +22,7 @@ eigenen Server und arbeitet nach dem ersten Laden auch offline.
 /LifeguardOrders/
   artikel.json       ← Artikelkatalog
   bestellungen.json  ← Sammelbestellungen mit Wünschen, CSV-Export, Rechnungen
+  materialbestand.json ← Lager- und Materialposten der OG
   einstellungen.json ← OG-Daten, Förderrate, zählende Einsatztypen
 
 /LifeguardClock/
@@ -33,6 +34,7 @@ eigenen Server und arbeitet nach dem ersten Laden auch offline.
 index.html                ← Navigation / Startseite mit Kacheln und Live-Statistiken
 artikel.html              ← Artikelkatalog: CRUD + Import (Auftragsbestätigung & Produktseite)
 bestellungen.html         ← Übersicht aller Sammelbestellungen mit Phase und Status
+materialbestand.html      ← Materialbestand: Lagerposten mit Nummer, Variante, Menge und Status
 bestellung-neu.html       ← Neue Sammelbestellung anlegen (Datum, Bezeichnung)
 bestellung-sammeln.html   ← Phase 1: Mitgliederwünsche erfassen + CSV-Export für Materialstelle
 bestellung-abgleich.html  ← Phase 2+3: Rechnungsimport, Abgleich, Anprobe, Abschluss
@@ -61,7 +63,7 @@ Phase 2 — Eingang (nach Lieferung):
 Phase 3 — Anprobe / finale Verteilung:
   Admin prüft gelieferte Positionen →
   Ändert die finale Verteilung zwischen Mitgliedern →
-  Markiert Teilmengen als Retoure oder OG-Bestand →
+  Markiert Teilmengen als Retoure oder Lagerbestand →
   Bestellung ist erst abschließbar wenn jede gelieferte Menge vollständig
   einer finalen Verwendung zugeordnet ist
 
@@ -150,10 +152,10 @@ werden — der Parser versteht beide Formate.
     als OG-Kosten ausgewiesen werden und nicht in Mitgliedsrechnungen fließen.
 30. Als Admin möchte ich in der Anprobe eine gelieferte Position ganz oder teilweise einem
     anderen Mitglied zuweisen können als dem ursprünglichen Besteller.
-31. Als Admin möchte ich in der Anprobe Teilmengen als Retoure oder OG-Bestand markieren
+31. Als Admin möchte ich in der Anprobe Teilmengen als Retoure oder Lagerbestand markieren
     können, damit diese Mengen nicht in Mitgliedsrechnungen landen.
 32. Als Admin möchte ich eine Sammelbestellung erst dann als "abgeschlossen" markieren,
-    wenn alle gelieferten Mengen vollständig verteilt, retourniert oder dem OG-Bestand
+    wenn alle gelieferten Mengen vollständig verteilt, retourniert oder dem Lagerbestand
     zugeordnet sind.
 
 ### Rechnungen
@@ -273,7 +275,7 @@ positionen[]            — Phase 2+3: aus Rechnungsimport, danach finale Vertei
   foerderungGespeichert boolean — true = Snapshot enthält vollständige Förderdaten
   typ         enum      — "artikel" | "og-kosten"
   retoureMenge number   — Menge, die an die Materialstelle zurückgeht
-  ogBestandMenge number — Menge, die bei der OG verbleibt und nicht verrechnet wird
+  ogBestandMenge number — Menge, die bei der OG verbleibt und nicht verrechnet wird (fachlich: Lagerbestand)
   zuweisung[]           — Verteilung auf Mitglieder
     mitgliedId string
     menge      number
@@ -296,6 +298,27 @@ stundenRate{}  — { stunden: 3, euro: 10 }
 einsatztypen[] — z.B. ["wachdienst", "sanitaetsdienst", "helfer", "verwaltung"]
 mitglieder[]   — [{ id, name }] — importiert aus Stempeluhr config.js
 nc{}           — { url, user, pass }
+```
+
+**`materialbestand.json`** — Array von Lagerposten:
+```
+id                  string
+nummer              string   — Nummer der Materialstelle
+bezeichnung         string   — Bezeichnung wie bei der Materialstelle
+variante            string   — Größe / Variante oder ""
+menge               number   — aktueller Bestand bei der OG
+status              enum     — "aktiv" | "aufgebraucht" | "ausgesondert"
+lagerort            string   — optional
+herkunftBestellungId string  — optional, Referenz auf die Bestellung oder Freitext
+notiz               string   — optional
+bewegungen[]        — Bestandsbewegungen, neueste zuerst
+  id                string
+  typ               enum     — "zugang" | "abgang" | "storno"
+  menge             number
+  timestamp         string   — ISO-Zeitstempel
+  quelle            string   — z. B. "bestellung-abschluss" | "manuell"
+  referenz          string   — optional, z. B. Bestell-ID
+  notiz             string   — optional
 ```
 
 ### Import-Parser
@@ -344,6 +367,17 @@ Match-Schlüssel: `artikelNr + variante`. Algorithmus:
   Mitgliedsrechnungen
 - Eine Bestellung ist erst abschließbar, wenn für jede Artikelposition gilt:
   `summe(zuweisung.menge) + retoureMenge + ogBestandMenge = menge`
+
+Hinweis: Der interne Feldname `ogBestandMenge` bleibt aus Kompatibilitätsgründen bestehen.
+Im Workflow und in der UI wird dieser Wert als `Lagerbestand` bezeichnet und kann später
+an eine separate Material-/Lagerverwaltung angebunden werden.
+
+Beim Abschluss einer Bestellung werden Lagerbestandsmengen automatisch in `materialbestand.json`
+gebucht. Bestehende Lagerposten werden über `nummer + variante + bezeichnung` zusammengeführt.
+Manuelle Zugänge und Abgänge werden ebenfalls direkt am Lagerposten gebucht und als
+Bestandsbewegungen protokolliert.
+Verkäufe aus dem Lager erzeugen eine eigene abgeschlossene Bestellung mit Rechnung; Preise und
+Förderungen kommen dabei aus dem aktuellen Artikelkatalog der Materialstelle.
 
 ### Rechnungen (Phase 4)
 
@@ -394,6 +428,7 @@ Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Re
 5. **Schulden-Verrechnung** — chronologische Tilgung, Teilerfüllung, Frist der ältesten offenen Schuld
 6. **Kassenwart-Snapshots** — gespeicherte Förderwerte vor Live-Katalog
 7. **Rechnungsnummerierung** — Monatsreset, fortlaufend
+8. **Materialbestand** — Normalisierung, Statuswechsel und Bestands-Summen
 
 ---
 

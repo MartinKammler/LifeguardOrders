@@ -17,11 +17,10 @@
 
     .stat-grid {
       display: grid;
-      grid-template-columns: repeat(6, 1fr);
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 10px;
       margin-bottom: 16px;
     }
-    @media (max-width: 800px) { .stat-grid { grid-template-columns: repeat(3, 1fr); } }
     .stat-card {
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -35,6 +34,9 @@
     .summen-zeile td { font-weight: 700; border-top: 2px solid var(--border); }
     .badge-bezahlt { background: #1a3a28; color: var(--green); font-size: .72rem; padding: 1px 7px; border-radius: 10px; }
     .badge-offen   { background: #3a3010; color: var(--amber); font-size: .72rem; padding: 1px 7px; border-radius: 10px; }
+    .sondermengen-block { margin-top: 24px; }
+    .sondermengen-hinweis { margin: 0 0 12px; font-size: .82rem; color: var(--text-2); }
+    .sondermengen-typ { text-transform: capitalize; }
   </style>
 </head>
 <body>
@@ -42,6 +44,7 @@
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html">Bestellungen</a>
+  <a href="materialbestand.html">Materialbestand</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html" class="active">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
@@ -63,6 +66,8 @@
     <div class="stat-card"><div class="stat-label">OG-Förderung</div><div class="stat-wert" id="s-og">–</div></div>
     <div class="stat-card"><div class="stat-label">Mitglieder offen</div><div class="stat-wert" style="color:var(--amber)" id="s-offen">–</div></div>
     <div class="stat-card"><div class="stat-label">Mitglieder bezahlt</div><div class="stat-wert" style="color:var(--green)" id="s-bezahlt">–</div></div>
+    <div class="stat-card"><div class="stat-label">Retoure</div><div class="stat-wert" style="color:var(--amber)" id="s-retoure">–</div></div>
+    <div class="stat-card"><div class="stat-label">Lagerbestand</div><div class="stat-wert" id="s-og-bestand">–</div></div>
   </div>
 
   <!-- Filter + Tabelle -->
@@ -97,6 +102,30 @@
           <tfoot id="kassenwart-tfoot"></tfoot>
         </table>
       </div>
+
+      <div class="sondermengen-block" id="sondermengen-block" style="display:none">
+        <h2 style="margin:0 0 8px">Retoure und Lagerbestand außerhalb Mitgliederabrechnung</h2>
+        <p class="sondermengen-hinweis" id="sondermengen-filter-hinweis" style="display:none">
+          Der Mitgliedsfilter wirkt nur auf die Mitgliederabrechnung. Retoure und Lagerbestand werden nur nach Jahr gefiltert.
+        </p>
+        <div style="overflow-x:auto">
+          <table id="sondermengen-tabelle" style="display:none;min-width:760px">
+            <thead>
+              <tr>
+                <th>Typ</th>
+                <th>Bestellung</th>
+                <th>Artikel</th>
+                <th>Gr.</th>
+                <th class="preis">Menge</th>
+                <th class="preis">Einzelpreis</th>
+                <th class="preis">Wert</th>
+              </tr>
+            </thead>
+            <tbody id="sondermengen-tbody"></tbody>
+            <tfoot id="sondermengen-tfoot"></tfoot>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -105,7 +134,7 @@
 <script type="module">
 import { load }                from './src/storage.js';
 import { createWebDavClient }  from './src/webdav.js';
-import { berechneKassenwartZeilen } from './src/kassenwart.js';
+import { berechneKassenwartZeilen, berechneSondermengenZeilen } from './src/kassenwart.js';
 import { html, setHTML }       from './src/dom.js';
 import { hydrateJsonFromSync } from './src/sync.js';
 
@@ -125,6 +154,7 @@ let einstellungen = null;
 let mitglieder    = [];
 let client        = null;
 let alleZeilen    = []; // vollständige berechnete Daten
+let alleSondermengen = [];
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function runde(v) { return Math.round((v || 0) * 100) / 100; }
@@ -139,6 +169,10 @@ function baueZeilen() {
   return berechneKassenwartZeilen(bestellungen, artikelListe, mitglieder);
 }
 
+function baueSondermengen() {
+  return berechneSondermengenZeilen(bestellungen);
+}
+
 /* ── Filter ──────────────────────────────────────────────────── */
 function gefiltert() {
   const jahr      = document.getElementById('filter-jahr').value;
@@ -149,9 +183,14 @@ function gefiltert() {
   );
 }
 
+function gefilterteSondermengen() {
+  const jahr = document.getElementById('filter-jahr').value;
+  return alleSondermengen.filter(z => !jahr || z.jahr === jahr);
+}
+
 /* ── Filter-Optionen befüllen ────────────────────────────────── */
 function befuelleFilter() {
-  const jahre    = [...new Set(alleZeilen.map(z => z.jahr))].sort().reverse();
+  const jahre    = [...new Set([...alleZeilen.map(z => z.jahr), ...alleSondermengen.map(z => z.jahr)])].filter(Boolean).sort().reverse();
   const members  = [...new Map(alleZeilen.map(z => [z.mitgliedId, z.mitgliedName]))];
 
   const selJahr = document.getElementById('filter-jahr');
@@ -164,6 +203,9 @@ function befuelleFilter() {
 /* ── Statistik aktualisieren ─────────────────────────────────── */
 function aktualisiereStatistik(zeilen) {
   const sum = (f) => zeilen.reduce((s, z) => s + (z[f] || 0), 0);
+  const sumSonder = (typ) => gefilterteSondermengen()
+    .filter(z => z.typ === typ)
+    .reduce((s, z) => s + (z.brutto || 0), 0);
   document.getElementById('s-brutto').textContent  = eur(sum('brutto'));
   document.getElementById('s-bv').textContent      = eur(sum('bv'));
   document.getElementById('s-lv').textContent      = eur(sum('lv'));
@@ -180,6 +222,51 @@ function aktualisiereStatistik(zeilen) {
   }
   document.getElementById('s-offen').textContent   = eur(zeilen.filter(z => !z.bezahlt).reduce((s, z) => s + z.anteil, 0));
   document.getElementById('s-bezahlt').textContent = eur(zeilen.filter(z =>  z.bezahlt).reduce((s, z) => s + z.anteil, 0));
+  document.getElementById('s-retoure').textContent = eur(sumSonder('retoure'));
+  document.getElementById('s-og-bestand').textContent = eur(sumSonder('og-bestand'));
+}
+
+function renderSondermengen() {
+  const block = document.getElementById('sondermengen-block');
+  const tabelle = document.getElementById('sondermengen-tabelle');
+  const hinweis = document.getElementById('sondermengen-filter-hinweis');
+  const zeilen = gefilterteSondermengen();
+  const mitgliedFilter = document.getElementById('filter-mitglied').value;
+
+  if (!alleSondermengen.length) {
+    block.style.display = 'none';
+    return;
+  }
+
+  block.style.display = '';
+  hinweis.style.display = mitgliedFilter ? '' : 'none';
+
+  if (!zeilen.length) {
+    tabelle.style.display = 'none';
+    return;
+  }
+
+  tabelle.style.display = '';
+
+  const tbody = document.getElementById('sondermengen-tbody');
+  setHTML(tbody, html`${zeilen.map(z => html`
+    <tr>
+      <td class="sondermengen-typ">${z.typ === 'retoure' ? 'Retoure' : 'Lagerbestand'}</td>
+      <td class="text-sm" style="color:var(--text-2)">${z.bestellungBez}</td>
+      <td>${z.artikelName}</td>
+      <td>${z.variante || '–'}</td>
+      <td class="preis">${z.menge}</td>
+      <td class="preis">${eur(z.einzelpreis)}</td>
+      <td class="preis" style="font-weight:600">${eur(z.brutto)}</td>
+    </tr>` )}`);
+
+  const summe = zeilen.reduce((s, z) => s + (z.brutto || 0), 0);
+  const tfoot = document.getElementById('sondermengen-tfoot');
+  setHTML(tfoot, html`
+    <tr class="summen-zeile">
+      <td colspan="6">Summe (${zeilen.length} Positionen)</td>
+      <td class="preis">${eur(summe)}</td>
+    </tr>`);
 }
 
 /* ── Tabelle rendern ─────────────────────────────────────────── */
@@ -190,43 +277,47 @@ function renderTabelle() {
   const leer    = document.getElementById('leer-hinweis');
   const tabelle = document.getElementById('kassenwart-tabelle');
 
-  if (!alleZeilen.length) {
+  if (!alleZeilen.length && !alleSondermengen.length) {
     leer.style.display    = '';
     tabelle.style.display = 'none';
+    renderSondermengen();
     return;
   }
   leer.style.display    = 'none';
-  tabelle.style.display = '';
+  tabelle.style.display = alleZeilen.length ? '' : 'none';
 
-  const tbody = document.getElementById('kassenwart-tbody');
-  setHTML(tbody, html`${zeilen.map(z => html`
-    <tr>
-      <td>${z.mitgliedName}</td>
-      <td class="text-sm" style="color:var(--text-2)">${z.bestellungBez}</td>
-      <td>${z.artikelName}</td>
-      <td>${z.variante || '–'}</td>
-      <td class="preis">${z.menge}</td>
-      <td class="preis">${eur(z.brutto)}</td>
-      <td class="preis" style="color:var(--text-2)">${z.bv ? eur(z.bv) : '–'}</td>
-      <td class="preis" style="color:var(--text-2)">${z.lv ? eur(z.lv) : '–'}</td>
-      <td class="preis" style="color:var(--text-2)">${z.og ? eur(z.og) : '–'}</td>
-      <td class="preis" style="font-weight:600">${eur(z.anteil)}</td>
-      <td><span class="${z.bezahlt ? 'badge-bezahlt' : 'badge-offen'}">${z.bezahlt ? 'Bezahlt' : 'Offen'}</span></td>
-    </tr>`)}`);
+  if (alleZeilen.length) {
+    const tbody = document.getElementById('kassenwart-tbody');
+    setHTML(tbody, html`${zeilen.map(z => html`
+      <tr>
+        <td>${z.mitgliedName}</td>
+        <td class="text-sm" style="color:var(--text-2)">${z.bestellungBez}</td>
+        <td>${z.artikelName}</td>
+        <td>${z.variante || '–'}</td>
+        <td class="preis">${z.menge}</td>
+        <td class="preis">${eur(z.brutto)}</td>
+        <td class="preis" style="color:var(--text-2)">${z.bv ? eur(z.bv) : '–'}</td>
+        <td class="preis" style="color:var(--text-2)">${z.lv ? eur(z.lv) : '–'}</td>
+        <td class="preis" style="color:var(--text-2)">${z.og ? eur(z.og) : '–'}</td>
+        <td class="preis" style="font-weight:600">${eur(z.anteil)}</td>
+        <td><span class="${z.bezahlt ? 'badge-bezahlt' : 'badge-offen'}">${z.bezahlt ? 'Bezahlt' : 'Offen'}</span></td>
+      </tr>`)}`);
 
-  // Summenzeile
-  const sum = (f) => zeilen.reduce((s, z) => s + (z[f] || 0), 0);
-  const tfoot = document.getElementById('kassenwart-tfoot');
-  setHTML(tfoot, html`
-    <tr class="summen-zeile">
-      <td colspan="5">Summe (${zeilen.length} Positionen)</td>
-      <td class="preis">${eur(sum('brutto'))}</td>
-      <td class="preis">${eur(sum('bv'))}</td>
-      <td class="preis">${eur(sum('lv'))}</td>
-      <td class="preis">${eur(sum('og'))}</td>
-      <td class="preis">${eur(sum('anteil'))}</td>
-      <td></td>
-    </tr>`);
+    const sum = (f) => zeilen.reduce((s, z) => s + (z[f] || 0), 0);
+    const tfoot = document.getElementById('kassenwart-tfoot');
+    setHTML(tfoot, html`
+      <tr class="summen-zeile">
+        <td colspan="5">Summe (${zeilen.length} Positionen)</td>
+        <td class="preis">${eur(sum('brutto'))}</td>
+        <td class="preis">${eur(sum('bv'))}</td>
+        <td class="preis">${eur(sum('lv'))}</td>
+        <td class="preis">${eur(sum('og'))}</td>
+        <td class="preis">${eur(sum('anteil'))}</td>
+        <td></td>
+      </tr>`);
+  }
+
+  renderSondermengen();
 }
 
 /* ── CSV-Export ──────────────────────────────────────────────── */
@@ -363,6 +454,7 @@ async function init() {
   }
 
   alleZeilen = baueZeilen();
+  alleSondermengen = baueSondermengen();
   befuelleFilter();
   renderTabelle();
 

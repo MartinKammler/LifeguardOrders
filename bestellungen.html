@@ -13,6 +13,7 @@
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html" class="active">Bestellungen</a>
+  <a href="materialbestand.html">Materialbestand</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
@@ -59,6 +60,21 @@ function summePositionen(positionen) {
   return positionen
     .filter(p => p.typ === 'artikel')
     .reduce((s, p) => s + p.einzelpreis * p.menge, 0);
+}
+
+function sondermengenInfo(bestellung) {
+  const artikelPositionen = (bestellung.positionen || []).filter(p => p.typ === 'artikel');
+  const retoure = artikelPositionen.reduce((summe, p) => summe + (p.retoureMenge || 0), 0);
+  const ogBestand = artikelPositionen.reduce((summe, p) => summe + (p.ogBestandMenge || 0), 0);
+
+  if (!retoure && !ogBestand) {
+    return '';
+  }
+
+  const teile = [];
+  if (retoure) teile.push(`Retoure ${retoure}`);
+  if (ogBestand) teile.push(`Lagerbestand ${ogBestand}`);
+  return teile.join(' · ');
 }
 
 function statusBadge(status) {
@@ -147,10 +163,14 @@ function render() {
       <tbody>
         ${sorted.map(b => {
           const summe = summePositionen(b.positionen || []);
+          const sondermengen = sondermengenInfo(b);
           return html`
           <tr>
             <td class="meta">${b.datum}</td>
-            <td><strong>${b.bezeichnung}</strong></td>
+            <td>
+              <strong>${b.bezeichnung}</strong>
+              ${sondermengen ? html`<div class="meta" style="margin-top:4px">${sondermengen}</div>` : ''}
+            </td>
             <td>${statusBadge(b.status)}</td>
             <td style="text-align:right">${mengenInfo(b)}</td>
             <td style="text-align:right">${summe > 0 ? eur(summe) : raw('<span class="meta">–</span>')}</td>

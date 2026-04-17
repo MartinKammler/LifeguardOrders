@@ -66,7 +66,7 @@ System, das:
     Mitglied und den Rest als OG-Anteil ausweisen.
 15. Als Admin möchte ich nach dem Wareneingang eine eigene Anprobe-Phase haben, in der
     ich die finale Verteilung unabhängig vom ursprünglichen Besteller anpassen kann.
-16. Als Admin möchte ich in der Anprobe Teilmengen als Retoure oder OG-Bestand markieren
+16. Als Admin möchte ich in der Anprobe Teilmengen als Retoure oder Lagerbestand markieren
     können, damit diese Mengen nicht in Mitgliedsrechnungen landen.
 
 ### Rechnungen
@@ -123,6 +123,11 @@ System, das:
 33. Als Admin möchte ich die Mitgliederliste aus der `config.js` der Stempeluhr als Quelle
     nutzen (gleiche IDs, gleiche Namen), damit beide Apps konsistent bleiben und
     LifeguardClock-Einträge automatisch gematchet werden.
+34. Als Admin möchte ich einen Materialbestand mit Nummer, Bezeichnung, Variante und Menge
+    separat von Bestellungen pflegen, damit Lagerposten sauber unabhängig von einzelnen
+    Sammelbestellungen geführt werden.
+35. Als Admin möchte ich Bestandsposten als aktiv, aufgebraucht oder ausgesondert markieren
+    können, damit der reale Lagerstatus nachvollziehbar bleibt.
 
 ---
 
@@ -148,7 +153,7 @@ System, das:
   den ursprünglichen Wunsch, sondern ergänzt die Lieferung um eine abrechnungsrelevante Endverteilung.
 - **Teilmenge wird zurückgeschickt:** Retoure wird explizit gespeichert und darf nicht in Rechnung
   oder Kassenwart als Mitgliedsmenge auftauchen.
-- **Teilmenge bleibt bei der OG:** OG-Bestand wird explizit gespeichert und nicht still als Mitglied
+- **Teilmenge bleibt bei der OG:** Lagerbestand wird explizit gespeichert und nicht still als Mitglied
   oder Retoure interpretiert.
 
 ---
@@ -166,6 +171,7 @@ System, das:
   /LifeguardOrders/
     artikel.json
     bestellungen.json
+    materialbestand.json
     einstellungen.json
   /LifeguardClock/
     lgc_*.json   ← nur lesen

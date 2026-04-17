@@ -5,8 +5,18 @@ import {
   verechneSchuld,
   fristDerAeltestenOffenenSchuld,
 } from '../src/stunden.js';
-import { berechneKassenwartZeilen } from '../src/kassenwart.js';
+import { fuegeArtikelHinzu } from '../src/artikel-katalog.js';
+import { berechneKassenwartZeilen, berechneSondermengenZeilen } from '../src/kassenwart.js';
 import { bauePositionenAusAbgleich } from '../src/abgleich.js';
+import {
+  bucheMaterialBewegung,
+  normalisiereMaterialEintrag,
+  validateMaterialEintrag,
+  zusammenfassungMaterialbestand,
+  verbucheLagerbestandAusBestellung,
+  storniereLagerbestandAusBestellung,
+} from '../src/materialbestand.js';
+import { erstelleLagerverkauf, findeArtikelFuerBestand } from '../src/materialverkauf.js';
 import {
   persistJsonWithSync,
   hydrateJsonFromSync,
@@ -186,6 +196,322 @@ test('berechneKassenwartZeilen bevorzugt gespeicherte Positionsdaten vor aktuell
   assertEqual(zeilen[0].anteil, 28, 'Mitgliederanteil darf nicht vom aktuellen Katalog ueberschrieben werden');
 });
 
+test('fuegeArtikelHinzu ueberschreibt vorhandene Artikel bei neuerem Preis oder Foerderung', () => {
+  const katalog = [{
+    id: 'a1',
+    artikelNr: '4711',
+    variante: 'GR 43',
+    name: 'Einsatzhose',
+    einzelpreis: 50,
+    bvFoerderung: 5,
+    lvFoerderung: 0,
+    ogFoerderung: 0,
+    ogUebernimmtRest: false,
+  }];
+  const neu = [{
+    artikelNr: '4711',
+    variante: 'gr 43',
+    name: 'Einsatzhose',
+    einzelpreis: 55,
+    bvFoerderung: 6,
+    lvFoerderung: 0,
+    ogFoerderung: 0,
+    ogUebernimmtRest: false,
+  }];
+
+  const result = fuegeArtikelHinzu(katalog, neu);
+
+  assertEqual(result.katalog.length, 1, 'Aktualisierte Artikel duerfen keinen Duplikat-Eintrag erzeugen');
+  assertEqual(result.katalog[0].id, 'a1', 'Beim Ueberschreiben soll die bestehende ID erhalten bleiben');
+  assertEqual(result.katalog[0].einzelpreis, 55, 'Neuer Preis muss den alten ueberschreiben');
+  assertEqual(result.aktualisiert.length, 1, 'Aktualisierung muss gemeldet werden');
+  assertEqual(result.duplikate.length, 0, 'Geaenderte Artikel duerfen nicht als Duplikat gelten');
+});
+
+test('fuegeArtikelHinzu ueberspringt nur vollstaendig identische Artikel', () => {
+  const katalog = [{
+    id: 'a1',
+    artikelNr: '4711',
+    variante: 'GR 43',
+    name: 'Einsatzhose',
+    einzelpreis: 50,
+    bvFoerderung: 5,
+    lvFoerderung: 0,
+    ogFoerderung: 0,
+    ogUebernimmtRest: false,
+  }];
+
+  const result = fuegeArtikelHinzu(katalog, [{
+    artikelNr: '4711',
+    variante: 'GR 43',
+    name: 'Einsatzhose',
+    einzelpreis: 50,
+    bvFoerderung: 5,
+    lvFoerderung: 0,
+    ogFoerderung: 0,
+    ogUebernimmtRest: false,
+  }]);
+
+  assertEqual(result.katalog.length, 1, 'Identische Artikel duerfen keinen zweiten Eintrag erzeugen');
+  assertEqual(result.duplikate.length, 1, 'Identische Artikel muessen als Duplikat gemeldet werden');
+});
+
+test('berechneSondermengenZeilen listet Retoure und Lagerbestand nur fuer abgeschlossene Bestellungen', () => {
+  const zeilen = berechneSondermengenZeilen([
+    {
+      id: 'b1',
+      datum: '2026-04-01',
+      bezeichnung: 'Fruehjahr',
+      status: 'abgeschlossen',
+      positionen: [
+        {
+          typ: 'artikel',
+          name: 'Jacke',
+          variante: 'M',
+          einzelpreis: 20,
+          retoureMenge: 2,
+          ogBestandMenge: 1,
+        },
+        {
+          typ: 'og-kosten',
+          name: 'Versand',
+          einzelpreis: 5,
+          retoureMenge: 9,
+          ogBestandMenge: 9,
+        },
+      ],
+    },
+    {
+      id: 'b2',
+      datum: '2026-05-01',
+      bezeichnung: 'Sommer',
+      status: 'anprobe',
+      positionen: [
+        {
+          typ: 'artikel',
+          name: 'Hose',
+          variante: 'L',
+          einzelpreis: 15,
+          retoureMenge: 1,
+          ogBestandMenge: 1,
+        },
+      ],
+    },
+  ]);
+
+  assertEqual(zeilen.length, 2, 'Es duerfen nur Artikel-Sondermengen abgeschlossener Bestellungen auftauchen');
+  assertEqual(zeilen[0].typ, 'retoure', 'Die erste Zeile muss eine Retoure sein');
+  assertEqual(zeilen[0].brutto, 40, 'Retoure-Wert muss Menge x Einzelpreis sein');
+  assertEqual(zeilen[1].typ, 'og-bestand', 'Die zweite Zeile muss Lagerbestand sein');
+  assertEqual(zeilen[1].brutto, 20, 'Lagerbestand-Wert muss Menge x Einzelpreis sein');
+});
+
+test('normalisiereMaterialEintrag vereinheitlicht Variante, Status und Mengenfelder', () => {
+  const eintrag = normalisiereMaterialEintrag({
+    nummer: '4711 ',
+    bezeichnung: ' Einsatzhose ',
+    variante: 'gr 43',
+    menge: 4,
+    lagerort: ' Schrank A ',
+  });
+
+  assertEqual(eintrag.nummer, '4711', 'Nummer muss getrimmt werden');
+  assertEqual(eintrag.bezeichnung, 'Einsatzhose', 'Bezeichnung muss getrimmt werden');
+  assertEqual(eintrag.variante, 'GR 43', 'Variante muss vereinheitlicht werden');
+  assertEqual(eintrag.status, 'aktiv', 'Fehlender Status muss als aktiv normalisiert werden');
+  assertEqual(eintrag.lagerort, 'Schrank A', 'Lagerort muss getrimmt werden');
+});
+
+test('validateMaterialEintrag verlangt Nummer, Bezeichnung und nicht-negative Menge', () => {
+  assertEqual(validateMaterialEintrag({
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    menge: 3,
+    status: 'aktiv',
+  }).ok, true, 'Gueltiger Bestandsposten muss akzeptiert werden');
+
+  assertEqual(validateMaterialEintrag({
+    nummer: '',
+    bezeichnung: 'Einsatzhose',
+    menge: 3,
+    status: 'aktiv',
+  }).ok, false, 'Leere Nummer muss abgelehnt werden');
+
+  assertEqual(validateMaterialEintrag({
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    menge: -1,
+    status: 'aktiv',
+  }).ok, false, 'Negative Menge muss abgelehnt werden');
+});
+
+test('zusammenfassungMaterialbestand summiert nur aktive Mengen in den Bestand', () => {
+  const summe = zusammenfassungMaterialbestand([
+    { status: 'aktiv', menge: 4 },
+    { status: 'aktiv', menge: 2 },
+    { status: 'aufgebraucht', menge: 0 },
+    { status: 'ausgesondert', menge: 1 },
+  ]);
+
+  assertEqual(summe.postenAktiv, 2, 'Aktive Posten muessen gezaehlt werden');
+  assertEqual(summe.mengeAktiv, 6, 'Nur aktive Mengen gehoeren in den Bestand');
+  assertEqual(summe.postenAufgebraucht, 1, 'Aufgebrauchte Posten muessen separat gezaehlt werden');
+  assertEqual(summe.postenAusgesondert, 1, 'Ausgesonderte Posten muessen separat gezaehlt werden');
+});
+
+test('bucheMaterialBewegung protokolliert Zugang und Abgang direkt am Bestandsposten', () => {
+  const start = normalisiereMaterialEintrag({
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    variante: 'GR 43',
+    menge: 4,
+  });
+  const zugang = bucheMaterialBewegung(start, {
+    typ: 'zugang',
+    menge: 2,
+    quelle: 'manuell',
+    notiz: 'Nachbestellung',
+  });
+  assertEqual(zugang.ok, true, 'Zugang muss erlaubt sein');
+  assertEqual(zugang.eintrag.menge, 6, 'Zugang muss die Menge erhoehen');
+  assertEqual(zugang.eintrag.bewegungen.length, 1, 'Zugang muss protokolliert werden');
+  assertEqual(zugang.eintrag.bewegungen[0].typ, 'zugang', 'Zugangslog fehlt');
+
+  const abgang = bucheMaterialBewegung(zugang.eintrag, {
+    typ: 'abgang',
+    menge: 5,
+    quelle: 'manuell',
+    notiz: 'Ausgabe an Einsatz',
+  });
+  assertEqual(abgang.ok, true, 'Abgang muss erlaubt sein');
+  assertEqual(abgang.eintrag.menge, 1, 'Abgang muss die Menge reduzieren');
+  assertEqual(abgang.eintrag.bewegungen.length, 2, 'Abgang muss im Log ergaenzt werden');
+  assertEqual(abgang.eintrag.bewegungen[0].typ, 'abgang', 'Neuster Logeintrag muss der Abgang sein');
+});
+
+test('erstelleLagerverkauf baut abgeschlossene Bestellung mit Rechnung aus aktuellem Katalog', () => {
+  const bestand = normalisiereMaterialEintrag({
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    variante: 'GR 43',
+    menge: 2,
+  });
+  const artikel = findeArtikelFuerBestand([{
+    artikelNr: '4711',
+    variante: 'GR 43',
+    name: 'Einsatzhose',
+    einzelpreis: 60,
+    bvFoerderung: 10,
+    lvFoerderung: 5,
+    ogFoerderung: 0,
+    ogUebernimmtRest: false,
+  }], bestand);
+
+  const verkauf = erstelleLagerverkauf(
+    { ...bestand, menge: 2 },
+    artikel,
+    'max',
+    'Max Muster',
+    { stundenRate: { stunden: 3, euro: 10 } },
+    []
+  );
+
+  assertEqual(verkauf.bestellung.status, 'abgeschlossen', 'Lagerverkauf muss direkt abgeschlossen sein');
+  assertEqual(verkauf.bestellung.quelle, 'lagerverkauf', 'Quelle muss als Lagerverkauf markiert sein');
+  assertEqual(verkauf.bestellung.rechnungen.length, 1, 'Lagerverkauf muss direkt eine Rechnung erzeugen');
+  assertEqual(verkauf.rechnung.gesamtbetrag, 90, 'Rechnung muss mit aktuellem Katalogpreis und Foerderung rechnen');
+});
+
+test('erstelleLagerverkauf respektiert OG uebernimmt wie im normalen Bestellfluss', () => {
+  const bestand = normalisiereMaterialEintrag({
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    variante: 'GR 43',
+    menge: 1,
+  });
+  const artikel = {
+    artikelNr: '4711',
+    variante: 'GR 43',
+    name: 'Einsatzhose',
+    einzelpreis: 60,
+    bvFoerderung: 10,
+    lvFoerderung: 5,
+    ogFoerderung: 0,
+    ogUebernimmtRest: false,
+  };
+
+  const verkauf = erstelleLagerverkauf(
+    bestand,
+    artikel,
+    'max',
+    'Max Muster',
+    { stundenRate: { stunden: 3, euro: 10 } },
+    [],
+    { ogKostenlos: true }
+  );
+
+  assertEqual(verkauf.bestellung.positionen[0].zuweisung[0].ogKostenlos, true, 'Lagerverkauf muss ogKostenlos in die Zuweisung schreiben');
+  assertEqual(verkauf.rechnung.gesamtbetrag, 0, 'Wenn OG uebernimmt, muss die Rechnung 0 Euro ausweisen');
+  assertEqual(verkauf.rechnung.ogAnteil, 45, 'Der Rest muss als OG-Anteil gerechnet werden');
+});
+
+test('verbucheLagerbestandAusBestellung fuehrt gleiche Nummer, Variante und Bezeichnung zusammen', () => {
+  const materialbestand = [{
+    id: 'mat1',
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    variante: 'GR 43',
+    menge: 2,
+    status: 'aktiv',
+    bewegungen: [],
+  }];
+  const bestellung = {
+    id: 'best1',
+    positionen: [{
+      typ: 'artikel',
+      artikelNr: '4711',
+      name: 'Einsatzhose',
+      variante: 'gr 43',
+      ogBestandMenge: 3,
+    }],
+  };
+
+  const neu = verbucheLagerbestandAusBestellung(materialbestand, bestellung);
+
+  assertEqual(neu.length, 1, 'Gleiche Bestandsposten muessen zusammengefuehrt werden');
+  assertEqual(neu[0].menge, 5, 'Die Mengen muessen addiert werden');
+  assertEqual(neu[0].status, 'aktiv', 'Zusammengefuehrter Bestand muss aktiv sein');
+  assertEqual(neu[0].bewegungen[0].typ, 'zugang', 'Automatische Lagerbuchung muss protokolliert werden');
+});
+
+test('storniereLagerbestandAusBestellung reduziert zusammengefuehrten Bestand wieder', () => {
+  const materialbestand = [{
+    id: 'mat1',
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    variante: 'GR 43',
+    menge: 5,
+    status: 'aktiv',
+    bewegungen: [],
+  }];
+  const bestellung = {
+    id: 'best1',
+    positionen: [{
+      typ: 'artikel',
+      artikelNr: '4711',
+      name: 'Einsatzhose',
+      variante: 'gr 43',
+      ogBestandMenge: 3,
+    }],
+  };
+
+  const rueck = storniereLagerbestandAusBestellung(materialbestand, bestellung);
+
+  assertEqual(rueck.warnungen.length, 0, 'Passende Bestandsposten duerfen keine Warnung erzeugen');
+  assertEqual(rueck.materialbestand[0].menge, 2, 'Rueckbuchung muss die Bestandserhoehung wieder abziehen');
+  assertEqual(rueck.materialbestand[0].bewegungen[0].typ, 'storno', 'Rueckbuchung muss im Bewegungslog landen');
+});
+
 test('bauePositionenAusAbgleich uebernimmt Mengenabweichungen nur bei Aktion uebernehmen', () => {
   const abgleichResult = {
     gematch: [],
@@ -251,7 +577,7 @@ test('bauePositionenAusAbgleich initialisiert Anprobe-Felder mit 0', () => {
   ], [], new Map());
 
   assertEqual(positionen[0].retoureMenge, 0, 'Retoure-Menge muss initial 0 sein');
-  assertEqual(positionen[0].ogBestandMenge, 0, 'OG-Bestand-Menge muss initial 0 sein');
+  assertEqual(positionen[0].ogBestandMenge, 0, 'Lagerbestand-Menge muss initial 0 sein');
 });
 
 test('bauePositionenAusAbgleich uebernimmt OG-Kosten separat', () => {
@@ -277,8 +603,10 @@ test('kritische UI-Dateien verwenden keine direkten HTML-Injection-APIs mehr', a
     'dashboard.html',
     'index.html',
     'kassenwart.html',
+    'materialbestand.html',
     'rechnungen.html',
     path.join('src', 'artikel-app.js'),
+    path.join('src', 'materialbestand-app.js'),
   ];
   const verbotenePatterns = [
     /\binnerHTML\b/,

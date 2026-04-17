@@ -10,6 +10,11 @@ import { load, save }                          from './storage.js';
 import { html, raw, setHTML }                  from './dom.js';
 import { validateArtikel }                     from './validation.js';
 import {
+  fuegeArtikelHinzu,
+  loescheArtikel,
+  aktualisiereArtikel,
+} from './artikel-katalog.js';
+import {
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
@@ -44,40 +49,6 @@ function zeigeStatus(elId, text, art = 'info') {
                     info: 'badge badge-blue', warn: 'badge badge-amber' };
   el.className = klassen[art] || klassen.info;
   el.textContent = text;
-}
-
-/* ── Artikel-Logik (rein, ohne DOM) ────────────────────────── */
-
-function artikelKey(a) { return a.artikelNr + '|' + (a.variante ?? a.name); }
-
-export function fuegeArtikelHinzu(katalog, neueArtikel) {
-  const vorhanden   = new Set(katalog.map(artikelKey));
-  const hinzugefuegt = [];
-  const duplikate    = [];
-  const ungueltig    = [];
-  for (const a of neueArtikel) {
-    const validierung = validateArtikel(a);
-    if (!validierung.ok) {
-      ungueltig.push({ artikel: a, fehler: validierung.fehler });
-      continue;
-    }
-    if (vorhanden.has(artikelKey(a))) {
-      duplikate.push(a.artikelNr);
-    } else {
-      const mitId = { ...a, id: uuid() };
-      hinzugefuegt.push(mitId);
-      vorhanden.add(artikelKey(a));
-    }
-  }
-  return { katalog: [...katalog, ...hinzugefuegt], duplikate, ungueltig };
-}
-
-export function loescheArtikel(katalog, id) {
-  return katalog.filter(a => a.id !== id);
-}
-
-export function aktualisiereArtikel(katalog, geaendert) {
-  return katalog.map(a => a.id === geaendert.id ? { ...a, ...geaendert } : a);
 }
 
 /* ── Persistenz ─────────────────────────────────────────────── */
@@ -316,7 +287,7 @@ document.getElementById('btn-parsen').addEventListener('click', () => {
 });
 
 document.getElementById('btn-uebernehmen').addEventListener('click', async () => {
-  const { katalog: neu, duplikate, ungueltig } = fuegeArtikelHinzu(artikel, importiert);
+  const { katalog: neu, hinzugefuegt, aktualisiert, duplikate, ungueltig } = fuegeArtikelHinzu(artikel, importiert);
   artikel = neu;
   const gespeichert = await speichereArtikel();
   renderKatalog();
@@ -327,8 +298,14 @@ document.getElementById('btn-uebernehmen').addEventListener('click', async () =>
   document.getElementById('btn-uebernehmen').style.display = 'none';
 
   const meldungen = [];
+  if (hinzugefuegt.length) {
+    meldungen.push(`${hinzugefuegt.length} Artikel neu hinzugefügt.`);
+  }
+  if (aktualisiert.length) {
+    meldungen.push(`${aktualisiert.length} vorhandene Artikel mit neuem Preis/Förderung überschrieben:\n${aktualisiert.join(', ')}`);
+  }
   if (duplikate.length) {
-    meldungen.push(`${duplikate.length} Artikel-Nr. bereits vorhanden und übersprungen:\n${duplikate.join(', ')}`);
+    meldungen.push(`${duplikate.length} identische Artikel übersprungen:\n${duplikate.join(', ')}`);
   }
   if (ungueltig.length) {
     meldungen.push(`${ungueltig.length} ungültige Artikel verworfen.`);

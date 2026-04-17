@@ -54,7 +54,7 @@ export function validatePosition(p) {
 
   const ogBestandMenge = p.ogBestandMenge ?? 0;
   if (!istNichtNegativeGanzeZahl(ogBestandMenge)) {
-    return err('ogBestandMenge muss eine nicht-negative ganze Zahl sein');
+    return err('ogBestandMenge (Lagerbestand) muss eine nicht-negative ganze Zahl sein');
   }
 
   const zuweisungen = Array.isArray(p.zuweisung) ? p.zuweisung : [];
@@ -69,7 +69,7 @@ export function validatePosition(p) {
   }
 
   if (zugewiesenGesamt + retoureMenge + ogBestandMenge > p.menge) {
-    return err('zuweisung + retoure + OG-Bestand darf menge nicht überschreiten');
+    return err('zuweisung + retoure + Lagerbestand darf menge nicht überschreiten');
   }
 
   return OK;

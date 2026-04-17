@@ -58,6 +58,49 @@ export function berechneKassenwartZeilen(bestellungen, artikelListe, mitglieder)
   return zeilen;
 }
 
+export function berechneSondermengenZeilen(bestellungen) {
+  const zeilen = [];
+
+  for (const bestellung of (bestellungen || [])) {
+    if (bestellung.status !== 'abgeschlossen') continue;
+    const jahr = (bestellung.datum || '').slice(0, 4);
+
+    for (const position of (bestellung.positionen || [])) {
+      if (position.typ !== 'artikel') continue;
+
+      if ((position.retoureMenge || 0) > 0) {
+        zeilen.push({
+          typ: 'retoure',
+          jahr,
+          bestellungId: bestellung.id,
+          bestellungBez: bestellung.bezeichnung,
+          artikelName: position.name,
+          variante: position.variante || '',
+          menge: position.retoureMenge,
+          einzelpreis: position.einzelpreis || 0,
+          brutto: runde((position.einzelpreis || 0) * position.retoureMenge),
+        });
+      }
+
+      if ((position.ogBestandMenge || 0) > 0) {
+        zeilen.push({
+          typ: 'og-bestand',
+          jahr,
+          bestellungId: bestellung.id,
+          bestellungBez: bestellung.bezeichnung,
+          artikelName: position.name,
+          variante: position.variante || '',
+          menge: position.ogBestandMenge,
+          einzelpreis: position.einzelpreis || 0,
+          brutto: runde((position.einzelpreis || 0) * position.ogBestandMenge),
+        });
+      }
+    }
+  }
+
+  return zeilen;
+}
+
 function waehleFoerderQuelle(position, artikel) {
   if (hatGespeicherteFoerderung(position) || !artikel) {
     return {

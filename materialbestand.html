@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Materialbestand – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 18px;
+    }
+    .stat-label { font-size: .78rem; color: var(--text-2); margin-bottom: 4px; }
+    .stat-wert { font-size: 1.2rem; font-weight: 700; }
+
+    .filter-zeile {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .filter-zeile input { flex: 1; min-width: 220px; }
+    .filter-zeile select { width: auto; min-width: 180px; }
+
+    .material-nummer {
+      font-family: monospace;
+      color: var(--text-2);
+      font-size: .82rem;
+    }
+    .menge {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+    }
+    .bewegung-row td {
+      background: rgba(91, 138, 245, .06);
+      border-top: 1px dashed var(--border);
+    }
+    .bewegung-log {
+      display: grid;
+      gap: 8px;
+    }
+    .bewegung-list {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .82rem;
+    }
+    .bewegung-list th,
+    .bewegung-list td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .bewegung-list tr:last-child td { border-bottom: none; }
+    .bewegung-list tr:hover td { background: transparent; }
+    .bewegung-typ {
+      font-weight: 700;
+      text-transform: capitalize;
+    }
+    .verkauf-kontext {
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: .85rem;
+    }
+
+    .leer-hinweis {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--text-2);
+    }
+    .leer-hinweis p { margin-bottom: 12px; }
+
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.6);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      width: min(620px, 95vw);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal h2 { margin-bottom: 16px; font-size: 1rem; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="index.html">LifeguardOrders</a>
+  <a href="bestellungen.html">Bestellungen</a>
+  <a href="materialbestand.html" class="active">Materialbestand</a>
+  <a href="rechnungen.html">Rechnungen</a>
+  <a href="kassenwart.html">Kassenwart</a>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="einstellungen.html">Einstellungen</a>
+</nav>
+
+<div class="container">
+  <div class="flex gap-8" style="align-items:center; margin-bottom:20px">
+    <h1 style="margin:0;flex:1">Materialbestand</h1>
+    <button class="btn btn-ghost btn-sm" id="btn-download-material" title="Materialbestand als JSON sichern">&#8659; Als Datei sichern</button>
+    <button class="btn btn-primary btn-sm" id="btn-neu">+ Bestandsposten anlegen</button>
+  </div>
+
+  <div class="hinweis hinweis-info">
+    Bestandsposten können manuell gepflegt werden. Lagerbestand aus abgeschlossenen Bestellungen wird automatisch über Nummer, Variante und Bezeichnung zusammengeführt. Weitere Zu- und Abgänge werden als Bewegungen protokolliert. Verkäufe aus dem Lager erzeugen direkt eine Rechnung.
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Aktive Posten</div>
+      <div class="stat-wert" id="stat-posten">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Stück im Bestand</div>
+      <div class="stat-wert" id="stat-menge">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Aufgebraucht</div>
+      <div class="stat-wert" id="stat-aufgebraucht">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Ausgesondert</div>
+      <div class="stat-wert" id="stat-ausgesondert">–</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="filter-zeile">
+      <input type="text" id="filter-suche" placeholder="Suche nach Nummer, Bezeichnung, Variante, Lagerort …">
+      <select id="filter-status">
+        <option value="">Alle Status</option>
+        <option value="aktiv">Nur aktiv</option>
+        <option value="aufgebraucht">Nur aufgebraucht</option>
+        <option value="ausgesondert">Nur ausgesondert</option>
+      </select>
+    </div>
+
+    <div id="leer-hinweis" class="leer-hinweis" style="display:none">
+      <p>Noch kein Materialbestand erfasst.</p>
+      <p class="text-sm">Lege Bestandsposten mit Nummer, Bezeichnung, Variante und Menge an.</p>
+      <button class="btn btn-ghost" id="btn-neu-leer">Bestandsposten anlegen</button>
+    </div>
+
+    <div style="overflow-x:auto">
+      <table id="bestand-tabelle" style="display:none;min-width:920px">
+        <thead>
+          <tr>
+            <th>Nummer</th>
+            <th>Variante</th>
+            <th>Bezeichnung</th>
+            <th class="text-right">Menge</th>
+            <th>Status</th>
+            <th>Lagerort</th>
+            <th>Herkunft</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="bestand-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <h2 id="modal-titel">Bestandsposten anlegen</h2>
+    <input type="hidden" id="modal-id">
+    <div class="form-grid">
+      <div class="field">
+        <label for="m-nummer">Nummer der Materialstelle</label>
+        <input type="text" id="m-nummer" placeholder="4711">
+      </div>
+      <div class="field">
+        <label for="m-variante">Variante / Größe</label>
+        <input type="text" id="m-variante" placeholder="Gr 43">
+      </div>
+      <div class="field span2">
+        <label for="m-bezeichnung">Bezeichnung</label>
+        <input type="text" id="m-bezeichnung" placeholder="Einsatzhose">
+      </div>
+      <div class="field">
+        <label for="m-menge">Menge</label>
+        <input type="number" id="m-menge" min="0" step="1" value="0">
+      </div>
+      <div class="field">
+        <label for="m-status">Status</label>
+        <select id="m-status">
+          <option value="aktiv">Aktiv</option>
+          <option value="aufgebraucht">Aufgebraucht</option>
+          <option value="ausgesondert">Ausgesondert</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="m-lagerort">Lagerort</label>
+        <input type="text" id="m-lagerort" placeholder="Schrank 2 / Fach B">
+      </div>
+      <div class="field">
+        <label for="m-herkunft">Herkunft / Bestellung</label>
+        <input type="text" id="m-herkunft" placeholder="best_2026_04 oder Freitext">
+      </div>
+      <div class="field span2">
+        <label for="m-notiz">Notiz</label>
+        <textarea id="m-notiz" placeholder="Optionaler Hinweis zum Bestandsposten"></textarea>
+      </div>
+    </div>
+    <div class="flex gap-8 mt-16" style="justify-content:flex-end">
+      <button class="btn btn-ghost" id="modal-abbrechen">Abbrechen</button>
+      <button class="btn btn-primary" id="modal-speichern">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="verkauf-backdrop">
+  <div class="modal">
+    <h2>Aus Lager verkaufen</h2>
+    <input type="hidden" id="verkauf-id">
+    <div class="form-grid">
+      <div class="field span2">
+        <label>Posten</label>
+        <div id="verkauf-kontext" class="verkauf-kontext"></div>
+      </div>
+      <div class="field">
+        <label for="verkauf-mitglied">Mitglied</label>
+        <select id="verkauf-mitglied"></select>
+      </div>
+      <div class="field">
+        <label for="verkauf-menge">Menge</label>
+        <input type="number" id="verkauf-menge" min="1" step="1" value="1">
+      </div>
+      <div class="field span2">
+        <label for="verkauf-hinweis">Hinweis</label>
+        <input type="text" id="verkauf-hinweis" placeholder="Optionaler Hinweis für Bewegungslog und Verkauf">
+      </div>
+      <div class="field span2">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="verkauf-og-kostenlos">
+          OG übernimmt Kosten
+        </label>
+      </div>
+    </div>
+    <div class="flex gap-8 mt-16" style="justify-content:flex-end">
+      <button class="btn btn-ghost" id="verkauf-abbrechen">Abbrechen</button>
+      <button class="btn btn-primary" id="verkauf-speichern">Verkaufen & Rechnung erzeugen</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="bewegung-backdrop">
+  <div class="modal">
+    <h2 id="bewegung-titel">Bestandsbewegung buchen</h2>
+    <input type="hidden" id="bewegung-id">
+    <input type="hidden" id="bewegung-typ">
+    <div class="form-grid">
+      <div class="field span2">
+        <label>Posten</label>
+        <div id="bewegung-kontext" class="text-sm" style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text)"></div>
+      </div>
+      <div class="field">
+        <label for="bewegung-menge">Menge</label>
+        <input type="number" id="bewegung-menge" min="1" step="1" value="1">
+      </div>
+      <div class="field">
+        <label for="bewegung-notiz">Notiz</label>
+        <input type="text" id="bewegung-notiz" placeholder="z. B. Ausgabe an Fahrzeug 1">
+      </div>
+    </div>
+    <div class="flex gap-8 mt-16" style="justify-content:flex-end">
+      <button class="btn btn-ghost" id="bewegung-abbrechen">Abbrechen</button>
+      <button class="btn btn-primary" id="bewegung-speichern">Buchen</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script type="module" src="src/materialbestand-app.js"></script>
+<script>
+document.getElementById('btn-neu-leer')?.addEventListener('click', () => {
+  document.getElementById('btn-neu')?.click();
+});
+</script>
+</body>
+</html>

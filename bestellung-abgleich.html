@@ -169,6 +169,7 @@
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html" class="active">Bestellungen</a>
+  <a href="materialbestand.html">Materialbestand</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
@@ -305,6 +306,10 @@ import {
   normalisierePosition,
   summeZuweisung,
 } from './src/abgleich.js';
+import {
+  verbucheLagerbestandAusBestellung,
+  storniereLagerbestandAusBestellung,
+} from './src/materialbestand.js';
 import { createWebDavClient }               from './src/webdav.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
 import { html, raw, setHTML }               from './src/dom.js';
@@ -319,10 +324,13 @@ import {
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
+const STORAGE_KEY_M = 'lo_materialbestand';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
 const NC_PFAD_A     = '/LifeguardOrders/artikel.json';
+const NC_PFAD_M     = '/LifeguardOrders/materialbestand.json';
 const SYNC_SCOPE_B  = 'bestellungen';
 const SYNC_SCOPE_A  = 'artikel';
+const SYNC_SCOPE_M  = 'materialbestand';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
 let bestellungen  = [];
@@ -330,6 +338,7 @@ let bestellung    = null;
 let client        = null;
 let mitglieder    = [];
 let artikelListe  = [];
+let materialbestand = [];
 let einstellungen = null;
 
 // Abgleich-Ergebnis + Auflösungs-Status
@@ -450,6 +459,52 @@ function persistiereBestellung(bestellungNeu, statusText) {
     }
     return gespeichert;
   });
+}
+
+async function persistiereBestellungUndMaterial(bestellungNeu, materialNeu, statusText, warnungen = []) {
+  const idx = bestellungen.findIndex(b => b.id === bestellungNeu.id);
+  if (idx < 0) return null;
+
+  bestellungen[idx] = bestellungNeu;
+  bestellung = bestellungen[idx];
+  materialbestand = materialNeu;
+  aktualisiereStatusAnzeige();
+
+  const [gespeicherteBestellung, gespeichertesMaterial] = await Promise.all([
+    persistJsonWithSync({
+      scope: SYNC_SCOPE_B,
+      storageKey: STORAGE_KEY_B,
+      data: bestellungen,
+      client,
+      remotePath: NC_PFAD_B,
+    }),
+    persistJsonWithSync({
+      scope: SYNC_SCOPE_M,
+      storageKey: STORAGE_KEY_M,
+      data: materialbestand,
+      client,
+      remotePath: NC_PFAD_M,
+    }),
+  ]);
+
+  const meldungen = [];
+  if (gespeicherteBestellung.sync?.pending) {
+    meldungen.push(syncHinweisText(gespeicherteBestellung.sync, 'Bestellungen'));
+  }
+  if (gespeichertesMaterial.sync?.pending) {
+    meldungen.push(syncHinweisText(gespeichertesMaterial.sync, 'Materialbestand'));
+  }
+  if (warnungen.length) {
+    meldungen.push(`Lagerbestand konnte nicht vollständig zurückgebucht werden für: ${warnungen.join(', ')}`);
+  }
+
+  if (meldungen.length) {
+    zeigeStatus(meldungen.join(' | '), 'warn');
+  } else if (statusText) {
+    zeigeStatus(statusText, 'ok');
+  }
+
+  return { gespeicherteBestellung, gespeichertesMaterial };
 }
 
 /* ── Zuweisung berechnen ─────────────────────────────────────── */
@@ -668,7 +723,7 @@ function renderPositionenCard() {
                 <span>Geliefert: <strong>${position.menge}</strong></span>
                 <span>Zugewiesen: <strong>${summeZuweisung(position)}</strong></span>
                 <span>Retoure: <strong>${position.retoureMenge || 0}</strong></span>
-                <span>OG-Bestand: <strong>${position.ogBestandMenge || 0}</strong></span>
+                <span>Lagerbestand: <strong>${position.ogBestandMenge || 0}</strong></span>
               </div>
             </div>
             <div>${statusBadge}</div>
@@ -725,7 +780,7 @@ function renderPositionenCard() {
               <input type="number" id="retoure-${position.id}" min="0" value="${position.retoureMenge || 0}" data-pos-id="${position.id}" data-field="retoureMenge">
             </div>
             <div class="field">
-              <label for="og-${position.id}">OG-Bestand</label>
+              <label for="og-${position.id}">Lagerbestand</label>
               <input type="number" id="og-${position.id}" min="0" value="${position.ogBestandMenge || 0}" data-pos-id="${position.id}" data-field="ogBestandMenge">
             </div>
             <div class="anprobe-stat">
@@ -813,7 +868,7 @@ function renderPositionenCard() {
   const rows = positionen.map(p => {
     const extras = [];
     if ((p.retoureMenge || 0) > 0) extras.push(html`<span class="badge badge-red">Retoure ×${p.retoureMenge}</span>`);
-    if ((p.ogBestandMenge || 0) > 0) extras.push(html`<span class="badge badge-blue">OG-Bestand ×${p.ogBestandMenge}</span>`);
+    if ((p.ogBestandMenge || 0) > 0) extras.push(html`<span class="badge badge-blue">Lagerbestand ×${p.ogBestandMenge}</span>`);
 
     const zuwHtml = html`${(p.zuweisung || [])
       .filter(z => z.menge > 0)
@@ -1180,30 +1235,41 @@ document.getElementById('btn-anprobe-abschliessen').addEventListener('click', as
   }
 
   if (!confirm('Anprobe jetzt abschließen? Danach können Rechnungen erzeugt werden.')) return;
-
-  await persistiereBestellung({ ...bestellung, status: 'abgeschlossen', positionen }, '✓ Anprobe abgeschlossen');
+  const abgeschlosseneBestellung = { ...bestellung, status: 'abgeschlossen', positionen };
+  const neuerMaterialbestand = verbucheLagerbestandAusBestellung(materialbestand, abgeschlosseneBestellung);
+  await persistiereBestellungUndMaterial(
+    abgeschlosseneBestellung,
+    neuerMaterialbestand,
+    '✓ Anprobe abgeschlossen und Lagerbestand zusammengeführt'
+  );
   renderPositionenCard();
   renderRechnungenCard();
 });
 
 /* ── Wieder öffnen ───────────────────────────────────────────── */
 document.getElementById('btn-wieder-oeffnen').addEventListener('click', async () => {
-  if (!confirm('Bestellung wieder öffnen?\n\nPositionen und Rechnungen werden gelöscht. Wünsche bleiben erhalten.\nDer Abgleich kann danach erneut durchgeführt werden.')) return;
+  const hatLagerbestand = (bestellung.positionen || []).some(
+    p => p.typ === 'artikel' && (p.ogBestandMenge || 0) > 0
+  );
+  const lagerHinweis = bestellung.status === 'abgeschlossen' && hatLagerbestand
+    ? '\nDer daraus gebuchte Lagerbestand wird dabei wieder abgezogen.'
+    : '';
+  if (!confirm(`Bestellung wieder öffnen?\n\nPositionen und Rechnungen werden gelöscht. Wünsche bleiben erhalten.\nDer Abgleich kann danach erneut durchgeführt werden.${lagerHinweis}`)) return;
 
   const idx = bestellungen.findIndex(b => b.id === bestellung.id);
   if (idx < 0) return;
 
-  bestellungen[idx] = { ...bestellung, status: 'bestellt', positionen: [], rechnungen: [] };
-  bestellung = bestellungen[idx];
-  const gespeichert = await persistJsonWithSync({
-    scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
-    data: bestellungen,
-    client,
-    remotePath: NC_PFAD_B,
-  });
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  const geoeffneteBestellung = { ...bestellung, status: 'bestellt', positionen: [], rechnungen: [] };
+  if (bestellung.status === 'abgeschlossen' && hatLagerbestand) {
+    const rueckbuchung = storniereLagerbestandAusBestellung(materialbestand, bestellung);
+    await persistiereBestellungUndMaterial(
+      geoeffneteBestellung,
+      rueckbuchung.materialbestand,
+      '✓ Bestellung wieder geöffnet und Lagerbestand zurückgebucht',
+      rueckbuchung.warnungen
+    );
+  } else {
+    await persistiereBestellung(geoeffneteBestellung, '✓ Bestellung wieder geöffnet');
   }
 
   location.reload();
@@ -1223,10 +1289,11 @@ async function init() {
   mitglieder   = einstellungen?.mitglieder || [];
   bestellungen = load(STORAGE_KEY_B)   || [];
   artikelListe = load(STORAGE_KEY_A)   || [];
+  materialbestand = load(STORAGE_KEY_M) || [];
 
   // NC-Sync
   if (client) {
-    const [rB, rA] = await Promise.all([
+    const [rB, rA, rM] = await Promise.all([
       hydrateJsonFromSync({
         scope: SYNC_SCOPE_B,
         storageKey: STORAGE_KEY_B,
@@ -1241,12 +1308,22 @@ async function init() {
         remotePath: NC_PFAD_A,
         isValidRemote: data => Array.isArray(data),
       }),
+      hydrateJsonFromSync({
+        scope: SYNC_SCOPE_M,
+        storageKey: STORAGE_KEY_M,
+        client,
+        remotePath: NC_PFAD_M,
+        isValidRemote: data => Array.isArray(data),
+      }),
     ]);
     if (Array.isArray(rB.data)) {
       bestellungen = rB.data;
     }
     if (Array.isArray(rA.data)) {
       artikelListe = rA.data;
+    }
+    if (Array.isArray(rM.data)) {
+      materialbestand = rM.data;
     }
   }
 

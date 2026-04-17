@@ -78,6 +78,7 @@
 <nav>
   <a class="nav-brand" href="index.html">LifeguardOrders</a>
   <a href="bestellungen.html">Bestellungen</a>
+  <a href="materialbestand.html">Materialbestand</a>
   <a href="rechnungen.html">Rechnungen</a>
   <a href="kassenwart.html">Kassenwart</a>
   <a href="dashboard.html">Dashboard</a>
@@ -112,6 +113,13 @@
       <div class="kachel-titel">Rechnungen</div>
       <div class="kachel-desc">Rechnungen an Mitglieder erstellen und als PDF herunterladen.</div>
       <div class="kachel-stat" id="stat-rechnungen">Lade…</div>
+    </a>
+
+    <a class="kachel" href="materialbestand.html">
+      <div class="kachel-icon">📦</div>
+      <div class="kachel-titel">Materialbestand</div>
+      <div class="kachel-desc">Lagerposten mit Nummer, Bezeichnung, Variante und verfügbarem Bestand pflegen.</div>
+      <div class="kachel-stat" id="stat-material">Lade…</div>
     </a>
 
     <a class="kachel" href="kassenwart.html">
@@ -150,6 +158,7 @@ import { getSyncState, pendingSyncScopes } from './src/sync.js';
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const STORAGE_KEY_B = 'lo_bestellungen';
+const STORAGE_KEY_M = 'lo_materialbestand';
 const STORAGE_KEY_R = 'lo_rechnungen';
 
 function setStat(id, text) {
@@ -160,6 +169,7 @@ function setStat(id, text) {
 // Kachel-Statistiken
 const artikel     = load(STORAGE_KEY_A) || [];
 const bestellungen = load(STORAGE_KEY_B) || [];
+const materialbestand = load(STORAGE_KEY_M) || [];
 const rechnungen  = load(STORAGE_KEY_R) || [];
 
 setStat('stat-artikel',
@@ -179,6 +189,13 @@ setStat('stat-rechnungen',
     ? html`<span>${offeneRechnungen}</span> offen von ${rechnungen.length}`
     : 'Noch keine Rechnungen');
 
+const aktivePosten = materialbestand.filter(e => e?.status !== 'aufgebraucht' && e?.status !== 'ausgesondert');
+const materialMenge = aktivePosten.reduce((summe, eintrag) => summe + (Number.isInteger(eintrag?.menge) ? eintrag.menge : 0), 0);
+setStat('stat-material',
+  materialbestand.length
+    ? html`<span>${materialMenge}</span> Stück in ${aktivePosten.length} aktiven Posten`
+    : 'Noch kein Bestand');
+
 // Setup-Hinweis wenn NC noch nicht konfiguriert
 const einstellungen = load(STORAGE_KEY_E);
 if (!einstellungen?.nc?.url) {
@@ -193,6 +210,7 @@ if (!einstellungen?.nc?.url) {
 const scopeLabel = {
   artikel: 'Artikel',
   bestellungen: 'Bestellungen',
+  materialbestand: 'Materialbestand',
   einstellungen: 'Einstellungen',
 };
 const pending = pendingSyncScopes(getSyncState());

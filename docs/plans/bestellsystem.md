@@ -68,7 +68,7 @@ und überführt die gelieferte Bestellung in eine finale Anprobe-/Verteilphase.
 **Erreicht:**
 - `src/abgleich.js`: `gleiche_ab`, `bauePositionenAusAbgleich` (Match, Mengenabweichung, nicht bestellt, nicht geliefert, OG-Kosten) mit Tests
 - `bestellung-abgleich.html`: Rechnungsimport, Abgleich-UI, Review, Übergang in Status `anprobe`
-- Nachschärfung: eigene Anprobe-Ansicht für finale Verteilung, Mitgliedswechsel, `retoureMenge`, `ogBestandMenge`
+- Nachschärfung: eigene Anprobe-Ansicht für finale Verteilung, Mitgliedswechsel, `retoureMenge`, `ogBestandMenge` (fachlich Lagerbestand)
 - Zusatz: "Wünsche direkt übernehmen" für Artikel ohne externe Rechnung (z.B. Lehrgänge)
 - Zusatz: "Bestellung wieder öffnen" setzt Status zurück
 - Nachschärfung: Mengenabweichung `ignorieren` erzeugt keine finale Position; nur `uebernehmen` übernimmt gelieferte Mengen
@@ -114,6 +114,10 @@ und verfolgt Zahlungen.
 
 ## Nachträgliche Erweiterungen (nach Sprint 05)
 
-- **Workflow-Erweiterung Anprobe:** neuer Status `anprobe` zwischen `bestellt` und `abgeschlossen`; finale Verteilung, Retoure und OG-Bestand werden in `positionen[]` gepflegt bevor Rechnungen erzeugt werden
+- **Workflow-Erweiterung Anprobe:** neuer Status `anprobe` zwischen `bestellt` und `abgeschlossen`; finale Verteilung, Retoure und Lagerbestand werden in `positionen[]` gepflegt bevor Rechnungen erzeugt werden
+- **Materialbestand:** neue Seite `materialbestand.html` plus `materialbestand.json` für manuell gepflegte Lagerposten mit Nummer, Bezeichnung, Variante, Menge und Status
+- **Anprobe -> Materialbestand:** Abschluss einer Bestellung erhöht passende Lagerposten automatisch; Zuordnung über Nummer + Variante + Bezeichnung, gleiche Posten werden zusammengeführt
+- **Materialbewegungen:** Materialseite erlaubt manuelle Zu- und Abgänge; jede Buchung landet als Bewegungslog direkt am Bestandsposten
+- **Lagerverkauf:** Materialseite kann Bestand direkt an ein Mitglied verkaufen; dabei entstehen Bestandsabgang, abgeschlossene Bestellung und Rechnung in einem Schritt auf Basis des aktuellen Katalogpreises
 - **Lehrgänge als Artikel** in `data/artikel.json`: 16 Einträge (8 Lehrgänge × Mitglied/Nichtmitglied, Präfix `LG-`)
 - **Mitglieder-Import JSON-Format** (`src/mitglieder.js`): Parser erkennt jetzt auch JSON-Schlüssel in Anführungszeichen (`"id": "value"`) zusätzlich zum JS-Literal-Format (`id: 'value'`)
