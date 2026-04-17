@@ -98,6 +98,7 @@ function schliesseArtikelDropdown() {
 
 function renderVarianteAuswahl(basisKey = '') {
   const select = document.getElementById('m-variante-auswahl');
+  const wrap = document.getElementById('m-variante-auswahl-wrap');
   const basis = gruppiereArtikelBasen().find(artikel => artikel.key === basisKey);
   const optionen = basis
     ? [...basis.varianten].sort((a, b) => a.localeCompare(b, 'de'))
@@ -112,6 +113,7 @@ function renderVarianteAuswahl(basisKey = '') {
     ? (aktuelleVariante || LEERE_VARIANTE)
     : '';
   select.disabled = optionen.length === 0;
+  wrap.style.display = optionen.length ? '' : 'none';
 }
 
 function synchronisiereArtikelFeldAusFormular() {

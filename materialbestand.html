@@ -228,18 +228,21 @@
       </div>
       <div class="field">
         <label for="m-nummer">Nummer der Materialstelle</label>
-        <input type="text" id="m-nummer" placeholder="4711">
+        <input type="text" id="m-nummer">
       </div>
       <div class="field">
         <label for="m-variante">Variante / Größe</label>
-        <input type="text" id="m-variante" placeholder="Gr 43">
-        <select id="m-variante-auswahl" style="margin-top:8px">
-          <option value="">Katalog-Variante wählen …</option>
-        </select>
+        <input type="text" id="m-variante">
+        <div id="m-variante-auswahl-wrap" class="text-sm" style="display:none;margin-top:8px;color:var(--text-2)">
+          <div style="margin-bottom:4px">Variante aus Katalog übernehmen:</div>
+          <select id="m-variante-auswahl">
+            <option value="">Katalog-Variante wählen …</option>
+          </select>
+        </div>
       </div>
       <div class="field span2">
         <label for="m-bezeichnung">Bezeichnung</label>
-        <input type="text" id="m-bezeichnung" placeholder="Einsatzhose">
+        <input type="text" id="m-bezeichnung">
       </div>
       <div class="field">
         <label for="m-menge">Menge</label>
