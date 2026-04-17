@@ -1,7 +1,8 @@
 @echo off
-echo Starte Entwicklungsserver auf http://localhost:3333
-echo Tests: http://localhost:3333/tests/test_parser.html
-echo Tests: http://localhost:3333/tests/test_abgleich.html
-echo Strg+C zum Beenden
-python -m http.server 3333 --directory "%~dp0"
-pause
+setlocal
+
+powershell -ExecutionPolicy Bypass -File "%~dp0start-server.ps1"
+set "exit_code=%errorlevel%"
+
+if not "%exit_code%"=="0" pause
+exit /b %exit_code%

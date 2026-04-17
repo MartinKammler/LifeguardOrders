@@ -93,6 +93,75 @@
       margin-bottom: 12px;
     }
     .legende-item { display: flex; align-items: center; gap: 4px; }
+
+    .anprobe-liste {
+      display: grid;
+      gap: 16px;
+    }
+    .anprobe-position {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      background: var(--surface2);
+    }
+    .anprobe-position.offen {
+      border-color: var(--amber);
+      box-shadow: inset 0 0 0 1px rgba(240, 192, 64, .18);
+    }
+    .anprobe-position.ungueltig {
+      border-color: var(--red);
+      box-shadow: inset 0 0 0 1px rgba(247, 110, 110, .18);
+    }
+    .anprobe-kopf {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .anprobe-meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      font-size: .8rem;
+      color: var(--text-2);
+      margin-top: 6px;
+    }
+    .anprobe-tabelle td,
+    .anprobe-tabelle th {
+      vertical-align: middle;
+    }
+    .anprobe-tabelle select,
+    .anprobe-tabelle input[type="number"] {
+      margin: 0;
+      min-width: 0;
+    }
+    .anprobe-extra-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+      align-items: end;
+    }
+    .anprobe-stat {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: .82rem;
+    }
+    .anprobe-stat strong {
+      font-size: .92rem;
+    }
+    .anprobe-hinweis {
+      font-size: .78rem;
+      color: var(--text-2);
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -196,20 +265,22 @@
   <!-- Abschließen -->
   <div class="flex gap-8 mt-16 card-hidden" style="justify-content:flex-end" id="div-aktionen">
     <a class="btn btn-ghost" href="bestellungen.html">Zurück</a>
-    <button class="btn btn-primary" id="btn-abschliessen" disabled>Bestellung abschließen</button>
+    <button class="btn btn-primary" id="btn-abschliessen" disabled>In Anprobe übernehmen</button>
   </div>
 
   <!-- Card: Positionen (abgeschlossen-Ansicht) -->
   <div class="card card-hidden" id="card-positionen">
-    <p class="section-label">Positionen</p>
+    <p class="section-label" id="label-positionen">Positionen</p>
     <div id="positionen-inhalt"></div>
   </div>
 
   <!-- Card: Rechnungen erzeugen -->
   <div class="card card-hidden" id="card-rechnungen">
-    <p class="section-label">Rechnungen</p>
+    <p class="section-label" id="label-rechnungen">Rechnungen</p>
     <div id="rechnungen-inhalt"></div>
     <div class="flex gap-8 mt-16" style="align-items:center;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" id="btn-anprobe-speichern" style="display:none">Anprobe speichern</button>
+      <button class="btn btn-primary btn-sm" id="btn-anprobe-abschliessen" style="display:none">Anprobe abschließen</button>
       <button class="btn btn-primary btn-sm" id="btn-alle-rechnungen">Alle Rechnungen erzeugen</button>
       <a class="btn btn-ghost btn-sm" href="rechnungen.html">Rechnungsübersicht →</a>
       <span id="rechnungen-status"></span>
@@ -230,6 +301,9 @@ import {
   abweichKey,
   verteileGelieferteMenge,
   bauePositionenAusAbgleich,
+  offeneMenge,
+  normalisierePosition,
+  summeZuweisung,
 } from './src/abgleich.js';
 import { createWebDavClient }               from './src/webdav.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
@@ -275,8 +349,107 @@ function mitgliedName(id) {
 }
 
 function statusLabel(s) {
-  const map = { sammlung: 'Sammlung läuft', bestellt: 'Bestellt', abgeschlossen: 'Abgeschlossen' };
+  const map = {
+    sammlung: 'Sammlung läuft',
+    bestellt: 'Bestellt',
+    anprobe: 'Anprobe',
+    abgeschlossen: 'Abgeschlossen',
+  };
   return map[s] || 'Unbekannt';
+}
+
+function parseNichtNegativeGanzzahl(value) {
+  const num = parseInt(value, 10);
+  return Number.isInteger(num) && num >= 0 ? num : 0;
+}
+
+function mitgliedOptionen() {
+  return [
+    { id: OG_ID, name: 'Ortsgruppe (OG-eigener Bedarf)' },
+    ...[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de')),
+  ];
+}
+
+function renderMitgliedOptionen(selectedId) {
+  return html`${mitgliedOptionen().map(option => html`
+    <option value="${option.id}"${selectedId === option.id ? raw(' selected') : raw('')}>${option.name}</option>
+  `)}`;
+}
+
+function klonePosition(position) {
+  return {
+    ...position,
+    zuweisung: (position.zuweisung || []).map(z => ({ ...z })),
+  };
+}
+
+function aktualisiereStatusAnzeige() {
+  setHTML(document.getElementById('info-status'), html`<span class="badge badge-blue">${statusLabel(bestellung.status)}</span>`);
+}
+
+function pruefeAnprobePositionen(positionen = bestellung.positionen || []) {
+  const artikelPositionen = positionen.filter(p => p.typ === 'artikel').map(normalisierePosition);
+  const offene = [];
+  const invalid = [];
+
+  artikelPositionen.forEach((position, index) => {
+    const validierung = validatePosition(position);
+    if (!validierung.ok) {
+      invalid.push({ index, position, fehler: validierung.fehler });
+    }
+
+    const rest = offeneMenge(position);
+    if (rest !== 0) {
+      offene.push({ index, position, rest });
+    }
+  });
+
+  return {
+    ok: offene.length === 0 && invalid.length === 0,
+    offene,
+    invalid,
+  };
+}
+
+function findeFreiesMitgliedId(position) {
+  const verwendet = new Set((position.zuweisung || []).map(z => z.mitgliedId));
+  const frei = mitgliedOptionen().find(option => !verwendet.has(option.id));
+  return frei?.id || null;
+}
+
+function aktualisierePosition(positionId, mutator) {
+  const positionen = (bestellung.positionen || []).map(position => {
+    if (position.id !== positionId || position.typ !== 'artikel') return position;
+    const klon = klonePosition(position);
+    mutator(klon);
+    return normalisierePosition(klon);
+  });
+  bestellung = { ...bestellung, positionen };
+  renderPositionenCard();
+  renderRechnungenCard();
+}
+
+function persistiereBestellung(bestellungNeu, statusText) {
+  const idx = bestellungen.findIndex(b => b.id === bestellungNeu.id);
+  if (idx < 0) return null;
+  bestellungen[idx] = bestellungNeu;
+  bestellung = bestellungen[idx];
+  aktualisiereStatusAnzeige();
+
+  return persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  }).then(gespeichert => {
+    if (gespeichert.sync?.pending) {
+      zeigeStatus(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn');
+    } else if (statusText) {
+      zeigeStatus(statusText, 'ok');
+    }
+    return gespeichert;
+  });
 }
 
 /* ── Zuweisung berechnen ─────────────────────────────────────── */
@@ -299,7 +472,7 @@ function renderAbgleich() {
   for (const m of gematch) {
     const key = `${m.wunsch.artikelNr}\x00${m.wunsch.variante}`;
     const zuw = berechneZuweisung(m.wunsch.artikelNr, m.wunsch.variante, m.position.menge);
-    const zuwHtml = raw(zuw.map(z => html`<span>${z.name} ×${z.zugeteiltMenge}</span>`).join(''));
+    const zuwHtml = html`${zuw.map(z => html`<span>${z.name} ×${z.zugeteiltMenge}</span>`)}`;
     rows.push(html`
       <tr class="abgleich-row-match" data-key="${key}">
         <td><span class="status-dot dot-green"></span></td>
@@ -330,7 +503,7 @@ function renderAbgleich() {
       bestellt  = String(a.erwartet);
       geliefert = String(a.geliefert);
       const zuw = berechneZuweisung(a.wunsch.artikelNr, a.wunsch.variante, a.geliefert);
-      zuwHtml   = raw(zuw.map(z => html`<span>${z.name} ×${z.zugeteiltMenge}</span>`).join(''));
+      zuwHtml   = html`${zuw.map(z => html`<span>${z.name} ×${z.zugeteiltMenge}</span>`)}`;
 
       if (!istAufgeloest) {
         aktionenHtml = raw(html`<div class="aufloes-aktion">
@@ -463,17 +636,189 @@ function renderPositionenCard() {
   const el = document.getElementById('positionen-inhalt');
   const positionen = (bestellung.positionen || []).filter(p => p.typ !== 'og-kosten');
   const ogKosten   = (bestellung.positionen || []).filter(p => p.typ === 'og-kosten');
+  const istAnprobe = bestellung.status === 'anprobe';
+
+  document.getElementById('label-positionen').textContent = istAnprobe ? 'Anprobe / Verteilung' : 'Positionen';
 
   if (!positionen.length) {
     setHTML(el, '<p class="text-sm">Keine Artikel-Positionen gespeichert.</p>');
     return;
   }
 
+  if (istAnprobe) {
+    const cards = positionen.map(originalPosition => {
+      const position = normalisierePosition(originalPosition);
+      const rest = offeneMenge(position);
+      const validierung = validatePosition(position);
+      const cardKlasse = !validierung.ok ? 'anprobe-position ungueltig' : (rest !== 0 ? 'anprobe-position offen' : 'anprobe-position');
+      const statusBadge = !validierung.ok
+        ? raw('<span class="badge badge-red">Ungültig</span>')
+        : rest === 0
+          ? raw('<span class="badge badge-green">Vollständig verteilt</span>')
+          : raw(html`<span class="badge badge-amber">Offen: ${rest}</span>`);
+      const zuweisungen = position.zuweisung || [];
+
+      return html`
+        <div class="${cardKlasse}">
+          <div class="anprobe-kopf">
+            <div>
+              <strong>${position.name}</strong>
+              ${position.variante ? raw(html` <span class="badge badge-blue">${position.variante}</span>`) : raw('')}
+              <div class="anprobe-meta">
+                <span>Geliefert: <strong>${position.menge}</strong></span>
+                <span>Zugewiesen: <strong>${summeZuweisung(position)}</strong></span>
+                <span>Retoure: <strong>${position.retoureMenge || 0}</strong></span>
+                <span>OG-Bestand: <strong>${position.ogBestandMenge || 0}</strong></span>
+              </div>
+            </div>
+            <div>${statusBadge}</div>
+          </div>
+
+          <table class="anprobe-tabelle">
+            <thead>
+              <tr>
+                <th>Mitglied</th>
+                <th style="text-align:right">Menge</th>
+                <th>OG-kostenlos</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${zuweisungen.map((z, index) => html`
+                <tr>
+                  <td>
+                    <select data-pos-id="${position.id}" data-zuweisung-index="${index}" data-field="mitgliedId">
+                      ${renderMitgliedOptionen(z.mitgliedId)}
+                    </select>
+                  </td>
+                  <td style="text-align:right">
+                    <input
+                      type="number"
+                      min="0"
+                      value="${z.menge}"
+                      data-pos-id="${position.id}"
+                      data-zuweisung-index="${index}"
+                      data-field="menge">
+                  </td>
+                  <td>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:.82rem">
+                      <input
+                        type="checkbox"
+                        ${z.ogKostenlos ? raw('checked') : raw('')}
+                        data-pos-id="${position.id}"
+                        data-zuweisung-index="${index}"
+                        data-field="ogKostenlos">
+                      OG übernimmt
+                    </label>
+                  </td>
+                  <td style="text-align:right">
+                    <button class="btn btn-danger btn-sm" data-anprobe-remove="${position.id}" data-zuweisung-index="${index}">×</button>
+                  </td>
+                </tr>
+              `)}
+            </tbody>
+          </table>
+
+          <div class="anprobe-extra-grid">
+            <div class="field">
+              <label for="retoure-${position.id}">Retoure</label>
+              <input type="number" id="retoure-${position.id}" min="0" value="${position.retoureMenge || 0}" data-pos-id="${position.id}" data-field="retoureMenge">
+            </div>
+            <div class="field">
+              <label for="og-${position.id}">OG-Bestand</label>
+              <input type="number" id="og-${position.id}" min="0" value="${position.ogBestandMenge || 0}" data-pos-id="${position.id}" data-field="ogBestandMenge">
+            </div>
+            <div class="anprobe-stat">
+              <span>Offene Menge</span>
+              <strong style="color:${rest === 0 ? 'var(--green)' : (!validierung.ok ? 'var(--red)' : 'var(--amber)')}">${rest}</strong>
+            </div>
+          </div>
+
+          <div class="flex gap-8 mt-16" style="align-items:center;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" data-anprobe-add="${position.id}">Mitglied hinzufügen</button>
+            <span class="anprobe-hinweis">
+              Mitgliederwechsel: Menge anpassen oder Mitglied in der Zeile umstellen. Abschluss erst bei offener Menge 0.
+            </span>
+          </div>
+          ${!validierung.ok ? raw(html`<div class="hinweis hinweis-warn" style="margin-top:12px">${validierung.fehler}</div>`) : raw('')}
+        </div>`;
+    });
+
+    let ogHtml = raw('');
+    if (ogKosten.length) {
+      ogHtml = raw(html`
+        <div class="hinweis hinweis-info">
+          OG-Kosten bleiben unverändert in der Bestellung: ${ogKosten.map(k => `${k.name} ×${k.menge}`).join(', ')}.
+        </div>`);
+    }
+
+    setHTML(el, html`<div class="anprobe-liste">${cards}</div>${ogHtml}`);
+
+    el.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('change', e => {
+        const positionId = e.target.dataset.posId;
+        const field = e.target.dataset.field;
+        const index = parseInt(e.target.dataset.zuweisungIndex, 10);
+
+        aktualisierePosition(positionId, position => {
+          if (field === 'retoureMenge' || field === 'ogBestandMenge') {
+            position[field] = parseNichtNegativeGanzzahl(e.target.value);
+            return;
+          }
+
+          const eintrag = position.zuweisung?.[index];
+          if (!eintrag) return;
+          if (field === 'mitgliedId') {
+            eintrag.mitgliedId = e.target.value;
+          } else if (field === 'menge') {
+            eintrag.menge = parseNichtNegativeGanzzahl(e.target.value);
+          } else if (field === 'ogKostenlos') {
+            eintrag.ogKostenlos = !!e.target.checked;
+          }
+        });
+      });
+    });
+
+    el.querySelectorAll('[data-anprobe-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const positionId = btn.dataset.anprobeRemove;
+        const index = parseInt(btn.dataset.zuweisungIndex, 10);
+        aktualisierePosition(positionId, position => {
+          position.zuweisung.splice(index, 1);
+        });
+      });
+    });
+
+    el.querySelectorAll('[data-anprobe-add]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const positionId = btn.dataset.anprobeAdd;
+        aktualisierePosition(positionId, position => {
+          const mitgliedId = findeFreiesMitgliedId(position);
+          if (!mitgliedId) {
+            alert('Alle verfügbaren Mitglieder sind bereits in dieser Position vorhanden.');
+            return;
+          }
+          position.zuweisung.push({
+            mitgliedId,
+            menge: 0,
+            ogAnteil: 0,
+            ogKostenlos: false,
+          });
+        });
+      });
+    });
+    return;
+  }
+
   const rows = positionen.map(p => {
-    const zuwHtml = raw((p.zuweisung || [])
+    const extras = [];
+    if ((p.retoureMenge || 0) > 0) extras.push(html`<span class="badge badge-red">Retoure ×${p.retoureMenge}</span>`);
+    if ((p.ogBestandMenge || 0) > 0) extras.push(html`<span class="badge badge-blue">OG-Bestand ×${p.ogBestandMenge}</span>`);
+
+    const zuwHtml = html`${(p.zuweisung || [])
       .filter(z => z.menge > 0)
       .map(z => html`<span>${mitgliedName(z.mitgliedId)} ×${z.menge}</span>`)
-      .join(' '));
+      .concat(extras)}`;
     return html`
       <tr>
         <td>${p.name}${p.variante ? raw(html` <span class="badge badge-blue">${p.variante}</span>`) : raw('')}</td>
@@ -490,7 +835,7 @@ function renderPositionenCard() {
         <td style="text-align:right">${k.menge}</td>
         <td class="zuweisung-liste" style="color:var(--blue)">OG</td>
       </tr>`);
-    ogHtml = raw(ogRows.join(''));
+    ogHtml = html`${ogRows}`;
   }
 
   setHTML(el, html`
@@ -508,6 +853,39 @@ function renderPositionenCard() {
 
 function renderRechnungenCard() {
   const el          = document.getElementById('rechnungen-inhalt');
+  const btnSave     = document.getElementById('btn-anprobe-speichern');
+  const btnFinalize = document.getElementById('btn-anprobe-abschliessen');
+  const btnAlle     = document.getElementById('btn-alle-rechnungen');
+  const linkUebersicht = document.querySelector('a[href="rechnungen.html"]');
+  const btnWieder   = document.getElementById('btn-wieder-oeffnen');
+
+  if (bestellung.status === 'anprobe') {
+    const pruefung = pruefeAnprobePositionen();
+    document.getElementById('label-rechnungen').textContent = 'Abschluss';
+    btnSave.style.display = '';
+    btnFinalize.style.display = '';
+    btnAlle.style.display = 'none';
+    linkUebersicht.style.display = 'none';
+    btnWieder.style.display = '';
+    btnFinalize.disabled = !pruefung.ok;
+    btnFinalize.title = pruefung.ok
+      ? ''
+      : (pruefung.invalid[0]?.fehler || `${pruefung.offene.length} Position(en) haben noch offene Mengen.`);
+    setHTML(el, html`
+      <div class="hinweis ${pruefung.ok ? 'hinweis-info' : 'hinweis-warn'}">
+        ${pruefung.ok
+          ? 'Die Anprobe ist vollständig verteilt. Du kannst jetzt abschließen und danach Rechnungen erzeugen.'
+          : `Anprobe noch nicht abschließbar: ${pruefung.invalid.length} ungültig, ${pruefung.offene.length} mit offener Restmenge.`}
+      </div>`);
+    return;
+  }
+
+  document.getElementById('label-rechnungen').textContent = 'Rechnungen';
+  btnSave.style.display = 'none';
+  btnFinalize.style.display = 'none';
+  btnAlle.style.display = '';
+  linkUebersicht.style.display = '';
+  btnWieder.style.display = '';
   const ids         = betroffeneMitgliederIds();
   const vorhanden   = bestellung.rechnungen || [];
 
@@ -695,7 +1073,7 @@ document.getElementById('btn-direkt-uebernehmen').addEventListener('click', () =
 
 /* ── Abschließen ─────────────────────────────────────────────── */
 document.getElementById('btn-abschliessen').addEventListener('click', async () => {
-  if (!confirm('Bestellung jetzt abschließen? Dies kann nicht rückgängig gemacht werden.')) return;
+  if (!confirm('Bestellung jetzt in die Anprobe übernehmen? Rechnungen werden erst im nächsten Schritt freigeschaltet.')) return;
 
   const wunschValidierung = validateListe(bestellung.wuensche || [], validateWunsch);
   if (!wunschValidierung.ok) {
@@ -717,7 +1095,7 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
 
   bestellungen[idx] = {
     ...bestellung,
-    status:    'abgeschlossen',
+    status:    'anprobe',
     positionen,
     rechnungen: [],
   };
@@ -734,7 +1112,7 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
   }
 
-  // Zurück zur selben Seite → zeigt jetzt Rechnungen-Bereich
+  // Zurück zur selben Seite → zeigt jetzt Positions-/Anprobe-Bereich
   location.href = `bestellung-abgleich.html?id=${bestellung.id}`;
 });
 
@@ -752,6 +1130,60 @@ document.getElementById('btn-alle-rechnungen').addEventListener('click', async (
   }
   renderRechnungenCard();
   zeigeStatus(`✓ ${fehlende.length} Rechnung(en) erzeugt`, 'ok');
+});
+
+document.getElementById('btn-anprobe-speichern').addEventListener('click', async () => {
+  const positionen = (bestellung.positionen || []).map(position =>
+    position.typ === 'artikel' ? normalisierePosition(position) : position
+  );
+  const positionsValidierung = validateListe(
+    positionen.filter(p => p.typ === 'artikel'),
+    validatePosition
+  );
+  if (!positionsValidierung.ok) {
+    alert(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`);
+    return;
+  }
+
+  await persistiereBestellung({ ...bestellung, positionen }, '✓ Anprobe gespeichert');
+  renderPositionenCard();
+  renderRechnungenCard();
+});
+
+document.getElementById('btn-anprobe-abschliessen').addEventListener('click', async () => {
+  const positionen = (bestellung.positionen || []).map(position =>
+    position.typ === 'artikel'
+      ? (() => {
+          const normalisiert = normalisierePosition(position);
+          return {
+            ...normalisiert,
+            zuweisung: normalisiert.zuweisung.filter(z => z.menge > 0),
+          };
+        })()
+      : position
+  );
+
+  const positionsValidierung = validateListe(
+    positionen.filter(p => p.typ === 'artikel'),
+    validatePosition
+  );
+  if (!positionsValidierung.ok) {
+    alert(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`);
+    return;
+  }
+
+  const pruefung = pruefeAnprobePositionen(positionen);
+  if (!pruefung.ok) {
+    const meldung = pruefung.invalid[0]?.fehler || `Noch ${pruefung.offene.length} Position(en) mit offener Menge.`;
+    alert(meldung);
+    return;
+  }
+
+  if (!confirm('Anprobe jetzt abschließen? Danach können Rechnungen erzeugt werden.')) return;
+
+  await persistiereBestellung({ ...bestellung, status: 'abgeschlossen', positionen }, '✓ Anprobe abgeschlossen');
+  renderPositionenCard();
+  renderRechnungenCard();
 });
 
 /* ── Wieder öffnen ───────────────────────────────────────────── */
@@ -838,7 +1270,7 @@ async function init() {
   document.title = `Abgleich: ${bestellung.bezeichnung} – LifeguardOrders`;
   document.getElementById('seiten-titel').textContent = `Abgleich: ${bestellung.bezeichnung}`;
 
-  if (bestellung.status === 'abgeschlossen') {
+  if (bestellung.status === 'abgeschlossen' || bestellung.status === 'anprobe') {
     // Positionen + Rechnungen-Bereich anzeigen
     document.getElementById('card-positionen').classList.remove('card-hidden');
     document.getElementById('card-rechnungen').classList.remove('card-hidden');

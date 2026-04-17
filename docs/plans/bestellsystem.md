@@ -58,19 +58,21 @@ die CSV-Liste für das Materialstelle-Bestellformular.
 
 ---
 
-## Phase 3 — Sammelbestellung: Eingang & Abgleich ✅ ABGESCHLOSSEN
+## Phase 3 — Sammelbestellung: Eingang, Abgleich & Anprobe ✅ ABGESCHLOSSEN
 
 **Ziel:** Admin importiert die Materialstelle-Rechnung, gleicht sie mit den Wünschen ab
-und löst Abweichungen auf.
+und überführt die gelieferte Bestellung in eine finale Anprobe-/Verteilphase.
 
-**Stories:** 24–30
+**Stories:** 24–32
 
 **Erreicht:**
 - `src/abgleich.js`: `gleiche_ab`, `bauePositionenAusAbgleich` (Match, Mengenabweichung, nicht bestellt, nicht geliefert, OG-Kosten) mit Tests
-- `bestellung-abgleich.html`: Rechnungsimport, Abgleich-UI, Review, Zuweisung, OG-Kosten-Ansicht
+- `bestellung-abgleich.html`: Rechnungsimport, Abgleich-UI, Review, Übergang in Status `anprobe`
+- Nachschärfung: eigene Anprobe-Ansicht für finale Verteilung, Mitgliedswechsel, `retoureMenge`, `ogBestandMenge`
 - Zusatz: "Wünsche direkt übernehmen" für Artikel ohne externe Rechnung (z.B. Lehrgänge)
 - Zusatz: "Bestellung wieder öffnen" setzt Status zurück
 - Nachschärfung: Mengenabweichung `ignorieren` erzeugt keine finale Position; nur `uebernehmen` übernimmt gelieferte Mengen
+- Nachschärfung: Abschluss erst bei vollständiger Mengenbilanz je Position
 
 **Seiten:** `bestellung-abgleich.html`
 
@@ -78,13 +80,15 @@ und löst Abweichungen auf.
 
 ## Phase 4 — Rechnungen & Zahlungsverfolgung ✅ ABGESCHLOSSEN
 
-**Ziel:** Admin erzeugt PDF-Rechnungen je Mitglied und verfolgt Zahlungen.
+**Ziel:** Admin erzeugt PDF-Rechnungen je Mitglied aus der finalen Anprobe-Verteilung
+und verfolgt Zahlungen.
 
-**Stories:** 31–39
+**Stories:** 33–41
 
 **Erreicht:**
 - `src/pdf.js`: `erstelleRechnungsDaten`, `druckePDF` via jsPDF
 - `rechnungen.html`: Rechnungsübersicht mit Statistik-Karten, PDF-Download, Zahlungsstatus
+- Rechnungsfreigabe erst nach Status `abgeschlossen`; Status `anprobe` sperrt Rechnungserzeugung
 - Zahlungsfrist: 30 Tage ab Rechnungsdatum
 
 **Seiten:** `rechnungen.html`
@@ -95,7 +99,7 @@ und löst Abweichungen auf.
 
 **Ziel:** Vollständige Unterlagen für die Kasse + Einsatzstunden-Tracking.
 
-**Stories:** 40–55
+**Stories:** 42–57
 
 **Erreicht:**
 - `src/stunden.js`: `berechneStunden`, `verechneSchuld`, `fristDerAeltestenOffenenSchuld`, `ampelStatus`, `schuldFrist` mit Tests
@@ -110,5 +114,6 @@ und löst Abweichungen auf.
 
 ## Nachträgliche Erweiterungen (nach Sprint 05)
 
+- **Workflow-Erweiterung Anprobe:** neuer Status `anprobe` zwischen `bestellt` und `abgeschlossen`; finale Verteilung, Retoure und OG-Bestand werden in `positionen[]` gepflegt bevor Rechnungen erzeugt werden
 - **Lehrgänge als Artikel** in `data/artikel.json`: 16 Einträge (8 Lehrgänge × Mitglied/Nichtmitglied, Präfix `LG-`)
 - **Mitglieder-Import JSON-Format** (`src/mitglieder.js`): Parser erkennt jetzt auch JSON-Schlüssel in Anführungszeichen (`"id": "value"`) zusätzlich zum JS-Literal-Format (`id: 'value'`)

@@ -83,6 +83,53 @@ export function abweichKey(abweichung) {
   return `${basis.artikelNr || ''}\x00${basis.variante || ''}`;
 }
 
+export function summeZuweisung(position) {
+  return (position?.zuweisung || []).reduce((summe, eintrag) => {
+    const menge = Number.isInteger(eintrag?.menge) ? eintrag.menge : 0;
+    return summe + Math.max(0, menge);
+  }, 0);
+}
+
+export function offeneMenge(position) {
+  const menge = Number.isInteger(position?.menge) ? position.menge : 0;
+  const retoureMenge = Number.isInteger(position?.retoureMenge) ? position.retoureMenge : 0;
+  const ogBestandMenge = Number.isInteger(position?.ogBestandMenge) ? position.ogBestandMenge : 0;
+  return menge - summeZuweisung(position) - retoureMenge - ogBestandMenge;
+}
+
+export function normalisierePosition(position) {
+  const basis = {
+    ...position,
+    retoureMenge: Number.isInteger(position?.retoureMenge) ? Math.max(0, position.retoureMenge) : 0,
+    ogBestandMenge: Number.isInteger(position?.ogBestandMenge) ? Math.max(0, position.ogBestandMenge) : 0,
+  };
+
+  const map = new Map();
+  for (const eintrag of (position?.zuweisung || [])) {
+    if (!eintrag?.mitgliedId) continue;
+    const menge = Number.isInteger(eintrag.menge) ? Math.max(0, eintrag.menge) : 0;
+    if (!map.has(eintrag.mitgliedId)) {
+      map.set(eintrag.mitgliedId, {
+        mitgliedId: eintrag.mitgliedId,
+        menge,
+        ogAnteil: eintrag.ogAnteil || 0,
+        ogKostenlos: !!eintrag.ogKostenlos,
+      });
+      continue;
+    }
+
+    const vorhanden = map.get(eintrag.mitgliedId);
+    vorhanden.menge += menge;
+    vorhanden.ogAnteil = (vorhanden.ogAnteil || 0) + (eintrag.ogAnteil || 0);
+    vorhanden.ogKostenlos = vorhanden.ogKostenlos || !!eintrag.ogKostenlos;
+  }
+
+  return {
+    ...basis,
+    zuweisung: [...map.values()],
+  };
+}
+
 export function verteileGelieferteMenge(wuensche, artikelNr, variante, geliefertMenge) {
   const relevanteWuensche = (wuensche || []).filter(
     w => w.artikelNr === artikelNr && (w.variante || '') === (variante || '')
@@ -183,6 +230,8 @@ function baueArtikelPosition(position, wuensche, artikelListe) {
     ogUebernimmtRest: !!artikel?.ogUebernimmtRest,
     foerderungGespeichert: !!artikel,
     typ: 'artikel',
+    retoureMenge: 0,
+    ogBestandMenge: 0,
     zuweisung: verteilung.map(eintrag => ({
       mitgliedId: eintrag.mitgliedId,
       menge: eintrag.zugeteiltMenge,

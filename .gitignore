@@ -189,3 +189,4 @@ data/bestellungen.json
 
 # Temporäre Test-Artefakte
 tests/.tmp_test_*.mjs
+.tmp_boot_*.mjs

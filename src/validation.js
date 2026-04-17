@@ -20,6 +20,10 @@ function istPositiveGanzeZahl(value) {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
+function istNichtNegativeGanzeZahl(value) {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
 function istNichtNegativeZahl(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
@@ -42,6 +46,32 @@ export function validatePosition(p) {
   if (p.bvFoerderung != null && !istNichtNegativeZahl(p.bvFoerderung)) return err('bvFoerderung darf nicht negativ sein');
   if (p.lvFoerderung != null && !istNichtNegativeZahl(p.lvFoerderung)) return err('lvFoerderung darf nicht negativ sein');
   if (p.ogFoerderung != null && !istNichtNegativeZahl(p.ogFoerderung)) return err('ogFoerderung darf nicht negativ sein');
+
+  const retoureMenge = p.retoureMenge ?? 0;
+  if (!istNichtNegativeGanzeZahl(retoureMenge)) {
+    return err('retoureMenge muss eine nicht-negative ganze Zahl sein');
+  }
+
+  const ogBestandMenge = p.ogBestandMenge ?? 0;
+  if (!istNichtNegativeGanzeZahl(ogBestandMenge)) {
+    return err('ogBestandMenge muss eine nicht-negative ganze Zahl sein');
+  }
+
+  const zuweisungen = Array.isArray(p.zuweisung) ? p.zuweisung : [];
+  let zugewiesenGesamt = 0;
+  for (const z of zuweisungen) {
+    if (!z || typeof z !== 'object') return err('zuweisung muss ein Objekt sein');
+    if (leer(z.mitgliedId)) return err('zuweisung.mitgliedId darf nicht leer sein');
+    if (!istNichtNegativeGanzeZahl(z.menge)) {
+      return err('zuweisung.menge muss eine nicht-negative ganze Zahl sein');
+    }
+    zugewiesenGesamt += z.menge;
+  }
+
+  if (zugewiesenGesamt + retoureMenge + ogBestandMenge > p.menge) {
+    return err('zuweisung + retoure + OG-Bestand darf menge nicht überschreiten');
+  }
+
   return OK;
 }
 

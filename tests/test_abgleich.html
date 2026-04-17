@@ -22,7 +22,7 @@
 <div id="summary"></div>
 
 <script type="module">
-import { gleiche_ab } from '../src/abgleich.js';
+import { gleiche_ab, offeneMenge, normalisierePosition } from '../src/abgleich.js';
 
 /* ── Mini Test-Runner ───────────────────────────────────────── */
 const results = [];
@@ -237,6 +237,39 @@ await test('gleiche artikelNr, Variante weicht ab → nicht_geliefert + nicht_be
   const { abweichungen } = gleiche_ab([wL], [pS]);
   const typen = abweichungen.map(a => a.typ).sort();
   assertDeepEqual(typen, ['nicht_bestellt', 'nicht_geliefert']);
+});
+
+/* ── Tests: Anprobe-Helfer ──────────────────────────────────── */
+
+suite('abgleich.js — Anprobe-Helfer');
+
+await test('offeneMenge berücksichtigt Zuweisung, Retoure und OG-Bestand', () => {
+  const rest = offeneMenge({
+    menge: 7,
+    retoureMenge: 1,
+    ogBestandMenge: 2,
+    zuweisung: [
+      { mitgliedId: 'a', menge: 2 },
+      { mitgliedId: 'b', menge: 1 },
+    ],
+  });
+  assertEqual(rest, 1);
+});
+
+await test('normalisierePosition merged doppelte Mitglieder-Zuweisungen', () => {
+  const position = normalisierePosition({
+    menge: 4,
+    retoureMenge: 0,
+    ogBestandMenge: 0,
+    zuweisung: [
+      { mitgliedId: 'a', menge: 1, ogKostenlos: false },
+      { mitgliedId: 'a', menge: 2, ogKostenlos: true },
+      { mitgliedId: 'b', menge: 1, ogKostenlos: false },
+    ],
+  });
+  assertEqual(position.zuweisung.length, 2);
+  assertEqual(position.zuweisung[0].menge, 3);
+  assertEqual(position.zuweisung[0].ogKostenlos, true);
 });
 
 /* ── Render ─────────────────────────────────────────────────── */

@@ -342,6 +342,23 @@ function mitgliedName(id) {
   return m ? m.name : id;
 }
 
+function vergleichWunschSortierung(a, b) {
+  const mitgliedVergleich = mitgliedName(a.mitgliedId).localeCompare(mitgliedName(b.mitgliedId), 'de');
+  if (mitgliedVergleich !== 0) return mitgliedVergleich;
+
+  const nameVergleich = (a.name || '').localeCompare(b.name || '', 'de');
+  if (nameVergleich !== 0) return nameVergleich;
+
+  const variantenVergleich = (a.variante || '').localeCompare(b.variante || '', 'de');
+  if (variantenVergleich !== 0) return variantenVergleich;
+
+  return (a.artikelNr || '').localeCompare(b.artikelNr || '', 'de');
+}
+
+function sortiereWuenscheFuerAnzeige(liste) {
+  return [...liste].sort(vergleichWunschSortierung);
+}
+
 function artikelLabel(a) {
   const preis = a.einzelpreis != null ? ' — ' + eur(a.einzelpreis) : '';
   const variante = a.variante ? ' ' + a.variante : '';
@@ -368,9 +385,11 @@ function renderWunschliste() {
   cardWunsch.classList.remove('card-hidden');
   cardCsv.classList.remove('card-hidden');
 
+  const sortierteWuensche = sortiereWuenscheFuerAnzeige(wuensche);
+
   // Tabelle
   const tbody = document.getElementById('wunsch-tbody');
-  setHTML(tbody, html`${wuensche.map(w => html`
+  setHTML(tbody, html`${sortierteWuensche.map(w => html`
     <tr>
       <td>${mitgliedName(w.mitgliedId)}</td>
       <td>
@@ -410,7 +429,7 @@ function renderWunschliste() {
         ${agg.map(zeile => {
           const variante = zeile.variante ? raw(html` <span class="badge badge-blue">${zeile.variante}</span>`) : raw('');
           // Mitglieder die diesen Wunsch haben
-          const betroffene = wuensche
+          const betroffene = sortierteWuensche
             .filter(w => w.artikelNr === zeile.artikelNr && w.variante === zeile.variante)
             .map(w => mitgliedName(w.mitgliedId))
             .join(', ');

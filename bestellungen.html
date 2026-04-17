@@ -65,6 +65,7 @@ function statusBadge(status) {
   switch (status) {
     case 'sammlung':      return raw('<span class="badge badge-amber">Sammlung</span>');
     case 'bestellt':      return raw('<span class="badge badge-blue">Bestellt</span>');
+    case 'anprobe':       return raw('<span class="badge badge-amber">Anprobe</span>');
     case 'abgeschlossen': return raw('<span class="badge badge-green">Abgeschlossen</span>');
     default:              return raw('<span class="badge badge-amber">Sammlung</span>');
   }
@@ -72,7 +73,7 @@ function statusBadge(status) {
 
 
 function mengenInfo(b) {
-  if (b.status === 'abgeschlossen') {
+  if (b.status === 'abgeschlossen' || b.status === 'anprobe') {
     const artikel = (b.positionen || []).filter(p => p.typ === 'artikel');
     return raw(html`<span style="color:var(--green)">${artikel.length}</span>
             <span class="meta"> Position${artikel.length !== 1 ? 'en' : ''}</span>`);
@@ -90,6 +91,8 @@ function aktionenHtml(b) {
     case 'bestellt':
       return raw(html`<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${encodeURIComponent(b.id)}">Bearbeiten</a>
               <a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${encodeURIComponent(b.id)}">Abgleich</a>`);
+    case 'anprobe':
+      return raw(html`<a class="btn btn-primary btn-sm" href="bestellung-abgleich.html?id=${encodeURIComponent(b.id)}">Anprobe</a>`);
     case 'abgeschlossen':
       return raw(html`<a class="btn btn-ghost btn-sm" href="bestellung-abgleich.html?id=${encodeURIComponent(b.id)}">Ansehen</a>
               <button class="btn btn-ghost btn-sm" data-aktion="wieder-oeffnen" data-id="${b.id}">Wieder öffnen</button>`);

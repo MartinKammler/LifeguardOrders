@@ -236,6 +236,24 @@ test('bauePositionenAusAbgleich speichert OG-Foerderdaten aus dem Katalog als Sn
   assertEqual(positionen[0].foerderungGespeichert, true, 'Position muss als Snapshot markiert werden');
 });
 
+test('bauePositionenAusAbgleich initialisiert Anprobe-Felder mit 0', () => {
+  const positionen = bauePositionenAusAbgleich({
+    gematch: [
+      {
+        wunsch: { artikelNr: 'A1', variante: '', name: 'Jacke', menge: 1 },
+        position: { artikelNr: 'A1', variante: '', name: 'Jacke', menge: 1, einzelpreis: 20, bvFoerderung: 5, lvFoerderung: 3 },
+      },
+    ],
+    abweichungen: [],
+    og_kosten: [],
+  }, [
+    { mitgliedId: 'max', artikelNr: 'A1', variante: '', name: 'Jacke', menge: 1, ogKostenlos: false },
+  ], [], new Map());
+
+  assertEqual(positionen[0].retoureMenge, 0, 'Retoure-Menge muss initial 0 sein');
+  assertEqual(positionen[0].ogBestandMenge, 0, 'OG-Bestand-Menge muss initial 0 sein');
+});
+
 test('bauePositionenAusAbgleich uebernimmt OG-Kosten separat', () => {
   const positionen = bauePositionenAusAbgleich({
     gematch: [],

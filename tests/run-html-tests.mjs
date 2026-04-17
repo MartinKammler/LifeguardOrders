@@ -5,7 +5,21 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+async function cleanupLeftovers() {
+  const projectRoot = path.resolve(__dirname, '..');
+  const [testFiles, rootFiles] = await Promise.all([
+    fs.readdir(__dirname),
+    fs.readdir(projectRoot),
+  ]);
+  const toDelete = [
+    ...testFiles.filter(n => /^\.tmp_test_.*\.mjs$/.test(n)).map(n => path.join(__dirname, n)),
+    ...rootFiles.filter(n => /^\.tmp_boot_.*\.mjs$/.test(n)).map(n => path.join(projectRoot, n)),
+  ];
+  await Promise.all(toDelete.map(f => fs.unlink(f).catch(() => {})));
+}
+
 async function main() {
+  await cleanupLeftovers();
   const requested = process.argv.slice(2);
   const htmlFiles = requested.length
     ? requested.map(file => path.resolve(process.cwd(), file))
