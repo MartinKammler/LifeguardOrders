@@ -21,6 +21,9 @@
 </nav>
 
 <div class="container">
+  <div id="sync-pending-banner" style="display:none;background:var(--amber-bg,#fffbeb);border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:10px 16px;margin-bottom:16px;color:var(--text);font-size:.9rem">
+    ⚠ Änderungen konnten nicht mit Nextcloud synchronisiert werden und warten auf die nächste Verbindung.
+  </div>
   <div class="flex gap-8" style="align-items:center;margin-bottom:20px">
     <h1 style="margin:0;flex:1">Bestellungen</h1>
     <a class="btn btn-primary btn-sm" href="bestellung-sammeln.html">+ Neue Bestellung</a>
@@ -44,6 +47,8 @@ import {
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
+  pendingSyncScopes,
+  STORAGE_KEY_SYNC,
 } from './src/sync.js';
 
 const STORAGE_KEY_E = 'lo_einstellungen';
@@ -198,6 +203,7 @@ async function init() {
   if (lokal) bestellungen = lokal;
 
   if (client) {
+    setHTML(document.getElementById('liste-inhalt'), '<p class="meta" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>');
     const r = await hydrateJsonFromSync({
       scope: SYNC_SCOPE_B,
       storageKey: STORAGE_KEY_B,
@@ -211,6 +217,21 @@ async function init() {
   }
 
   render();
+
+  const syncState = load(STORAGE_KEY_SYNC) || {};
+  if (pendingSyncScopes(syncState).length > 0) {
+    document.getElementById('sync-pending-banner').style.display = '';
+  }
+
+  if (new URLSearchParams(location.search).get('saved')) {
+    const banner = document.createElement('div');
+    banner.textContent = '✓ Wünsche gespeichert';
+    banner.className = 'badge badge-green';
+    banner.style.cssText = 'position:fixed;bottom:24px;right:24px;padding:10px 18px;font-size:.95rem;z-index:999';
+    document.body.appendChild(banner);
+    setTimeout(() => banner.remove(), 3000);
+    history.replaceState(null, '', location.pathname);
+  }
 }
 
 init();

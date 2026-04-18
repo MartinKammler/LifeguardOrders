@@ -101,7 +101,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="./lib/jspdf.umd.min.js"></script>
 <script type="module">
 import { load }               from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
@@ -294,6 +294,7 @@ async function init() {
   bestellungen = load(STORAGE_KEY_B) || [];
 
   if (client) {
+    setHTML(document.getElementById('rechnungen-tabelle-container'), '<p class="meta" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>');
     const r = await hydrateJsonFromSync({
       scope: SYNC_SCOPE_B,
       storageKey: STORAGE_KEY_B,

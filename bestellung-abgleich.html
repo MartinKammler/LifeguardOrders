@@ -291,7 +291,7 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="./lib/jspdf.umd.min.js"></script>
 <script type="module">
 import { OG_ID }                            from './src/konstanten.js';
 import { load }                              from './src/storage.js';
@@ -1179,6 +1179,8 @@ document.getElementById('btn-alle-rechnungen').addEventListener('click', async (
 
   if (!fehlende.length) return;
 
+  if (fehlende.length > 1 && !confirm(`${fehlende.length} PDFs werden jetzt heruntergeladen. Fortfahren?`)) return;
+
   zeigeStatus('Erzeuge…', 'info');
   for (const mid of fehlende) {
     await erzeugeRechnungFuerMitglied(mid);
@@ -1254,7 +1256,7 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
   const lagerHinweis = bestellung.status === 'abgeschlossen' && hatLagerbestand
     ? '\nDer daraus gebuchte Lagerbestand wird dabei wieder abgezogen.'
     : '';
-  if (!confirm(`Bestellung wieder öffnen?\n\nPositionen und Rechnungen werden gelöscht. Wünsche bleiben erhalten.\nDer Abgleich kann danach erneut durchgeführt werden.${lagerHinweis}`)) return;
+  if (!confirm(`Bestellung wieder öffnen?\n\nPositionen und Rechnungen werden im System zurückgesetzt. Wünsche bleiben erhalten. Bereits gedruckte PDFs sind davon nicht betroffen.\nDer Abgleich kann danach erneut durchgeführt werden.${lagerHinweis}`)) return;
 
   const idx = bestellungen.findIndex(b => b.id === bestellung.id);
   if (idx < 0) return;

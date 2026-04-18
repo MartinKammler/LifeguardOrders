@@ -5,7 +5,7 @@
 
 import { createWebDavClient }                        from './webdav.js';
 import { parseMitglieder }                           from './mitglieder.js';
-import { ladeDefaultEinstellungen, downloadAlsJson } from './defaults.js';
+import { downloadAlsJson } from './defaults.js';
 import { load, save }                                from './storage.js';
 import {
   hydrateJsonFromSync,
@@ -62,7 +62,9 @@ function zeigeStatus(elId, text, art = 'info') {
 }
 
 function ladeClient(einstellungen) {
-  return createWebDavClient(einstellungen.nc || {});
+  const nc = einstellungen.nc || {};
+  if (!nc.url || !nc.user) return null;
+  return createWebDavClient(nc);
 }
 
 /* ── Einstellungen lesen / schreiben ────────────────────────── */
@@ -200,7 +202,7 @@ document.getElementById('btn-mitglieder-import').addEventListener('click', () =>
 
   zeigeNcMitglieder(mitglieder);
   zeigeStatus('mitglieder-status',
-    `✓ ${mitglieder.length} importiert${fehler.length ? `, ${fehler.length} Zeilen ignoriert` : ''}`,
+    `✓ ${mitglieder.length} Mitglieder gespeichert${fehler.length ? ` (${fehler.length} Zeilen ignoriert)` : ''} – kein weiteres Speichern nötig`,
     fehler.length ? 'warn' : 'ok');
 });
 
@@ -248,14 +250,6 @@ document.getElementById('btn-download-einstellungen')?.addEventListener('click',
 async function init() {
   // 1. Erst localStorage
   let lokal = leseLokal();
-
-  // 2. Kein localStorage → data/einstellungen.json als Fallback
-  if (!lokal) {
-    lokal = await ladeDefaultEinstellungen();
-    if (lokal) {
-      schreibeLokal(lokal);
-    }
-  }
 
   if (lokal) {
     formularFuellen(lokal);
