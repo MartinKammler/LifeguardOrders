@@ -107,7 +107,7 @@ import { load }               from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { druckePDF }           from './src/pdf.js';
 import { html, raw, setHTML }  from './src/dom.js';
-import { OG_ID }               from './src/konstanten.js';
+import { EXTERN_ID, OG_ID }    from './src/konstanten.js';
 import {
   hydrateJsonFromSync,
   persistJsonWithSync,
@@ -133,6 +133,7 @@ function eur(v) {
 
 function mitgliedName(id) {
   if (id === OG_ID) return 'Ortsgruppe';
+  if (id === EXTERN_ID) return 'Extern';
   const m = mitglieder.find(m => m.id === id);
   return m ? m.name : id;
 }

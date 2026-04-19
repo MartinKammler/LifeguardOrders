@@ -108,8 +108,9 @@ export function normalisierePosition(position) {
   for (const eintrag of (position?.zuweisung || [])) {
     if (!eintrag?.mitgliedId) continue;
     const menge = Number.isInteger(eintrag.menge) ? Math.max(0, eintrag.menge) : 0;
-    if (!map.has(eintrag.mitgliedId)) {
-      map.set(eintrag.mitgliedId, {
+    const key = `${eintrag.mitgliedId}\x00${eintrag.ogKostenlos ? '1' : '0'}`;
+    if (!map.has(key)) {
+      map.set(key, {
         mitgliedId: eintrag.mitgliedId,
         menge,
         ogAnteil: eintrag.ogAnteil || 0,
@@ -118,10 +119,9 @@ export function normalisierePosition(position) {
       continue;
     }
 
-    const vorhanden = map.get(eintrag.mitgliedId);
+    const vorhanden = map.get(key);
     vorhanden.menge += menge;
     vorhanden.ogAnteil = (vorhanden.ogAnteil || 0) + (eintrag.ogAnteil || 0);
-    vorhanden.ogKostenlos = vorhanden.ogKostenlos || !!eintrag.ogKostenlos;
   }
 
   return {

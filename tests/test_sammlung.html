@@ -180,6 +180,16 @@ await test('ogKostenlos-Flag bleibt erhalten nach Merge', () => {
   assertEqual(result[0].ogKostenlos, true);
 });
 
+await test('gleicher Artikel mit unterschiedlichem ogKostenlos bleibt getrennt', () => {
+  const result = mergeWuensche([
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1, ogKostenlos: true },
+    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1, ogKostenlos: false },
+  ]);
+  assertEqual(result.length, 2);
+  assertEqual(result[0].ogKostenlos, true);
+  assertEqual(result[1].ogKostenlos, false);
+});
+
 await test('Reihenfolge bleibt erhalten (Eingabereihenfolge, kein Sort)', () => {
   const result = mergeWuensche([
     { id: 'z', mitgliedId: 'z', artikelNr: 'Z999', variante: '', name: 'Z', menge: 1 },

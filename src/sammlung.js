@@ -105,7 +105,7 @@ export function validiereWunsch(wunsch) {
 }
 
 /**
- * Fasst Wünsche mit gleicher mitgliedId + artikelNr + variante zusammen.
+ * Fasst Wünsche mit gleicher mitgliedId + artikelNr + variante + ogKostenlos zusammen.
  * Die Menge wird summiert. Id, name, ogKostenlos und alle anderen Felder
  * vom ersten Eintrag behalten.
  *
@@ -121,7 +121,7 @@ export function mergeWuensche(wuensche) {
   const map = new Map();
 
   for (const w of wuensche) {
-    const key = `${w.mitgliedId}\x00${w.artikelNr}\x00${w.variante}`;
+    const key = `${w.mitgliedId}\x00${w.artikelNr}\x00${w.variante}\x00${w.ogKostenlos ? '1' : '0'}`;
     if (map.has(key)) {
       map.get(key).menge += w.menge;
     } else {

@@ -1,10 +1,13 @@
 import { berechneFoerderung } from './berechnung.js';
+import { EXTERN_ID, OG_ID } from './konstanten.js';
 
 function runde(v) {
   return Math.round((v || 0) * 100) / 100;
 }
 
 function resolveMitgliedName(mitglieder, id) {
+  if (id === OG_ID) return 'Ortsgruppe';
+  if (id === EXTERN_ID) return 'Extern';
   const mitglied = (mitglieder || []).find(m => m.id === id);
   return mitglied ? mitglied.name : id;
 }

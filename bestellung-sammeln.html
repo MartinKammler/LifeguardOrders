@@ -202,8 +202,9 @@
 
     <!-- Hinweis: keine Mitglieder -->
     <div id="hinweis-keine-mitglieder" class="hinweis hinweis-warn" style="display:none">
-      Keine Mitglieder gefunden.
-      <a href="einstellungen.html" style="color:inherit;text-decoration:underline">Bitte zuerst Mitglieder anlegen.</a>
+      Keine internen Mitglieder gefunden.
+      Extern und Ortsgruppe sind trotzdem auswählbar.
+      <a href="einstellungen.html" style="color:inherit;text-decoration:underline">Mitglieder kannst du später in den Einstellungen anlegen.</a>
     </div>
 
     <!-- Hinweis: kein Artikel -->
@@ -327,7 +328,7 @@
 </div>
 
 <script type="module">
-import { OG_ID }              from './src/konstanten.js';
+import { EXTERN_ID, OG_ID }   from './src/konstanten.js';
 import { load }               from './src/storage.js';
 import { aggregiereWuensche, berechneBestellsummen, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
@@ -373,6 +374,7 @@ function eur(v) {
 
 function mitgliedName(id) {
   if (id === OG_ID) return 'Ortsgruppe';
+  if (id === EXTERN_ID) return 'Extern';
   const m = mitglieder.find(m => m.id === id);
   return m ? m.name : id;
 }
@@ -699,6 +701,7 @@ function oeffneBearbeitenModal(id) {
   const selMitglied = document.getElementById('sel-mitglied-edit');
   setHTML(selMitglied, html`
     <option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>
+    <option value="${EXTERN_ID}">Extern</option>
     ${[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
       .map(m => html`<option value="${m.id}">${m.name}</option>`)}
   `);
@@ -788,16 +791,12 @@ function befuelleSelects() {
 
   // Mitglieder
   const hinweisMitglied = document.getElementById('hinweis-keine-mitglieder');
-  if (!mitglieder.length) {
-    hinweisMitglied.style.display = '';
-    document.getElementById('wunsch-formular').style.display = 'none';
-  } else {
-    hinweisMitglied.style.display = 'none';
-    setHTML(selMitglied, html`<option value="">– bitte wählen –</option>
-      <option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>
-      ${[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
-        .map(m => html`<option value="${m.id}">${m.name}</option>`)}`);
-  }
+  hinweisMitglied.style.display = mitglieder.length ? 'none' : '';
+  setHTML(selMitglied, html`<option value="">– bitte wählen –</option>
+    <option value="${OG_ID}">Ortsgruppe (OG-eigener Bedarf)</option>
+    <option value="${EXTERN_ID}">Extern</option>
+    ${[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+      .map(m => html`<option value="${m.id}">${m.name}</option>`)}`);
 
   // Artikel
   const hinweisArtikel = document.getElementById('hinweis-kein-artikel');
@@ -818,7 +817,7 @@ function befuelleSelects() {
   }
 
   // Formular nur zeigen wenn beides vorhanden
-  if (mitglieder.length && artikelListe.length) {
+  if (artikelListe.length) {
     document.getElementById('wunsch-formular').style.display = '';
   }
 }

@@ -7,7 +7,7 @@ import {
 } from '../src/stunden.js';
 import { fuegeArtikelHinzu } from '../src/artikel-katalog.js';
 import { berechneKassenwartZeilen, berechneSondermengenZeilen } from '../src/kassenwart.js';
-import { bauePositionenAusAbgleich } from '../src/abgleich.js';
+import { bauePositionenAusAbgleich, normalisierePosition } from '../src/abgleich.js';
 import {
   bucheMaterialBewegung,
   normalisiereMaterialEintrag,
@@ -17,6 +17,7 @@ import {
   storniereLagerbestandAusBestellung,
 } from '../src/materialbestand.js';
 import { erstelleLagerverkauf, findeArtikelFuerBestand } from '../src/materialverkauf.js';
+import { erstelleRechnungsDaten } from '../src/pdf.js';
 import {
   persistJsonWithSync,
   hydrateJsonFromSync,
@@ -194,6 +195,36 @@ test('berechneKassenwartZeilen bevorzugt gespeicherte Positionsdaten vor aktuell
   assertEqual(zeilen[0].lv, 5, 'Historische LV-Foerderung muss aus der Position kommen');
   assertEqual(zeilen[0].og, 7, 'Historische OG-Foerderung muss aus der Position kommen');
   assertEqual(zeilen[0].anteil, 28, 'Mitgliederanteil darf nicht vom aktuellen Katalog ueberschrieben werden');
+});
+
+test('berechneKassenwartZeilen zeigt virtuelle Extern-Besteller mit sprechendem Namen', () => {
+  const bestellungen = [
+    {
+      id: 'b1',
+      datum: '2026-04-01',
+      bezeichnung: 'Fruehjahr',
+      status: 'abgeschlossen',
+      positionen: [
+        {
+          artikelNr: 'A1',
+          variante: '',
+          name: 'Jacke',
+          einzelpreis: 20,
+          bvFoerderung: 5,
+          lvFoerderung: 3,
+          ogFoerderung: 0,
+          ogUebernimmtRest: false,
+          zuweisung: [
+            { mitgliedId: '__extern__', menge: 1, ogKostenlos: false },
+          ],
+        },
+      ],
+      rechnungen: [],
+    },
+  ];
+
+  const zeilen = berechneKassenwartZeilen(bestellungen, [], []);
+  assertEqual(zeilen[0].mitgliedName, 'Extern', 'Virtuelle Extern-Besteller sollen sauber benannt werden');
 });
 
 test('fuegeArtikelHinzu ueberschreibt vorhandene Artikel bei neuerem Preis oder Foerderung', () => {
@@ -592,6 +623,56 @@ test('bauePositionenAusAbgleich uebernimmt OG-Kosten separat', () => {
   assertEqual(positionen.length, 1, 'OG-Kosten muessen als eigene Position gespeichert werden');
   assertEqual(positionen[0].typ, 'og-kosten', 'OG-Kosten muessen den passenden Typ behalten');
   assertEqual(positionen[0].einzelpreis, 6.5, 'OG-Kosten muessen Preiswerte behalten');
+});
+
+test('normalisierePosition trennt gleiche Mitglieder bei unterschiedlichem ogKostenlos-Status', () => {
+  const position = normalisierePosition({
+    artikelNr: 'A1',
+    menge: 4,
+    zuweisung: [
+      { mitgliedId: 'max', menge: 1, ogKostenlos: false },
+      { mitgliedId: 'max', menge: 2, ogKostenlos: true },
+      { mitgliedId: 'max', menge: 1, ogKostenlos: true },
+    ],
+  });
+
+  assertEqual(position.zuweisung.length, 2, 'gleicher Mitgliedseintrag darf nur je ogKostenlos-Status gemerged werden');
+  assertEqual(position.zuweisung[0].menge, 1);
+  assertEqual(position.zuweisung[0].ogKostenlos, false);
+  assertEqual(position.zuweisung[1].menge, 3);
+  assertEqual(position.zuweisung[1].ogKostenlos, true);
+});
+
+test('erstelleRechnungsDaten beruecksichtigt mehrere Zuweisungen derselben Position fuer ein Mitglied', () => {
+  const rechnung = erstelleRechnungsDaten({
+    id: 'best1',
+    bezeichnung: 'Test',
+    positionen: [
+      {
+        artikelNr: 'A1',
+        variante: 'M',
+        name: 'Shirt',
+        menge: 2,
+        einzelpreis: 20,
+        bvFoerderung: 2,
+        lvFoerderung: 3,
+        ogFoerderung: 1,
+        ogUebernimmtRest: false,
+        typ: 'artikel',
+        zuweisung: [
+          { mitgliedId: 'max', menge: 1, ogKostenlos: false },
+          { mitgliedId: 'max', menge: 1, ogKostenlos: true },
+        ],
+      },
+    ],
+  }, 'max', { stundenRate: { stunden: 3, euro: 10 } }, [
+    { artikelNr: 'A1', variante: 'M', einzelpreis: 20, bvFoerderung: 2, lvFoerderung: 3, ogFoerderung: 1, ogUebernimmtRest: false },
+  ], []);
+
+  assert(rechnung, 'Rechnung muss erzeugt werden');
+  assertEqual(rechnung.positionen.length, 2, 'beide Zuweisungen muessen in die Rechnung einfliessen');
+  assertEqual(rechnung.gesamtbetrag, 14, 'Eigenanteil muss normalen und OG-kostenlosen Anteil korrekt kombinieren');
+  assertEqual(rechnung.ogAnteil, 16, 'OG-Anteil muss aus beiden Zuweisungen summiert werden');
 });
 
 test('kritische UI-Dateien verwenden keine direkten HTML-Injection-APIs mehr', async () => {

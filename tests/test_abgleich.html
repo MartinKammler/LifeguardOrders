@@ -256,7 +256,7 @@ await test('offeneMenge berücksichtigt Zuweisung, Retoure und Lagerbestand', ()
   assertEqual(rest, 1);
 });
 
-await test('normalisierePosition merged doppelte Mitglieder-Zuweisungen', () => {
+await test('normalisierePosition merged nur doppelte Mitglieder-Zuweisungen mit gleichem ogKostenlos-Status', () => {
   const position = normalisierePosition({
     menge: 4,
     retoureMenge: 0,
@@ -264,12 +264,15 @@ await test('normalisierePosition merged doppelte Mitglieder-Zuweisungen', () => 
     zuweisung: [
       { mitgliedId: 'a', menge: 1, ogKostenlos: false },
       { mitgliedId: 'a', menge: 2, ogKostenlos: true },
+      { mitgliedId: 'a', menge: 1, ogKostenlos: true },
       { mitgliedId: 'b', menge: 1, ogKostenlos: false },
     ],
   });
-  assertEqual(position.zuweisung.length, 2);
-  assertEqual(position.zuweisung[0].menge, 3);
-  assertEqual(position.zuweisung[0].ogKostenlos, true);
+  assertEqual(position.zuweisung.length, 3);
+  assertEqual(position.zuweisung[0].menge, 1);
+  assertEqual(position.zuweisung[0].ogKostenlos, false);
+  assertEqual(position.zuweisung[1].menge, 3);
+  assertEqual(position.zuweisung[1].ogKostenlos, true);
 });
 
 /* ── Render ─────────────────────────────────────────────────── */

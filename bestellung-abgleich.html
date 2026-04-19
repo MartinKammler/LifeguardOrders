@@ -293,7 +293,7 @@
 
 <script src="./lib/jspdf.umd.min.js"></script>
 <script type="module">
-import { OG_ID }                            from './src/konstanten.js';
+import { EXTERN_ID, OG_ID }                 from './src/konstanten.js';
 import { load }                              from './src/storage.js';
 import { parseBestellung }                  from './src/parser.js';
 import { aggregiereWuensche }               from './src/sammlung.js';
@@ -353,6 +353,7 @@ function eur(v) {
 
 function mitgliedName(id) {
   if (id === OG_ID) return 'Ortsgruppe';
+  if (id === EXTERN_ID) return 'Extern';
   const m = mitglieder.find(m => m.id === id);
   return m ? m.name : id;
 }
@@ -375,6 +376,7 @@ function parseNichtNegativeGanzzahl(value) {
 function mitgliedOptionen() {
   return [
     { id: OG_ID, name: 'Ortsgruppe (OG-eigener Bedarf)' },
+    { id: EXTERN_ID, name: 'Extern' },
     ...[...mitglieder].sort((a, b) => a.name.localeCompare(b.name, 'de')),
   ];
 }

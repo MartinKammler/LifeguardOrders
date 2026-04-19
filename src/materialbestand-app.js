@@ -3,6 +3,7 @@ import { downloadAlsJson } from './defaults.js';
 import { load } from './storage.js';
 import { html, raw, setHTML } from './dom.js';
 import { druckePDF } from './pdf.js';
+import { EXTERN_ID, OG_ID } from './konstanten.js';
 import {
   bucheMaterialBewegung,
   normalisiereMaterialEintrag,
@@ -186,6 +187,8 @@ function aktualisiereArtikelDropdown(suche) {
 }
 
 function mitgliedName(id) {
+  if (id === OG_ID) return 'Ortsgruppe';
+  if (id === EXTERN_ID) return 'Extern';
   const mitglied = mitglieder.find(item => item.id === id);
   return mitglied ? mitglied.name : id;
 }
@@ -375,10 +378,6 @@ function oeffneVerkaufModal(id) {
     alert('Für diesen Bestandsposten gibt es keinen passenden Artikel im aktuellen Katalog. Bitte importiere oder aktualisiere den Artikel zuerst.');
     return;
   }
-  if (!mitglieder.length) {
-    alert('Es sind keine Mitglieder in den Einstellungen hinterlegt.');
-    return;
-  }
   if ((eintrag.menge || 0) <= 0) {
     alert('Dieser Bestandsposten hat keinen verfügbaren Bestand mehr.');
     return;
@@ -392,9 +391,12 @@ function oeffneVerkaufModal(id) {
     `${eintrag.nummer} · ${eintrag.bezeichnung}${eintrag.variante ? ` · ${eintrag.variante}` : ''} · verfügbar ${eintrag.menge} · Materialstelle ${Number(artikel.einzelpreis || 0).toFixed(2).replace('.', ',')} €`;
 
   const select = document.getElementById('verkauf-mitglied');
-  setHTML(select, html`${[...mitglieder]
-    .sort((a, b) => a.name.localeCompare(b.name, 'de'))
-    .map(mitglied => html`<option value="${mitglied.id}">${mitglied.name}</option>`)}`);
+  setHTML(select, html`
+    <option value="${EXTERN_ID}">Extern</option>
+    ${[...mitglieder]
+      .sort((a, b) => a.name.localeCompare(b.name, 'de'))
+      .map(mitglied => html`<option value="${mitglied.id}">${mitglied.name}</option>`)}
+  `);
   document.getElementById('verkauf-backdrop').classList.add('open');
 }
 

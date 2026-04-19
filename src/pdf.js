@@ -5,7 +5,7 @@
  *   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
  */
 
-import { OG_ID } from './konstanten.js';
+import { OG_ID, EXTERN_ID } from './konstanten.js';
 import { berechneFoerderung, naechsteRechnungsnummer } from './berechnung.js';
 
 /* ── Hilfsfunktionen ────────────────────────────────────────── */
@@ -34,38 +34,40 @@ export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, ar
 
   for (const pos of (bestellung.positionen || [])) {
     if (pos.typ === 'og-kosten') continue;
-    const zuw = (pos.zuweisung || []).find(z => z.mitgliedId === mitgliedId);
-    if (!zuw || zuw.menge === 0) continue;
+    const zuweisungen = (pos.zuweisung || []).filter(z => z.mitgliedId === mitgliedId && z.menge > 0);
+    if (!zuweisungen.length) continue;
 
-    // Artikel aus Katalog für vollständige Förderberechnung (inkl. OG-Anteil)
-    const katalogArtikel = (artikelListe || []).find(
-      a => a.artikelNr === pos.artikelNr && (a.variante || '') === (pos.variante || '')
-    );
+    for (const zuw of zuweisungen) {
+      // Artikel aus Katalog für vollständige Förderberechnung (inkl. OG-Anteil)
+      const katalogArtikel = (artikelListe || []).find(
+        a => a.artikelNr === pos.artikelNr && (a.variante || '') === (pos.variante || '')
+      );
 
-    let eigenanteil, ogAnteilPos;
-    if (katalogArtikel) {
-      const f  = berechneFoerderung(katalogArtikel, zuw.menge, { ogKostenlos: zuw.ogKostenlos || false });
-      eigenanteil = f.mitglied;
-      ogAnteilPos = f.og;
-    } else {
-      // Fallback: OG-Anteil unbekannt (0), da nicht in Positionen gespeichert
-      const ep = pos.einzelpreis || 0;
-      const bv = runde((pos.bvFoerderung || 0) * zuw.menge);
-      const lv = runde((pos.lvFoerderung || 0) * zuw.menge);
-      const og = runde((pos.ogFoerderung || 0) * zuw.menge);
-      eigenanteil = runde(ep * zuw.menge - bv - lv - og);
-      ogAnteilPos = og;
+      let eigenanteil, ogAnteilPos;
+      if (katalogArtikel) {
+        const f  = berechneFoerderung(katalogArtikel, zuw.menge, { ogKostenlos: zuw.ogKostenlos || false });
+        eigenanteil = f.mitglied;
+        ogAnteilPos = f.og;
+      } else {
+        // Fallback: OG-Anteil unbekannt (0), da nicht in Positionen gespeichert
+        const ep = pos.einzelpreis || 0;
+        const bv = runde((pos.bvFoerderung || 0) * zuw.menge);
+        const lv = runde((pos.lvFoerderung || 0) * zuw.menge);
+        const og = runde((pos.ogFoerderung || 0) * zuw.menge);
+        eigenanteil = runde(ep * zuw.menge - bv - lv - og);
+        ogAnteilPos = og;
+      }
+
+      meinePositionen.push({
+        name:        pos.name,
+        variante:    pos.variante || '',
+        artikelNr:   pos.artikelNr,
+        menge:       zuw.menge,
+        einzelpreis: pos.einzelpreis || 0,
+        eigenanteil,
+        ogAnteil:    ogAnteilPos,
+      });
     }
-
-    meinePositionen.push({
-      name:        pos.name,
-      variante:    pos.variante || '',
-      artikelNr:   pos.artikelNr,
-      menge:       zuw.menge,
-      einzelpreis: pos.einzelpreis || 0,
-      eigenanteil,
-      ogAnteil:    ogAnteilPos,
-    });
   }
 
   if (!meinePositionen.length) return null;
@@ -74,7 +76,7 @@ export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, ar
   const ogAnteil     = runde(meinePositionen.reduce((s, p) => s + p.ogAnteil,    0));
 
   const sr = einstellungen?.stundenRate || { stunden: 3, euro: 10 };
-  const erwartetEinsatzstunden = ogAnteil > 0
+  const erwartetEinsatzstunden = (ogAnteil > 0 && mitgliedId !== EXTERN_ID)
     ? Math.ceil(ogAnteil / sr.euro * sr.stunden)
     : 0;
 
