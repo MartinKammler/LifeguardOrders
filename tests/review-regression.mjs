@@ -675,6 +675,38 @@ test('erstelleRechnungsDaten beruecksichtigt mehrere Zuweisungen derselben Posit
   assertEqual(rechnung.ogAnteil, 16, 'OG-Anteil muss aus beiden Zuweisungen summiert werden');
 });
 
+test('erstelleRechnungsDaten akzeptiert explizite Laufnummer fuer Serienrechnung', () => {
+  const rechnung = erstelleRechnungsDaten({
+    id: 'best2',
+    bezeichnung: 'Serie',
+    positionen: [
+      {
+        artikelNr: 'A1',
+        variante: '',
+        name: 'Shirt',
+        menge: 1,
+        einzelpreis: 20,
+        bvFoerderung: 2,
+        lvFoerderung: 3,
+        ogFoerderung: 1,
+        ogUebernimmtRest: false,
+        typ: 'artikel',
+        zuweisung: [
+          { mitgliedId: 'max', menge: 1, ogKostenlos: false },
+        ],
+      },
+    ],
+  }, 'max', { stundenRate: { stunden: 3, euro: 10 } }, [
+    { artikelNr: 'A1', variante: '', einzelpreis: 20, bvFoerderung: 2, lvFoerderung: 3, ogFoerderung: 1, ogUebernimmtRest: false },
+  ], [], {
+    laufnummer: 17,
+    datum: '2026-04-19',
+  });
+
+  assert(rechnung, 'Rechnung muss erzeugt werden');
+  assertEqual(rechnung.nummer, 'R_2026_04_017', 'Explizite Serienlaufnummer muss verwendet werden');
+});
+
 test('kritische UI-Dateien verwenden keine direkten HTML-Injection-APIs mehr', async () => {
   const dateien = [
     'bestellungen.html',

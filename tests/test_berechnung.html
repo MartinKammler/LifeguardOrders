@@ -22,7 +22,12 @@
 <div id="summary"></div>
 
 <script type="module">
-import { berechneFoerderung, naechsteRechnungsnummer } from '../src/berechnung.js';
+import {
+  berechneFoerderung,
+  naechsteRechnungsnummer,
+  naechsteRechnungslaufnummer,
+  rechnungsnummerMitLaufnummer,
+} from '../src/berechnung.js';
 
 /* ── Mini Test-Runner ───────────────────────────────────────── */
 const results = [];
@@ -192,6 +197,23 @@ await test('anderer Monat → korrekte Monatsangabe', () => {
   assertEqual(r, 'R_2025_03_001');
 });
 
+suite('rechnungsnummerMitLaufnummer');
+
+await test('formatiert laufende Nummer dreistellig', () => {
+  const r = rechnungsnummerMitLaufnummer(new Date('2025-07-15'), 7);
+  assertEqual(r, 'R_2025_07_007');
+});
+
+await test('wirft Fehler bei ungueltiger Laufnummer', () => {
+  let fehler = false;
+  try {
+    rechnungsnummerMitLaufnummer(new Date('2025-07-15'), 0);
+  } catch {
+    fehler = true;
+  }
+  assertEqual(fehler, true, '0 darf nicht als Laufnummer akzeptiert werden');
+});
+
 suite('naechsteRechnungsnummer — fortlaufend');
 
 await test('nach 001 kommt 002', () => {
@@ -208,6 +230,22 @@ await test('nach 009 kommt 010', () => {
   );
   const r = naechsteRechnungsnummer(rechnungen, new Date('2025-07-15'));
   assertEqual(r, 'R_2025_07_010');
+});
+
+suite('naechsteRechnungslaufnummer');
+
+await test('respektiert explizite Mindest-Laufnummer fuer neue Serie', () => {
+  const lauf = naechsteRechnungslaufnummer([], new Date('2025-07-15'), 17);
+  assertEqual(lauf, 17);
+});
+
+await test('faellt auf bestehende hoehere Rechnung zurueck', () => {
+  const lauf = naechsteRechnungslaufnummer(
+    [{ nummer: 'R_2025_07_019' }],
+    new Date('2025-07-15'),
+    17
+  );
+  assertEqual(lauf, 20);
 });
 
 suite('naechsteRechnungsnummer — Monatswechsel');

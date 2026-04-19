@@ -101,7 +101,6 @@
   </div>
 </div>
 
-<script src="./lib/jspdf.umd.min.js"></script>
 <script type="module">
 import { load }               from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
@@ -229,7 +228,10 @@ function renderTabelle() {
   tbody.querySelectorAll('[data-pdf]').forEach(btn => {
     btn.addEventListener('click', () => {
       const rechnung = findeRechnung(btn.dataset.pdf, btn.dataset.bestell);
-      if (rechnung) druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen);
+      if (rechnung) {
+        druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen)
+          .catch(error => alert(error.message || 'PDF konnte nicht erzeugt werden.'));
+      }
     });
   });
 

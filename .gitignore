@@ -17,6 +17,7 @@ eggs/
 lib64/
 lib/
 !lib/jspdf.umd.min.js
+!lib/pdf-lib.esm.min.js
 parts/
 sdist/
 var/
@@ -191,3 +192,10 @@ data/bestellungen.json
 # Temporäre Test-Artefakte
 tests/.tmp_test_*.mjs
 .tmp_boot_*.mjs
+
+# Node
+node_modules/
+
+# Demo- und Debug-PDFs
+demo_*.pdf
+demo_layout_debug*.pdf

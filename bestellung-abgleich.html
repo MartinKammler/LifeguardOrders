@@ -282,6 +282,11 @@
     <div class="flex gap-8 mt-16" style="align-items:center;flex-wrap:wrap">
       <button class="btn btn-ghost btn-sm" id="btn-anprobe-speichern" style="display:none">Anprobe speichern</button>
       <button class="btn btn-primary btn-sm" id="btn-anprobe-abschliessen" style="display:none">Anprobe abschließen</button>
+      <label class="text-sm" id="rechnungsserie-wrap" style="display:flex;align-items:center;gap:8px;color:var(--text-2)">
+        Erste Rechnungsnummer:
+        <span id="rechnungs-prefix" class="badge badge-blue" style="font-family:monospace">R_YYYY_MM_</span>
+        <input type="number" id="inp-rechnung-start" min="1" step="1" placeholder="001" style="width:92px;margin:0">
+      </label>
       <button class="btn btn-primary btn-sm" id="btn-alle-rechnungen">Alle Rechnungen erzeugen</button>
       <a class="btn btn-ghost btn-sm" href="rechnungen.html">Rechnungsübersicht →</a>
       <span id="rechnungen-status"></span>
@@ -291,7 +296,6 @@
   </div>
 </div>
 
-<script src="./lib/jspdf.umd.min.js"></script>
 <script type="module">
 import { EXTERN_ID, OG_ID }                 from './src/konstanten.js';
 import { load }                              from './src/storage.js';
@@ -310,6 +314,10 @@ import {
   verbucheLagerbestandAusBestellung,
   storniereLagerbestandAusBestellung,
 } from './src/materialbestand.js';
+import {
+  naechsteRechnungslaufnummer,
+  rechnungsnummerMitLaufnummer,
+} from './src/berechnung.js';
 import { createWebDavClient }               from './src/webdav.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
 import { html, raw, setHTML }               from './src/dom.js';
@@ -366,6 +374,64 @@ function statusLabel(s) {
     abgeschlossen: 'Abgeschlossen',
   };
   return map[s] || 'Unbekannt';
+}
+
+function heutigesRechnungsDatum() {
+  return new Date();
+}
+
+function rechnungsPrefix(datum = heutigesRechnungsDatum()) {
+  const jahr = datum.getFullYear();
+  const monat = String(datum.getMonth() + 1).padStart(2, '0');
+  return `R_${jahr}_${monat}_`;
+}
+
+function naechsteFreieRechnungslaufnummer(datum = heutigesRechnungsDatum()) {
+  return naechsteRechnungslaufnummer(alleRechnungenAusAllenBestellungen(), datum);
+}
+
+function aktualisiereRechnungsserienFeld() {
+  const wrap = document.getElementById('rechnungsserie-wrap');
+  const prefixEl = document.getElementById('rechnungs-prefix');
+  const input = document.getElementById('inp-rechnung-start');
+  if (!wrap || !prefixEl || !input) return;
+
+  const sichtbar = bestellung?.status === 'abgeschlossen';
+  wrap.style.display = sichtbar ? 'flex' : 'none';
+  if (!sichtbar) return;
+
+  const datum = heutigesRechnungsDatum();
+  prefixEl.textContent = rechnungsPrefix(datum);
+  input.placeholder = String(naechsteFreieRechnungslaufnummer(datum)).padStart(3, '0');
+}
+
+function leseStartLaufnummer(count = 1, datum = heutigesRechnungsDatum()) {
+  const input = document.getElementById('inp-rechnung-start');
+  const rawWert = input?.value?.trim() || '';
+  const start = rawWert
+    ? parseInt(rawWert, 10)
+    : naechsteFreieRechnungslaufnummer(datum);
+
+  if (!Number.isInteger(start) || start <= 0) {
+    throw new Error('Bitte eine positive Laufnummer eingeben.');
+  }
+
+  const vorhanden = new Set(
+    alleRechnungenAusAllenBestellungen()
+      .map(rechnung => rechnung?.nummer)
+      .filter(Boolean)
+  );
+
+  const nummern = [];
+  for (let i = 0; i < count; i += 1) {
+    const nummer = rechnungsnummerMitLaufnummer(datum, start + i);
+    if (vorhanden.has(nummer)) {
+      throw new Error(`Rechnungsnummer ${nummer} existiert bereits.`);
+    }
+    nummern.push(nummer);
+  }
+
+  return { start, nummern };
 }
 
 function parseNichtNegativeGanzzahl(value) {
@@ -682,7 +748,7 @@ function betroffeneMitgliederIds() {
       if (z.menge > 0 && z.mitgliedId !== OG_ID) ids.add(z.mitgliedId);
     }
   }
-  return [...ids];
+  return [...ids].sort((a, b) => mitgliedName(a).localeCompare(mitgliedName(b), 'de'));
 }
 
 function alleRechnungenAusAllenBestellungen() {
@@ -915,6 +981,7 @@ function renderRechnungenCard() {
   const btnAlle     = document.getElementById('btn-alle-rechnungen');
   const linkUebersicht = document.querySelector('a[href="rechnungen.html"]');
   const btnWieder   = document.getElementById('btn-wieder-oeffnen');
+  const serienWrap  = document.getElementById('rechnungsserie-wrap');
 
   if (bestellung.status === 'anprobe') {
     const pruefung = pruefeAnprobePositionen();
@@ -922,6 +989,7 @@ function renderRechnungenCard() {
     btnSave.style.display = '';
     btnFinalize.style.display = '';
     btnAlle.style.display = 'none';
+    serienWrap.style.display = 'none';
     linkUebersicht.style.display = 'none';
     btnWieder.style.display = '';
     btnFinalize.disabled = !pruefung.ok;
@@ -941,8 +1009,10 @@ function renderRechnungenCard() {
   btnSave.style.display = 'none';
   btnFinalize.style.display = 'none';
   btnAlle.style.display = '';
+  serienWrap.style.display = '';
   linkUebersicht.style.display = '';
   btnWieder.style.display = '';
+  aktualisiereRechnungsserienFeld();
   const ids         = betroffeneMitgliederIds();
   const vorhanden   = bestellung.rechnungen || [];
 
@@ -995,7 +1065,10 @@ function renderRechnungenCard() {
   el.querySelectorAll('[data-pdf-id]').forEach(btn => {
     btn.addEventListener('click', () => {
       const rechnung = (bestellung.rechnungen || []).find(r => r.id === btn.dataset.pdfId);
-      if (rechnung) druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen);
+      if (rechnung) {
+        druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen)
+          .catch(error => alert(error.message || 'PDF konnte nicht erzeugt werden.'));
+      }
     });
   });
 
@@ -1003,7 +1076,15 @@ function renderRechnungenCard() {
   el.querySelectorAll('[data-erzeugen-id]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const mid = btn.dataset.erzeugenId;
-      await erzeugeRechnungFuerMitglied(mid);
+      const datum = heutigesRechnungsDatum();
+      let nummer;
+      try {
+        nummer = leseStartLaufnummer(1, datum).nummern[0];
+      } catch (error) {
+        alert(error.message || 'Rechnungsnummer konnte nicht vorbereitet werden.');
+        return;
+      }
+      await erzeugeRechnungFuerMitglied(mid, { nummer, datum });
       renderRechnungenCard();
     });
   });
@@ -1016,9 +1097,9 @@ function renderRechnungenCard() {
     : 'Alle Rechnungen erzeugen';
 }
 
-async function erzeugeRechnungFuerMitglied(mitgliedId) {
+async function erzeugeRechnungFuerMitglied(mitgliedId, opts = {}) {
   const alleRechnungen = alleRechnungenAusAllenBestellungen();
-  const rechnung = erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, artikelListe, alleRechnungen);
+  const rechnung = erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, artikelListe, alleRechnungen, opts);
   if (!rechnung) return;
 
   const idx = bestellungen.findIndex(b => b.id === bestellung.id);
@@ -1038,7 +1119,12 @@ async function erzeugeRechnungFuerMitglied(mitgliedId) {
     zeigeStatus(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn');
   }
 
-  druckePDF(rechnung, mitgliedName(mitgliedId), einstellungen);
+  try {
+    await druckePDF(rechnung, mitgliedName(mitgliedId), einstellungen);
+  } catch (error) {
+    alert(error.message || 'PDF konnte nicht erzeugt werden.');
+  }
+  aktualisiereRechnungsserienFeld();
 }
 
 function zeigeStatus(text, art = 'info') {
@@ -1183,9 +1269,21 @@ document.getElementById('btn-alle-rechnungen').addEventListener('click', async (
 
   if (fehlende.length > 1 && !confirm(`${fehlende.length} PDFs werden jetzt heruntergeladen. Fortfahren?`)) return;
 
+  const datum = heutigesRechnungsDatum();
+  let nummern = [];
+  try {
+    nummern = leseStartLaufnummer(fehlende.length, datum).nummern;
+  } catch (error) {
+    alert(error.message || 'Rechnungsnummern konnten nicht vorbereitet werden.');
+    return;
+  }
+
   zeigeStatus('Erzeuge…', 'info');
-  for (const mid of fehlende) {
-    await erzeugeRechnungFuerMitglied(mid);
+  for (let index = 0; index < fehlende.length; index += 1) {
+    await erzeugeRechnungFuerMitglied(fehlende[index], {
+      nummer: nummern[index],
+      datum,
+    });
   }
   renderRechnungenCard();
   zeigeStatus(`✓ ${fehlende.length} Rechnung(en) erzeugt`, 'ok');

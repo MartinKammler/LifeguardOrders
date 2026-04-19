@@ -545,7 +545,7 @@ async function speichereVerkauf() {
   render();
   schliesseVerkaufModal();
   if (verkauf.rechnung) {
-    druckePDF(verkauf.rechnung, memberName, einstellungen);
+    await druckePDF(verkauf.rechnung, memberName, einstellungen);
   }
 }
 
