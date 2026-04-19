@@ -299,8 +299,16 @@ og{}           — alle OG-Stammdaten (Name, Adresse, IBAN, ...)
 stundenRate{}  — { stunden: 3, euro: 10 }
 einsatztypen[] — z.B. ["wachdienst", "sanitaetsdienst", "helfer", "verwaltung"]
 mitglieder[]   — [{ id, name }] — importiert aus Stempeluhr config.js
-nc{}           — { url, user, pass }
+nc{}           — { url, user } — pass wird nur in sessionStorage gehalten, nie gespeichert
 ```
+
+**Virtuelle Mitglieder (konstanten.js):**
+```
+EXTERN_ID = '__EXTERN__'   — externe Käufer; keine OG-Stundenpflicht in PDF/Dashboard
+OG_ID     = '__OG__'       — interne OG-Kosten (Versandkosten, Eilauftrag)
+```
+
+**`artikel.json`** enthält auch Lehrgänge (Präfix `LG-`, 8 Lehrgänge × Mitglied/Nichtmitglied).
 
 **`materialbestand.json`** — Array von Lagerposten:
 ```
@@ -412,8 +420,11 @@ noch offenen Schuld.
 
 ### PDF-Erzeugung
 
-Im Browser via `jsPDF`. Layout nach Vorlage `R_2025_07_001_Kammler.pdf`.
+Im Browser via `pdf-lib` (lokal in `lib/pdf-lib.esm.min.js`, kein CDN).
+Layout basiert auf Template-PDF `Rechnung _Template.pdf`, das als Basis-Seite eingelesen wird.
+Mehrseitige Rechnungen mit Übertragssummen werden unterstützt.
 Rechnung zeigt: Mitgliedsanteil (nach Förderabzug) + erwartete Einsatzstunden für OG-Anteil.
+Externe Käufer (`EXTERN_ID`) erhalten keine Stundenpflicht auf der Rechnung.
 
 ### Rechnungsnummerierung
 
@@ -423,6 +434,28 @@ Format `R_YYYY_MM_NNN`. Höchstzähler wird aus allen existierenden Rechnungsnum
 
 `createWebDavClient(creds, fetchFn)` — Factory-Pattern für Testbarkeit. Alle Fehler als
 strukturierte Objekte (`{ ok: false, error }`), keine Exceptions.
+
+### DOM-Sicherheit (XSS-Schutz)
+
+Alle Seitenmodule verwenden ausschließlich:
+- `html\`...\`` — tagged template, escaped alle interpolierten Werte automatisch
+- `raw(string)` — für vertrauenswürdige, statische HTML-Strings (nie für Benutzerdaten)
+- `setHTML(el, html\`...\`)` — einziger erlaubter Weg zur DOM-Mutation
+
+`innerHTML` direkt wird nie verwendet. `raw()` ist idempotent (verhindert doppeltes Wrapping).
+
+### Sync-Architektur (sync.js)
+
+- `persistJsonWithSync` — schreibt lokal + versucht NC-Upload; bei Fehler → `pending`
+- `hydrateJsonFromSync` — liest NC beim Start; lokale Daten verlieren nie gegen leeres NC
+- `pendingSyncScopes` — persistente Liste aller ausstehenden Scopes (wird auf Startseite angezeigt)
+- NC-Passwort wird nur in `sessionStorage` gehalten, nie in `localStorage` gespeichert
+
+### Sicherheit
+
+- Keine CDN-Abhängigkeiten: `pdf-lib` und alle anderen Bibliotheken liegen lokal in `lib/`
+- `einstellungen.json` wird nicht als Default vom Webserver geladen (würde Zugangsdaten exponieren)
+- NC-Credentials-Validierung: `client` ist nur dann ungleich `null`, wenn URL + User + Pass vollständig
 
 ---
 

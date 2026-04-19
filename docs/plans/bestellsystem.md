@@ -9,7 +9,7 @@
 | **Datenhaltung** | JSON-Dateien auf Nextcloud: `artikel.json`, `bestellungen.json`, `einstellungen.json` |
 | **Offline-Cache** | `localStorage` als Lese-Fallback (lokale Daten verlieren nie gegen leeres NC-Ergebnis); Service Worker für statische Assets |
 | **WebDAV** | Alle NC-Zugriffe laufen durch `webdav.js`; Fehler als strukturierte Objekte, keine Exceptions; Factory-Pattern für Testbarkeit |
-| **PDF** | jsPDF im Browser; Download lokal, kein NC-Upload im MVP |
+| **PDF** | pdf-lib im Browser (lokal in `lib/`); Template-basiert (`Rechnung _Template.pdf`); kein CDN, kein NC-Upload |
 | **Rechnungsnummern** | Format `R_YYYY_MM_NNN`; Zähler live aus `bestellungen.json` berechnet |
 | **Mitgliederliste** | Einmalig aus Stempeluhr `config.js` importiert, in `einstellungen.json` gespeichert |
 | **Artikelkatalog** | Deduplizierung per `artikelNr + variante`; `variante` = Größen-/Variantencode (z.B. "XL", "MAGNET") |
@@ -87,7 +87,8 @@ und verfolgt Zahlungen.
 **Stories:** 33–41
 
 **Erreicht:**
-- `src/pdf.js`: `erstelleRechnungsDaten`, `druckePDF` via jsPDF
+- `src/pdf.js`: `erstelleRechnungsDaten`, `druckePDF` via pdf-lib (Template `Rechnung _Template.pdf`)
+- Mehrseitige Rechnungen mit Übertragssummen; EXTERN_ID-Mitglieder ohne Stundenpflicht
 - `rechnungen.html`: Rechnungsübersicht mit Statistik-Karten, PDF-Download, Zahlungsstatus
 - Rechnungsfreigabe erst nach Status `abgeschlossen`; Status `anprobe` sperrt Rechnungserzeugung
 - Zahlungsfrist: 30 Tage ab Rechnungsdatum
@@ -123,3 +124,21 @@ und verfolgt Zahlungen.
 - **Lagerverkauf:** Materialseite kann Bestand direkt an ein Mitglied verkaufen; dabei entstehen Bestandsabgang, abgeschlossene Bestellung und Rechnung in einem Schritt auf Basis des aktuellen Katalogpreises
 - **Lehrgänge als Artikel** in `data/artikel.json`: 16 Einträge (8 Lehrgänge × Mitglied/Nichtmitglied, Präfix `LG-`)
 - **Mitglieder-Import JSON-Format** (`src/mitglieder.js`): Parser erkennt jetzt auch JSON-Schlüssel in Anführungszeichen (`"id": "value"`) zusätzlich zum JS-Literal-Format (`id: 'value'`)
+
+---
+
+## Härtung & UX-Verbesserungen ✅ ABGESCHLOSSEN
+
+**Ziel:** Sicherheitslücken schließen, Nutzererfahrung verbessern.
+
+**Erreicht:**
+- **XSS-Schutz:** `src/dom.js` mit `html\`\`` tagged template, `raw()`, `setHTML()` — `innerHTML` direkt wird nirgends mehr verwendet
+- **Keine CDN-Abhängigkeiten:** `pdf-lib` lokal (`lib/pdf-lib.esm.min.js`), war vorher jsPDF von CDN
+- **PDF-Neubau:** `src/pdf.js` komplett auf pdf-lib umgestellt; Template-basiert; EXTERN_ID-Fix; Stunden-Formel korrigiert
+- **Sync-Architektur:** `src/sync.js` mit Pending-State, Startseiten-Banner für offene Scopes, WebDAV-Ladeindikator auf rechnungen.html und kassenwart.html
+- **Einstellungen-Sicherheit:** NC-Passwort nur in sessionStorage; keine automatische `einstellungen.json`-Standarddatei vom Webserver
+- **Mobile Nav:** Breakpoint `@media (max-width: 600px)` in `src/style.css`
+- **UX:** Bestätigungsdialog vor Wunschlöschung; Redirect + Toast nach Speichern; `confirm()` vor Mehrfach-PDF-Download (>1 Rechnung)
+- **Abgleich-Fix:** `normalisierePosition` nutzt Composite-Key `mitgliedId + '\x00' + ogKostenlos`; `ogAnteil` wird bei Merge korrekt summiert
+- **`artikelBasisKey`-Separator:** `\x00` → `|||` (Null-Bytes in HTML-Attributen werden vom Browser ignoriert)
+- **Testrunner:** `cleanupLeftovers()` entfernt `.tmp_boot_*` in Projektwurzel und `.tmp_test_*` in `tests/` bei jedem Teststart
