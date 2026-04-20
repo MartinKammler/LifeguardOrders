@@ -27,6 +27,15 @@ import {
   verifyPassword,
 } from '../src/auth.js';
 import {
+  authentifiziereMitglied,
+  hashClockPin,
+  verifyClockPin,
+} from '../src/stempeluhr-auth.js';
+import {
+  findeMitgliedsSperre,
+  normalizeZugriff,
+} from '../src/zugriff.js';
+import {
   persistJsonWithSync,
   hydrateJsonFromSync,
   getScopeSyncStatus,
@@ -892,6 +901,111 @@ test('initialisiereErstenBenutzer legt einen Admin an und authentifiziereBenutze
   });
   assert(login.ok, 'Anmeldung des frisch angelegten Benutzers muss funktionieren');
   assertEqual(login.user.name, 'Martin Beispiel');
+});
+
+test('hashClockPin und verifyClockPin pruefen Stempeluhr-PINs kompatibel', async () => {
+  const salt = 'abc123';
+  const pinHash = await hashClockPin('123456', salt);
+
+  assert(await verifyClockPin('123456', {
+    id: 'max',
+    name: 'Max Muster',
+    pin: pinHash,
+    salt,
+    mustChangePIN: false,
+    aktiv: true,
+  }), 'Gehashte PIN muss korrekt erkannt werden');
+
+  assert(await verifyClockPin('654321', {
+    id: 'otp',
+    name: 'OTP Nutzer',
+    pin: '654321',
+    mustChangePIN: true,
+    aktiv: true,
+  }), 'Einmal-PIN im Klartext muss kompatibel zur Stempeluhr pruefbar sein');
+});
+
+test('authentifiziereMitglied lehnt mustChangePIN im Bestellsystem ab', async () => {
+  const client = {
+    async readJson(path) {
+      if (path === '/LifeguardClock/lgc_users.json') {
+        return {
+          ok: true,
+          data: [
+            { id: 'max', name: 'Max Muster', pin: '123456', mustChangePIN: true, aktiv: true },
+          ],
+        };
+      }
+      if (path === '/LifeguardOrders/zugriff.json') {
+        return { ok: false, error: 'Datei nicht gefunden.' };
+      }
+      return { ok: false, error: 'Datei nicht gefunden.' };
+    },
+  };
+
+  const result = await authentifiziereMitglied({ client, pin: '123456' });
+
+  assertEqual(result.ok, false, 'mustChangePIN darf im Bestellsystem nicht eingeloggt werden');
+  assertEqual(result.mustChangePIN, true, 'mustChangePIN-Hinweis muss gesetzt werden');
+});
+
+test('authentifiziereMitglied uebernimmt globale oder individuelle Sperren aus zugriff.json', async () => {
+  const pinHash = await hashClockPin('123456', 'salt1');
+  const client = {
+    async readJson(path) {
+      if (path === '/LifeguardClock/lgc_users.json') {
+        return {
+          ok: true,
+          data: [
+            { id: 'max', name: 'Max Muster', pin: pinHash, salt: 'salt1', aktiv: true },
+          ],
+        };
+      }
+      if (path === '/LifeguardOrders/zugriff.json') {
+        return {
+          ok: true,
+          data: {
+            global: { userBestellungGesperrt: false, grund: '' },
+            mitglieder: [
+              { mitgliedId: 'max', gesperrt: true, grund: 'Offene Forderung' },
+            ],
+          },
+        };
+      }
+      return { ok: false, error: 'Datei nicht gefunden.' };
+    },
+  };
+
+  const result = await authentifiziereMitglied({
+    client,
+    pin: '123456',
+    storage: createMemoryStorage(),
+  });
+
+  assert(result.ok, 'Aktives Mitglied mit korrekter PIN muss erkannt werden');
+  assertEqual(result.lock.blocked, true, 'Sperrstatus muss aus zugriff.json uebernommen werden');
+  assertEqual(result.lock.reason, 'Offene Forderung', 'Sperrgrund muss sichtbar bleiben');
+});
+
+test('normalizeZugriff und findeMitgliedsSperre normalisieren globale und individuelle Sperren', () => {
+  const zugriff = normalizeZugriff({
+    global: {
+      userBestellungGesperrt: true,
+      grund: 'Konto leer',
+      gesetztVon: 'finanzen',
+    },
+    mitglieder: [
+      { mitgliedId: 'max', gesperrt: true, grund: 'Offene Rechnung' },
+    ],
+  });
+
+  const globalOnly = findeMitgliedsSperre(zugriff, 'erika');
+  assertEqual(globalOnly.blocked, true, 'Globale Sperre muss Mitglieder ohne Einzeleintrag treffen');
+  assertEqual(globalOnly.reason, 'Konto leer');
+
+  const individuell = findeMitgliedsSperre(zugriff, 'max');
+  assertEqual(individuell.blocked, true, 'Individuelle Sperre muss erkannt werden');
+  assertEqual(individuell.reason, 'Offene Rechnung', 'Individueller Grund muss globalen Grund uebersteuern');
 });
 
 test('auditAktion schreibt append-only auf Remote und cached lokal', async () => {

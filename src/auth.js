@@ -39,6 +39,7 @@ export function normalizeBenutzer(user) {
     aktiv: user?.aktiv !== false,
     salt: String(user?.salt || ''),
     passwordHash: String(user?.passwordHash || ''),
+    authType: 'lokal',
   };
 }
 

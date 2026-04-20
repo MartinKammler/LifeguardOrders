@@ -5,16 +5,14 @@ import {
   leseNcKonfiguration,
   speichereNcKonfiguration,
 } from './auth.js';
-import { getNextPath, SESSION_KEY_NC_PASS, setSession } from './session.js';
+import { ladeAktiveStempeluhrBenutzer, authentifiziereMitglied } from './stempeluhr-auth.js';
+import { getNextPath, SESSION_KEY_NC_PASS, setFunctionSession, setMemberSession } from './session.js';
 
-function setStatus(text, art = 'info') {
-  const el = document.getElementById('login-status');
-  setBadge(el, text, art);
-}
+let aktiveAnsicht = 'member';
+let actingPersons = [];
 
-function setNcStatus(text, art = 'info') {
-  const el = document.getElementById('nc-status');
-  setBadge(el, text, art);
+function setStatus(targetId, text, art = 'info') {
+  setBadge(document.getElementById(targetId), text, art);
 }
 
 function setBadge(el, text, art = 'info') {
@@ -37,45 +35,173 @@ function readNc() {
   };
 }
 
+function createClientOrStatus(targetId = 'login-status') {
+  const nc = readNc();
+  const client = createNcClient(nc);
+  if (!client) {
+    setStatus(targetId, 'Nextcloud-Zugangsdaten sind unvollständig.', 'error');
+    return { nc, client: null };
+  }
+  return { nc, client };
+}
+
 function showBootstrap(open) {
   document.getElementById('bootstrap-card').style.display = open ? 'block' : 'none';
 }
 
-function persistLoginSuccess(nc, user) {
+function setMode(mode) {
+  aktiveAnsicht = mode === 'function' ? 'function' : 'member';
+  document.getElementById('member-card').style.display = aktiveAnsicht === 'member' ? 'block' : 'none';
+  document.getElementById('function-card').style.display = aktiveAnsicht === 'function' ? 'block' : 'none';
+
+  const memberBtn = document.getElementById('btn-member-mode');
+  const functionBtn = document.getElementById('btn-function-mode');
+  memberBtn.className = aktiveAnsicht === 'member' ? 'btn btn-primary' : 'btn btn-ghost';
+  functionBtn.className = aktiveAnsicht === 'function' ? 'btn btn-primary' : 'btn btn-ghost';
+}
+
+function persistMemberLoginSuccess(nc, user, lock) {
   sessionStorage.setItem(SESSION_KEY_NC_PASS, nc.pass);
   speichereNcKonfiguration(nc);
-  setSession(user);
+  setMemberSession(user, { lock });
+  window.location.replace('mitglied.html');
+}
+
+function persistFunctionLoginSuccess(nc, user, actingPerson) {
+  sessionStorage.setItem(SESSION_KEY_NC_PASS, nc.pass);
+  speichereNcKonfiguration(nc);
+  setFunctionSession(user, actingPerson);
   window.location.replace(getNextPath('index.html'));
 }
 
-async function testeNextcloud() {
-  const nc = readNc();
-  const client = createNcClient(nc);
+function getLocalActingPersons() {
+  const einstellungenRaw = localStorage.getItem('lo_einstellungen');
+  if (!einstellungenRaw) return [];
+  try {
+    const einstellungen = JSON.parse(einstellungenRaw);
+    return Array.isArray(einstellungen?.mitglieder)
+      ? einstellungen.mitglieder
+          .map(entry => ({
+            id: String(entry?.id || '').trim(),
+            name: String(entry?.name || '').trim(),
+          }))
+          .filter(entry => entry.id && entry.name)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function renderActingPersons(list) {
+  const select = document.getElementById('acting-person');
+  if (!select) return;
+  const vorher = select.value;
+  select.innerHTML = '<option value="">– bitte wählen –</option>';
+  for (const person of list) {
+    const option = document.createElement('option');
+    option.value = person.id;
+    option.textContent = person.name;
+    select.appendChild(option);
+  }
+  if (vorher && list.some(person => person.id === vorher)) {
+    select.value = vorher;
+  }
+}
+
+async function ladeHandelndePersonen(client = null) {
+  const lokal = getLocalActingPersons();
+  if (lokal.length) {
+    actingPersons = [...lokal].sort((a, b) => a.name.localeCompare(b.name, 'de'));
+    renderActingPersons(actingPersons);
+    return { ok: true, source: 'local', personen: actingPersons };
+  }
   if (!client) {
-    setNcStatus('Nextcloud-Zugangsdaten sind unvollständig.', 'error');
-    return;
+    actingPersons = [];
+    renderActingPersons([]);
+    return { ok: false, error: 'Keine Mitgliederliste lokal vorhanden.' };
   }
 
-  setNcStatus('Teste Nextcloud-Verbindung…', 'info');
+  const remote = await ladeAktiveStempeluhrBenutzer(client);
+  if (!remote.ok) {
+    actingPersons = [];
+    renderActingPersons([]);
+    return remote;
+  }
+
+  actingPersons = remote.users
+    .map(user => ({ id: user.id, name: user.name }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  renderActingPersons(actingPersons);
+  return { ok: true, source: 'remote', personen: actingPersons };
+}
+
+async function testeNextcloud() {
+  const { nc, client } = createClientOrStatus('nc-status');
+  if (!client) return;
+
+  setStatus('nc-status', 'Teste Nextcloud-Verbindung…', 'info');
   const result = await client.testConnection();
   if (!result.ok) {
-    setNcStatus(result.error || 'Nextcloud-Verbindung fehlgeschlagen.', 'error');
+    setStatus('nc-status', result.error || 'Nextcloud-Verbindung fehlgeschlagen.', 'error');
     return;
   }
 
   speichereNcKonfiguration(nc);
-  setNcStatus('✓ Nextcloud-Verbindung erfolgreich getestet.', 'ok');
+  setStatus('nc-status', '✓ Nextcloud-Verbindung erfolgreich getestet.', 'ok');
+  if (aktiveAnsicht === 'function') {
+    const acting = await ladeHandelndePersonen(client);
+    if (!acting.ok) {
+      setStatus('login-status', acting.error || 'Mitgliederliste für handelnde Person konnte nicht geladen werden.', 'warn');
+    }
+  }
 }
 
-async function login() {
-  const nc = readNc();
-  const client = createNcClient(nc);
-  if (!client) {
-    setStatus('Nextcloud-Zugangsdaten sind unvollständig.', 'error');
+async function memberLogin() {
+  const { nc, client } = createClientOrStatus('member-status');
+  if (!client) return;
+
+  setStatus('member-status', 'Prüfe Mitgliedslogin…', 'info');
+  const result = await authentifiziereMitglied({
+    client,
+    pin: document.getElementById('member-pin').value,
+  });
+
+  if (!result.ok) {
+    if (result.mustChangePIN) {
+      setStatus('member-status', 'PIN muss zuerst in der Stempeluhr geändert werden.', 'warn');
+    } else {
+      setStatus('member-status', result.error || 'Mitgliedslogin fehlgeschlagen.', 'error');
+    }
     return;
   }
 
-  setStatus('Prüfe App-Login…', 'info');
+  persistMemberLoginSuccess(nc, result.user, result.lock);
+}
+
+function leseHandelndePerson() {
+  const actingPersonId = document.getElementById('acting-person').value;
+  return actingPersons.find(person => person.id === actingPersonId) || null;
+}
+
+async function functionLogin() {
+  const { nc, client } = createClientOrStatus('login-status');
+  if (!client) return;
+
+  if (!actingPersons.length) {
+    const loaded = await ladeHandelndePersonen(client);
+    if (!loaded.ok) {
+      setStatus('login-status', loaded.error || 'Mitgliederliste konnte nicht geladen werden.', 'error');
+      return;
+    }
+  }
+
+  const actingPerson = leseHandelndePerson();
+  if (!actingPerson) {
+    setStatus('login-status', 'Bitte eine handelnde Person aus der Mitgliederliste auswählen.', 'error');
+    return;
+  }
+
+  setStatus('login-status', 'Prüfe Funktionslogin…', 'info');
   const result = await authentifiziereBenutzer({
     client,
     login: document.getElementById('app-login').value,
@@ -85,21 +211,31 @@ async function login() {
   if (!result.ok) {
     if (result.bootstrapRequired) {
       showBootstrap(true);
-      setStatus('Noch keine App-Benutzer vorhanden. Bitte ersten Admin anlegen.', 'warn');
+      setStatus('login-status', 'Noch keine Funktionskonten vorhanden. Bitte ersten Admin anlegen.', 'warn');
     } else {
-      setStatus(result.error || 'Anmeldung fehlgeschlagen.', 'error');
+      setStatus('login-status', result.error || 'Anmeldung fehlgeschlagen.', 'error');
     }
     return;
   }
 
-  persistLoginSuccess(nc, result.user);
+  persistFunctionLoginSuccess(nc, result.user, actingPerson);
 }
 
 async function bootstrap() {
-  const nc = readNc();
-  const client = createNcClient(nc);
-  if (!client) {
-    setStatus('Nextcloud-Zugangsdaten sind unvollständig.', 'error');
+  const { client } = createClientOrStatus('login-status');
+  if (!client) return;
+
+  if (!actingPersons.length) {
+    const loaded = await ladeHandelndePersonen(client);
+    if (!loaded.ok) {
+      setStatus('login-status', loaded.error || 'Mitgliederliste konnte nicht geladen werden.', 'error');
+      return;
+    }
+  }
+
+  const actingPerson = leseHandelndePerson();
+  if (!actingPerson) {
+    setStatus('login-status', 'Bitte zuerst eine handelnde Person aus der Mitgliederliste auswählen.', 'error');
     return;
   }
 
@@ -108,11 +244,11 @@ async function bootstrap() {
   const pass1 = document.getElementById('bootstrap-pass').value;
   const pass2 = document.getElementById('bootstrap-pass-repeat').value;
   if (pass1 !== pass2) {
-    setStatus('Die beiden App-Passwörter stimmen nicht überein.', 'error');
+    setStatus('login-status', 'Die beiden App-Passwörter stimmen nicht überein.', 'error');
     return;
   }
 
-  setStatus('Lege ersten Admin an…', 'info');
+  setStatus('login-status', 'Lege ersten Admin an…', 'info');
   const result = await initialisiereErstenBenutzer({
     client,
     login: loginId,
@@ -120,20 +256,32 @@ async function bootstrap() {
     password: pass1,
   });
   if (!result.ok) {
-    setStatus(result.error || 'Erster Admin konnte nicht angelegt werden.', 'error');
+    setStatus('login-status', result.error || 'Erster Admin konnte nicht angelegt werden.', 'error');
     return;
   }
 
-  persistLoginSuccess(nc, result.user);
+  persistFunctionLoginSuccess(readNc(), result.user, actingPerson);
 }
 
 function prefill() {
   const nc = leseNcKonfiguration();
   document.getElementById('nc-url').value = nc.url;
   document.getElementById('nc-user').value = nc.user;
+  renderActingPersons(getLocalActingPersons().sort((a, b) => a.name.localeCompare(b.name, 'de')));
+  actingPersons = getLocalActingPersons().sort((a, b) => a.name.localeCompare(b.name, 'de'));
 }
 
-document.getElementById('btn-login').addEventListener('click', login);
+document.getElementById('btn-member-mode').addEventListener('click', () => setMode('member'));
+document.getElementById('btn-function-mode').addEventListener('click', async () => {
+  setMode('function');
+  const nc = readNc();
+  const client = createNcClient(nc);
+  await ladeHandelndePersonen(client);
+});
+document.getElementById('btn-member-login').addEventListener('click', memberLogin);
+document.getElementById('btn-login').addEventListener('click', functionLogin);
 document.getElementById('btn-test-nc').addEventListener('click', testeNextcloud);
 document.getElementById('btn-bootstrap').addEventListener('click', bootstrap);
+
 prefill();
+setMode('member');

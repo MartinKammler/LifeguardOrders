@@ -25,6 +25,15 @@
       color: var(--text-2);
       font-size: .92rem;
     }
+    .login-toggle {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .login-card-muted {
+      background: color-mix(in srgb, var(--surface) 88%, var(--blue) 12%);
+    }
   </style>
 </head>
 <body>
@@ -32,7 +41,7 @@
     <div class="login-wrap">
       <div class="login-head">
         <h1 style="margin-bottom:8px">LifeguardOrders</h1>
-        <p>App-Login auf Basis der Nextcloud-Verbindung</p>
+        <p>Mitgliedslogin über die Stempeluhr, Funktionslogin für Verwaltung und Finanzen</p>
       </div>
 
       <div class="card">
@@ -57,21 +66,52 @@
         </div>
       </div>
 
-      <div class="card">
-        <h2>App-Login</h2>
+      <div class="login-toggle">
+        <button class="btn btn-primary" id="btn-member-mode" type="button">Mitgliedslogin</button>
+        <button class="btn btn-ghost" id="btn-function-mode" type="button">Funktionslogin</button>
+      </div>
+
+      <div class="card" id="member-card">
+        <h2>Mitgliedslogin</h2>
+        <p class="text-sm" style="color:var(--text-2);margin-bottom:14px">
+          Standardmäßig meldest du dich hier mit derselben 6-stelligen PIN wie in der Stempeluhr an.
+        </p>
+        <div class="form-grid">
+          <div class="field span2">
+            <label for="member-pin">PIN</label>
+            <input type="password" id="member-pin" inputmode="numeric" autocomplete="one-time-code" placeholder="123456" maxlength="6">
+          </div>
+        </div>
+        <div class="flex gap-8 mt-16" style="align-items:center">
+          <button class="btn btn-primary" id="btn-member-login">Mitglied anmelden</button>
+          <span id="member-status" class="badge badge-blue">Bitte zuerst die Nextcloud-Verbindung angeben und dann mit PIN anmelden.</span>
+        </div>
+      </div>
+
+      <div class="card login-card-muted" id="function-card" style="display:none">
+        <h2>Funktionslogin</h2>
+        <p class="text-sm" style="color:var(--text-2);margin-bottom:14px">
+          Für `admin`, `finanzen` und `materialwart`. Nach dem Login ist die Auswahl der handelnden Person verpflichtend.
+        </p>
         <div class="form-grid">
           <div class="field">
             <label for="app-login">Login-ID</label>
-            <input type="text" id="app-login" placeholder="martin">
+            <input type="text" id="app-login" placeholder="kasse">
           </div>
           <div class="field">
             <label for="app-pass">App-Passwort</label>
             <input type="password" id="app-pass" placeholder="••••••••••••">
           </div>
+          <div class="field span2">
+            <label for="acting-person">Handelnde Person</label>
+            <select id="acting-person">
+              <option value="">– bitte wählen –</option>
+            </select>
+          </div>
         </div>
         <div class="flex gap-8 mt-16" style="align-items:center">
-          <button class="btn btn-primary" id="btn-login">Anmelden</button>
-          <span id="login-status" class="badge badge-blue">Bitte mit Nextcloud- und App-Zugang anmelden.</span>
+          <button class="btn btn-primary" id="btn-login">Funktionslogin</button>
+          <span id="login-status" class="badge badge-blue">Bitte mit Nextcloud- und Funktionszugang anmelden.</span>
         </div>
       </div>
 

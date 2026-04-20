@@ -73,6 +73,31 @@ Phase 4 — Abschluss & Rechnungen:
   Kassenwart-Übersicht und Dashboard nutzen die finale Verteilung
 ```
 
+**Geplantes Mehrnutzer-Zielbild:**
+```
+Mitglied:
+  Meldet sich mit Stempeluhr-PIN an →
+  Erfasst eigenen Bestellwunsch in separater Wunschliste →
+  Sieht eigenes Dashboard mit Wunschstatus, Bestellstatus, Förderstunden und Rechnungen
+
+Admin:
+  Übernimmt Wünsche aus der Wunschliste in die offizielle Sammelbestellung →
+  Darf Wünsche im Auftrag des Mitglieds anpassen →
+  Darf globale und individuelle Sperren setzen →
+  Verwaltet Benutzer, Rollen, Artikelkatalog und Systemeinstellungen
+
+Finanzen:
+  Darf OG-Förderung setzen und entziehen →
+  Darf globale und individuelle Sperren setzen →
+  Erzeugt Rechnungen, verwaltet Zahlstatus und finanzielle Freigaben →
+  Darf keine Benutzer oder Systemeinstellungen verwalten
+
+Materialwart:
+  Pflegt Lagerbestand, Zugang, Abgang und Ausgaben →
+  Darf ungeförderte Lagerausgaben zum Katalogpreis direkt erfassen →
+  Markiert Förderfälle nur als Freigabefall für Admin oder Finanzen
+```
+
 **Mitgliederliste:** Wird einmalig aus der `config.js` der Stempeluhr übernommen (gleiche IDs,
 gleiche Namen). Sie ist die einzige Quelle der Wahrheit für Personen in beiden Apps.
 Einzelne Mitglieder können auch manuell als JSON-Objekt (`{"id": "...", "name": "..."}`) eingetragen
@@ -229,6 +254,45 @@ werden — der Parser versteht beide Formate.
 64. Als Admin möchte ich bei fehlerhaftem Import-Text eine verständliche Fehlermeldung erhalten.
 65. Als Admin möchte ich auf jeder leeren Listenseite einen erklärenden Hinweis sehen.
 
+### Mitglieder-Self-Service (Zielbild)
+
+66. Als Mitglied möchte ich mich mit derselben PIN wie in der Stempeluhr anmelden können,
+    damit ich keinen zweiten persönlichen Login pflegen muss.
+67. Als Mitglied möchte ich nur meine eigenen Wünsche, Bestellungen, Rechnungen und
+    Förderstunden sehen.
+68. Als Mitglied möchte ich einen neuen Wunsch in eine separate Wunschliste eintragen,
+    ohne die offizielle Sammelbestellung direkt zu verändern.
+69. Als Mitglied möchte ich eigene Wünsche bearbeiten oder stornieren können, solange
+    sie noch nicht in die offizielle Sammelbestellung übernommen wurden.
+70. Als Mitglied möchte ich sehen, ob ein Wunsch `offen`, `teilweise übernommen`,
+    `übernommen`, `abgelehnt`, `storniert` oder `erledigt` ist.
+71. Als Mitglied möchte ich sehen, wenn die Verwaltung meinen Wunsch nachträglich
+    angepasst hat, damit der aktuelle Stand nachvollziehbar bleibt.
+72. Als Mitglied möchte ich auch bei einer Sperre meine bisherigen Wünsche und Rechnungen
+    weiter sehen, aber keine neuen Wünsche mehr anlegen können.
+
+### Rollen & Freigaben (Zielbild)
+
+73. Als Admin möchte ich Wünsche aus der separaten Wunschliste bewusst in die offizielle
+    Sammelbestellung übernehmen können.
+74. Als Admin möchte ich Wünsche im Auftrag eines Mitglieds ändern können
+    (z. B. nach WhatsApp-Rückmeldung), wobei diese Änderung auditiert wird.
+75. Als Admin oder Finanzen möchte ich OG-Förderung bis zur Rechnungserzeugung setzen
+    oder entziehen können.
+76. Als Admin oder Finanzen möchte ich globale Sperren für neue geförderte Wünsche
+    und neue geförderte Lageranfragen setzen können.
+77. Als Admin oder Finanzen möchte ich einzelne Mitglieder für neue geförderte Wünsche
+    und Lageranfragen sperren können, inklusive Grund und optionalem Enddatum.
+78. Als Finanzen möchte ich Rechnungen, Zahlstatus und finanzielle Freigaben verwalten,
+    aber keine Benutzer oder Systemeinstellungen ändern.
+79. Als Materialwart möchte ich Lagerzugänge, Lagerabgänge und ungeförderte Ausgaben
+    zum Katalogpreis erfassen, ohne selbst Förderentscheidungen treffen zu dürfen.
+80. Als Materialwart möchte ich Förderfälle oder Preisabweichungen als Freigabefall
+    an Admin oder Finanzen markieren können.
+81. Als Funktionsnutzer (`admin`, `finanzen`, `materialwart`) möchte ich mich mit einem
+    Funktionslogin anmelden und zusätzlich die handelnde Person auswählen, damit
+    Audit-Einträge trotzdem einer realen Person zugeordnet werden können.
+
 ---
 
 ## Implementation Decisions
@@ -302,14 +366,52 @@ mitglieder[]   — [{ id, name }] — importiert aus Stempeluhr config.js
 nc{}           — { url, user } — pass wird nur in sessionStorage gehalten, nie gespeichert
 ```
 
-**`benutzer.json`** *(geplante Mehrnutzer-Vorbereitung)*:
+**`benutzer.json`** *(geplante Mehrnutzer-Vorbereitung, nur Funktionskonten)*:
 ```
 id             string
 name           string
-rolle          enum     — "admin" | "kassenwart" | "verwaltung" | "lesen"
+rolle          enum     — "admin" | "finanzen" | "materialwart"
 aktiv          boolean
 salt           string
 passwordHash   string
+authType       string   — immer "lokal"
+```
+
+**`zugriff.json`** — Rollen-Overlay und Sperren für Mitglieder:
+```
+global
+  userBestellungGesperrt  boolean
+  lagerverkaufGesperrt    boolean
+  grund                   string
+  gesetztVon              string
+  gesetztAm               string   — ISO-Zeitstempel
+mitglieder[]
+  mitgliedId              string
+  gesperrt                boolean
+  grund                   string
+  gesetztVon              string
+  gesetztAm               string   — ISO-Zeitstempel
+  gesperrtBis             string   — optional, ISO-Datum
+```
+
+**`wuensche.json`** — Wunschqueue der Mitglieder vor der offiziellen Sammelbestellung:
+```
+id                    string
+mitgliedId            string
+status                enum     — "offen" | "teilweise_uebernommen" | "uebernommen" | "abgelehnt" | "storniert" | "erledigt"
+geaendertDurchAdmin   boolean
+geaendertAm           string   — optional, ISO-Zeitstempel
+geaendertGrund        string   — optional, z. B. "WhatsApp"
+positionen[]
+  id                  string
+  artikelNr           string
+  bezeichnung         string
+  variante            string
+  menge               number
+uebernahmen[]
+  bestellungId        string
+  wunschPositionId    string
+  uebernommeneMenge   number
 ```
 
 **Virtuelle Mitglieder (konstanten.js):**
@@ -445,6 +547,65 @@ Format `R_YYYY_MM_NNN`. Höchstzähler wird aus allen existierenden Rechnungsnum
 `createWebDavClient(creds, fetchFn)` — Factory-Pattern für Testbarkeit. Alle Fehler als
 strukturierte Objekte (`{ ok: false, error }`), keine Exceptions.
 
+### Authentifizierung & Rollen-Zielbild
+
+- Es gibt zwei getrennte Login-Wege:
+  - **Mitgliedslogin** über PIN aus `/LifeguardClock/lgc_users.json`
+  - **Funktionslogin** über lokale Funktionskonten in `/LifeguardOrders/benutzer.json`
+- `/LifeguardClock/lgc_users.json` wird vom Bestellsystem nur **lesend** verwendet
+- Nur aktive Stempeluhr-Nutzer dürfen sich als Mitglied anmelden
+- Die PIN-Prüfung für Mitglieder muss kompatibel zur Stempeluhr sein:
+  - Einmal-PIN/Klartext, wenn `mustChangePIN` aktiv ist
+  - sonst `SHA-256(salt + ":" + pin)`
+- Mitglieder erhalten im Bestellsystem implizit die Rolle `user`
+- `admin`, `finanzen` und `materialwart` sind reine Funktionskonten im Bestellsystem
+- Nach einem Funktionslogin ist die Auswahl einer **handelnden Person** verpflichtend
+- Session-Daten unterscheiden sauber zwischen:
+  - `authType = "stempeluhr"` für Mitglieder
+  - `authType = "lokal"` für Funktionskonten
+- Die eigentliche Rechteprüfung liegt zentral in einer späteren `authz.js`
+- Kein Eintrag in `zugriff.json` bedeutet: normales Mitglied ohne Sperre
+
+### Rollenmatrix (Zielbild)
+
+- `user`
+  - darf eigene Wünsche anlegen, ändern und stornieren bis zur Übernahme
+  - sieht nur eigene Daten
+  - darf keine Förderentscheidungen, Rechnungen oder Lagerfreigaben treffen
+- `materialwart`
+  - darf Lagerbestand und Bewegungen pflegen
+  - darf ungeförderte Lagerausgaben zum Katalogpreis erfassen
+  - darf keine Preisabweichungen oder OG-Förderungen finalisieren
+- `finanzen`
+  - darf OG-Förderung setzen und entziehen
+  - darf Rechnungen erzeugen, drucken und Zahlstatus pflegen
+  - darf globale und individuelle Sperren setzen
+  - darf keine Benutzer, Rollen oder Systemeinstellungen verwalten
+- `admin`
+  - darf alles
+  - übernimmt Wünsche aus der Wunschqueue in die offizielle Sammelbestellung
+  - verwaltet Benutzer, Rollen, Artikelkatalog und Systemeinstellungen
+
+### Wunschqueue & Sperrregeln (Zielbild)
+
+- Mitgliederwünsche landen zuerst in `wuensche.json`, nicht direkt in `bestellungen.json`
+- Nur `admin` übernimmt Wünsche in die offizielle Sammelbestellung
+- Bestehende Wünsche bleiben bei einer Sperre sichtbar
+- Sperren verhindern nur **neue** Wünsche und **neue** Lageranfragen
+- Dasselbe gilt für geförderte Lagerfälle
+- Änderungen durch Admin bleiben auditierbar und werden dem Mitglied im Dashboard kenntlich gemacht
+- OG-Förderung darf durch `admin` oder `finanzen` bis zur Rechnungserzeugung gesetzt
+  oder entzogen werden; danach nur über bewussten Korrekturpfad
+
+### Benutzer-Dashboard (Zielbild)
+
+Das spätere Mitglieder-Dashboard zeigt ausschließlich eigene Daten in vier Blöcken:
+
+1. Meine Wünsche
+2. Meine laufenden Bestellungen
+3. Meine Förderung / Stunden
+4. Meine Rechnungen / Lagerausgaben
+
 ### DOM-Sicherheit (XSS-Schutz)
 
 Alle Seitenmodule verwenden ausschließlich:
@@ -498,7 +659,7 @@ Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Re
 
 ## Out of Scope
 
-- Self-Service-Portal für Mitglieder
+- Self-Service-Portal für Mitglieder im aktuellen Stand *(als Zielbild eingeplant, aber noch nicht implementiert)*
 - Direktanbindung DLRG-Bundesshop / Materialstelle API
 - DATEV- oder Buchhaltungsexport
 - E-Mail-Versand von Rechnungen *(geplante spätere Erweiterung)*

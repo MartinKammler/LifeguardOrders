@@ -232,6 +232,21 @@ Minimalmodell: Admin · Kassenwart · Verwaltung · Leser
 
 ---
 
+## Anschlussplanung Mehrnutzerbetrieb
+
+Die Härtung aus Sprint 6 bildet nur die technische Grundlage. Der eigentliche
+Mehrnutzer-Ausbau mit Mitgliedslogin über die Stempeluhr, lokalem Funktionslogin,
+Rollenprüfung, Wunschqueue und Mitglieder-Dashboard ist separat geplant in:
+
+- `docs/plans/auth-rbac-userflow.md`
+- `docs/sprints/sprint-07.md`
+- `docs/discovery/offene-fragen-auth-userflow.md`
+
+Diese Trennung ist bewusst: Erst Datenintegrität und Konfliktsperre, danach
+Mehrnutzerbetrieb auf belastbarer Basis.
+
+---
+
 ## Empfehlung zum weiteren Ausbau
 
 **Option A – Lightweight** (empfohlen für kleinen Verein):

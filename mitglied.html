@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mitgliederbereich – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+  <nav>
+    <a href="mitglied.html" class="logo">LifeguardOrders</a>
+  </nav>
+
+  <main class="container stack gap-16" style="padding-top:20px">
+    <section class="card">
+      <h1 style="margin-bottom:8px">Mitgliederbereich</h1>
+      <p class="text-sm" style="color:var(--text-2)">
+        Der Self-Service für Wünsche, Bestellstatus und Förderstunden wird gerade vorbereitet.
+      </p>
+    </section>
+
+    <section class="card" id="mitglied-status-card">
+      <h2>Aktueller Zugriff</h2>
+      <div id="mitglied-status"></div>
+    </section>
+
+    <section class="card" id="mitglied-sperre-card" style="display:none">
+      <h2>Sperrhinweis</h2>
+      <div id="mitglied-sperre"></div>
+    </section>
+  </main>
+
+  <script type="module" src="src/auth-guard.js"></script>
+  <script type="module" src="src/mitglied-app.js"></script>
+</body>
+</html>
