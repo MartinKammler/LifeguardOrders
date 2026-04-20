@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>Tests – authz</title></head>
+<body><pre id="out"></pre>
+<script type="module">
+import { canRead, canWrite, darfAktion, requireSeite } from '../src/authz.js';
+
+let ok = 0, fail = 0;
+function assert(label, cond) {
+  document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
+  cond ? ok++ : fail++;
+}
+
+// ---------------------------------------------------------------------------
+// Hilfsfunktionen: Session-Fixtures
+// ---------------------------------------------------------------------------
+const s = {
+  admin:       { id: 'a1', name: 'Admin',       rolle: 'admin',       authType: 'lokal' },
+  finanzen:    { id: 'f1', name: 'Finanzen',    rolle: 'finanzen',    authType: 'lokal' },
+  materialwart:{ id: 'm1', name: 'Material',    rolle: 'materialwart',authType: 'lokal' },
+  user:        { id: 'u1', name: 'Mitglied',    rolle: 'user',        authType: 'stempeluhr' },
+};
+
+// ---------------------------------------------------------------------------
+// canRead
+// ---------------------------------------------------------------------------
+
+// admin darf alles außer 'mitglied'
+assert('canRead: admin – bestellungen',    canRead('bestellungen',    s.admin) === true);
+assert('canRead: admin – rechnungen',      canRead('rechnungen',      s.admin) === true);
+assert('canRead: admin – kassenwart',      canRead('kassenwart',      s.admin) === true);
+assert('canRead: admin – artikel',         canRead('artikel',         s.admin) === true);
+assert('canRead: admin – materialbestand', canRead('materialbestand', s.admin) === true);
+assert('canRead: admin – einstellungen',   canRead('einstellungen',   s.admin) === true);
+assert('canRead: admin – dashboard',       canRead('dashboard',       s.admin) === true);
+assert('canRead: admin – mitglied NICHT',  canRead('mitglied',        s.admin) === false);
+
+// finanzen
+assert('canRead: finanzen – rechnungen',      canRead('rechnungen',   s.finanzen) === true);
+assert('canRead: finanzen – kassenwart',      canRead('kassenwart',   s.finanzen) === true);
+assert('canRead: finanzen – bestellungen',    canRead('bestellungen', s.finanzen) === true);
+assert('canRead: finanzen – dashboard',       canRead('dashboard',    s.finanzen) === true);
+assert('canRead: finanzen – artikel NICHT',   canRead('artikel',      s.finanzen) === false);
+assert('canRead: finanzen – einstellungen NICHT', canRead('einstellungen', s.finanzen) === false);
+assert('canRead: finanzen – mitglied NICHT',  canRead('mitglied',     s.finanzen) === false);
+
+// materialwart
+assert('canRead: materialwart – artikel',         canRead('artikel',         s.materialwart) === true);
+assert('canRead: materialwart – materialbestand', canRead('materialbestand', s.materialwart) === true);
+assert('canRead: materialwart – bestellungen',    canRead('bestellungen',    s.materialwart) === true);
+assert('canRead: materialwart – dashboard',       canRead('dashboard',       s.materialwart) === true);
+assert('canRead: materialwart – rechnungen NICHT',canRead('rechnungen',      s.materialwart) === false);
+assert('canRead: materialwart – einstellungen NICHT', canRead('einstellungen', s.materialwart) === false);
+
+// user
+assert('canRead: user – mitglied',             canRead('mitglied',    s.user) === true);
+assert('canRead: user – bestellungen NICHT',   canRead('bestellungen',s.user) === false);
+assert('canRead: user – rechnungen NICHT',     canRead('rechnungen',  s.user) === false);
+assert('canRead: user – dashboard NICHT',      canRead('dashboard',   s.user) === false);
+
+// null/undefined
+assert('canRead: null session → false',        canRead('bestellungen', null) === false);
+assert('canRead: undefined session → false',   canRead('bestellungen', undefined) === false);
+
+// ---------------------------------------------------------------------------
+// canWrite
+// ---------------------------------------------------------------------------
+
+// admin
+assert('canWrite: admin – bestellungen',    canWrite('bestellungen',    s.admin) === true);
+assert('canWrite: admin – rechnungen',      canWrite('rechnungen',      s.admin) === true);
+assert('canWrite: admin – kassenwart',      canWrite('kassenwart',      s.admin) === true);
+assert('canWrite: admin – artikel',         canWrite('artikel',         s.admin) === true);
+assert('canWrite: admin – materialbestand', canWrite('materialbestand', s.admin) === true);
+assert('canWrite: admin – einstellungen',   canWrite('einstellungen',   s.admin) === true);
+assert('canWrite: admin – mitglied NICHT',  canWrite('mitglied',        s.admin) === false);
+
+// finanzen
+assert('canWrite: finanzen – rechnungen',      canWrite('rechnungen', s.finanzen) === true);
+assert('canWrite: finanzen – kassenwart',      canWrite('kassenwart', s.finanzen) === true);
+assert('canWrite: finanzen – bestellungen NICHT', canWrite('bestellungen', s.finanzen) === false);
+assert('canWrite: finanzen – einstellungen NICHT', canWrite('einstellungen', s.finanzen) === false);
+
+// materialwart
+assert('canWrite: materialwart – artikel',         canWrite('artikel',         s.materialwart) === true);
+assert('canWrite: materialwart – materialbestand', canWrite('materialbestand', s.materialwart) === true);
+assert('canWrite: materialwart – rechnungen NICHT',canWrite('rechnungen',      s.materialwart) === false);
+assert('canWrite: materialwart – bestellungen NICHT', canWrite('bestellungen', s.materialwart) === false);
+
+// user
+assert('canWrite: user – nichts (mitglied)',   canWrite('mitglied',    s.user) === false);
+assert('canWrite: user – bestellungen NICHT',  canWrite('bestellungen',s.user) === false);
+
+// null/undefined
+assert('canWrite: null session → false',       canWrite('rechnungen', null) === false);
+assert('canWrite: undefined session → false',  canWrite('rechnungen', undefined) === false);
+
+// ---------------------------------------------------------------------------
+// darfAktion
+// ---------------------------------------------------------------------------
+
+// admin darf alles
+assert('darfAktion: admin – bestellung-schreiben',      darfAktion('bestellung-schreiben',      s.admin) === true);
+assert('darfAktion: admin – bestellung-abschliessen',   darfAktion('bestellung-abschliessen',   s.admin) === true);
+assert('darfAktion: admin – rechnung-erstellen',        darfAktion('rechnung-erstellen',        s.admin) === true);
+assert('darfAktion: admin – zahlung-setzen',            darfAktion('zahlung-setzen',            s.admin) === true);
+assert('darfAktion: admin – foerderung-aendern',        darfAktion('foerderung-aendern',        s.admin) === true);
+assert('darfAktion: admin – artikel-schreiben',         darfAktion('artikel-schreiben',         s.admin) === true);
+assert('darfAktion: admin – materialbestand-schreiben', darfAktion('materialbestand-schreiben', s.admin) === true);
+assert('darfAktion: admin – einstellungen-schreiben',   darfAktion('einstellungen-schreiben',   s.admin) === true);
+assert('darfAktion: admin – nutzer-verwalten',          darfAktion('nutzer-verwalten',          s.admin) === true);
+assert('darfAktion: admin – zugriff-setzen',            darfAktion('zugriff-setzen',            s.admin) === true);
+
+// finanzen
+assert('darfAktion: finanzen – rechnung-erstellen',        darfAktion('rechnung-erstellen',  s.finanzen) === true);
+assert('darfAktion: finanzen – zahlung-setzen',            darfAktion('zahlung-setzen',      s.finanzen) === true);
+assert('darfAktion: finanzen – foerderung-aendern',        darfAktion('foerderung-aendern',  s.finanzen) === true);
+assert('darfAktion: finanzen – bestellung-schreiben NICHT',darfAktion('bestellung-schreiben',s.finanzen) === false);
+assert('darfAktion: finanzen – nutzer-verwalten NICHT',    darfAktion('nutzer-verwalten',    s.finanzen) === false);
+
+// materialwart
+assert('darfAktion: materialwart – artikel-schreiben',         darfAktion('artikel-schreiben',         s.materialwart) === true);
+assert('darfAktion: materialwart – materialbestand-schreiben', darfAktion('materialbestand-schreiben', s.materialwart) === true);
+assert('darfAktion: materialwart – rechnung-erstellen NICHT',  darfAktion('rechnung-erstellen',        s.materialwart) === false);
+assert('darfAktion: materialwart – nutzer-verwalten NICHT',    darfAktion('nutzer-verwalten',          s.materialwart) === false);
+
+// user
+assert('darfAktion: user – bestellung-schreiben NICHT',      darfAktion('bestellung-schreiben',      s.user) === false);
+assert('darfAktion: user – rechnung-erstellen NICHT',        darfAktion('rechnung-erstellen',        s.user) === false);
+assert('darfAktion: user – artikel-schreiben NICHT',         darfAktion('artikel-schreiben',         s.user) === false);
+
+// null/undefined
+assert('darfAktion: null session → false',      darfAktion('rechnung-erstellen', null) === false);
+assert('darfAktion: undefined session → false', darfAktion('rechnung-erstellen', undefined) === false);
+
+// ---------------------------------------------------------------------------
+// requireSeite
+// ---------------------------------------------------------------------------
+
+// admin
+assert('requireSeite: admin – index.html ✅',               requireSeite('index.html',               s.admin).erlaubt === true);
+assert('requireSeite: admin – bestellungen.html ✅',        requireSeite('bestellungen.html',        s.admin).erlaubt === true);
+assert('requireSeite: admin – bestellung-neu.html ✅',      requireSeite('bestellung-neu.html',      s.admin).erlaubt === true);
+assert('requireSeite: admin – bestellung-sammeln.html ✅',  requireSeite('bestellung-sammeln.html',  s.admin).erlaubt === true);
+assert('requireSeite: admin – bestellung-abgleich.html ✅', requireSeite('bestellung-abgleich.html', s.admin).erlaubt === true);
+assert('requireSeite: admin – artikel.html ✅',             requireSeite('artikel.html',             s.admin).erlaubt === true);
+assert('requireSeite: admin – materialbestand.html ✅',     requireSeite('materialbestand.html',     s.admin).erlaubt === true);
+assert('requireSeite: admin – rechnungen.html ✅',          requireSeite('rechnungen.html',          s.admin).erlaubt === true);
+assert('requireSeite: admin – kassenwart.html ✅',          requireSeite('kassenwart.html',          s.admin).erlaubt === true);
+assert('requireSeite: admin – dashboard.html ✅',           requireSeite('dashboard.html',           s.admin).erlaubt === true);
+assert('requireSeite: admin – einstellungen.html ✅',       requireSeite('einstellungen.html',       s.admin).erlaubt === true);
+assert('requireSeite: admin – mitglied.html ❌',            requireSeite('mitglied.html',            s.admin).erlaubt === false);
+assert('requireSeite: admin – unbekannt.html ✅',           requireSeite('unbekannt.html',           s.admin).erlaubt === true);
+
+// finanzen
+assert('requireSeite: finanzen – rechnungen.html ✅',     requireSeite('rechnungen.html',    s.finanzen).erlaubt === true);
+assert('requireSeite: finanzen – kassenwart.html ✅',     requireSeite('kassenwart.html',    s.finanzen).erlaubt === true);
+assert('requireSeite: finanzen – bestellungen.html ✅',   requireSeite('bestellungen.html',  s.finanzen).erlaubt === true);
+assert('requireSeite: finanzen – dashboard.html ✅',      requireSeite('dashboard.html',     s.finanzen).erlaubt === true);
+assert('requireSeite: finanzen – index.html ✅',          requireSeite('index.html',         s.finanzen).erlaubt === true);
+assert('requireSeite: finanzen – einstellungen.html ❌',  requireSeite('einstellungen.html', s.finanzen).erlaubt === false);
+assert('requireSeite: finanzen – artikel.html ❌',        requireSeite('artikel.html',       s.finanzen).erlaubt === false);
+assert('requireSeite: finanzen – mitglied.html ❌',       requireSeite('mitglied.html',      s.finanzen).erlaubt === false);
+assert('requireSeite: finanzen – unbekannt.html ❌',      requireSeite('unbekannt.html',     s.finanzen).erlaubt === false);
+
+// materialwart
+assert('requireSeite: materialwart – artikel.html ✅',         requireSeite('artikel.html',         s.materialwart).erlaubt === true);
+assert('requireSeite: materialwart – materialbestand.html ✅', requireSeite('materialbestand.html', s.materialwart).erlaubt === true);
+assert('requireSeite: materialwart – bestellungen.html ✅',    requireSeite('bestellungen.html',    s.materialwart).erlaubt === true);
+assert('requireSeite: materialwart – dashboard.html ✅',       requireSeite('dashboard.html',       s.materialwart).erlaubt === true);
+assert('requireSeite: materialwart – rechnungen.html ❌',      requireSeite('rechnungen.html',      s.materialwart).erlaubt === false);
+assert('requireSeite: materialwart – kassenwart.html ❌',      requireSeite('kassenwart.html',      s.materialwart).erlaubt === false);
+assert('requireSeite: materialwart – einstellungen.html ❌',   requireSeite('einstellungen.html',   s.materialwart).erlaubt === false);
+assert('requireSeite: materialwart – unbekannt.html ❌',       requireSeite('unbekannt.html',       s.materialwart).erlaubt === false);
+
+// user
+assert('requireSeite: user – mitglied.html ✅',    requireSeite('mitglied.html',   s.user).erlaubt === true);
+assert('requireSeite: user – index.html ❌',        requireSeite('index.html',      s.user).erlaubt === false);
+assert('requireSeite: user – bestellungen.html ❌', requireSeite('bestellungen.html',s.user).erlaubt === false);
+assert('requireSeite: user – rechnungen.html ❌',   requireSeite('rechnungen.html', s.user).erlaubt === false);
+assert('requireSeite: user – unbekannt.html ❌',    requireSeite('unbekannt.html',  s.user).erlaubt === false);
+
+// null/undefined
+assert('requireSeite: null session – index.html → false',     requireSeite('index.html', null).erlaubt === false);
+assert('requireSeite: undefined session – mitglied.html → false', requireSeite('mitglied.html', undefined).erlaubt === false);
+assert('requireSeite: null session – rechnungen.html → false', requireSeite('rechnungen.html', null).erlaubt === false);
+assert('requireSeite: null session – unbekannt.html → false',  requireSeite('unbekannt.html', null).erlaubt === false);
+
+document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;
+</script></body></html>

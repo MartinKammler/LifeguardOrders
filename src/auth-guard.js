@@ -10,6 +10,7 @@ import {
   redirectToLogin,
   touchSessionActivity,
 } from './session.js';
+import { requireSeite } from './authz.js';
 
 const MEMBER_HOME = 'mitglied.html';
 
@@ -68,9 +69,18 @@ if (!session || !hasNcPasswort() || !einstellungen?.nc?.url || !einstellungen?.n
   } else if (isFunctionSession(session) && page === MEMBER_HOME) {
     redirectTo('index.html');
   } else if (isFunctionSession(session)) {
-    const events = ['pointerdown', 'keydown', 'touchstart'];
-    for (const eventName of events) {
-      window.addEventListener(eventName, () => touchSessionActivity(), { passive: true });
+    const { erlaubt } = requireSeite(page, session);
+    if (!erlaubt) {
+      document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:1rem;font-family:sans-serif;text-align:center;padding:2rem;">
+  <p style="color:var(--amber,#f59e0b);font-size:1.25rem;font-weight:600;">Kein Zugriff</p>
+  <p>Deine Rolle <strong>${session.rolle}</strong> hat keine Berechtigung für <strong>${page}</strong>.</p>
+  <a href="index.html">Zur Startseite</a>
+</div>`;
+    } else {
+      const events = ['pointerdown', 'keydown', 'touchstart'];
+      for (const eventName of events) {
+        window.addEventListener(eventName, () => touchSessionActivity(), { passive: true });
+      }
     }
   }
   navSessionUI(document.querySelector('nav'), session);
