@@ -1,5 +1,6 @@
 import { load } from './storage.js';
 import { STORAGE_KEY_E } from './auth.js';
+import { setHTML, html } from './dom.js';
 import {
   clearSession,
   getSession,
@@ -72,11 +73,11 @@ if (!session || !hasNcPasswort() || !einstellungen?.nc?.url || !einstellungen?.n
   } else if (isFunctionSession(session)) {
     const { erlaubt } = requireSeite(page, session);
     if (!erlaubt) {
-      document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:1rem;font-family:sans-serif;text-align:center;padding:2rem;">
+      setHTML(document.body, html`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:1rem;font-family:sans-serif;text-align:center;padding:2rem;">
   <p style="color:var(--amber,#f59e0b);font-size:1.25rem;font-weight:600;">Kein Zugriff</p>
   <p>Deine Rolle <strong>${session.rolle}</strong> hat keine Berechtigung für <strong>${page}</strong>.</p>
   <a href="index.html">Zur Startseite</a>
-</div>`;
+</div>`);
     } else {
       const events = ['pointerdown', 'keydown', 'touchstart'];
       for (const eventName of events) {

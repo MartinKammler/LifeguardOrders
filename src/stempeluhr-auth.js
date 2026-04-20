@@ -39,8 +39,9 @@ export async function hashClockPin(pin, salt) {
 
 export async function verifyClockPin(pin, user) {
   const normalized = normalizeClockUser(user);
-  if (normalized.mustChangePIN || !normalized.salt) {
-    return String(pin || '') === normalized.pin;
+  if (!normalized.salt) {
+    // Kein Salt: Klartext-Vergleich nur erlaubt um mustChangePIN-Nutzer zu identifizieren
+    return normalized.mustChangePIN && String(pin || '') === normalized.pin;
   }
   return (await hashClockPin(pin, normalized.salt)) === normalized.pin;
 }

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>Tests – sync</title></head>
+<body><pre id="out"></pre>
+<script type="module">
+import {
+  getSyncState,
+  getScopeSyncStatus,
+  hasPendingSync,
+  isConflictSync,
+  isWriteBlockedSync,
+  markSyncSuccess,
+  persistJsonWithSync,
+  hydrateJsonFromSync,
+  syncHinweisText,
+} from '../src/sync.js';
+
+let ok = 0, fail = 0;
+function assert(label, cond) {
+  document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
+  cond ? ok++ : fail++;
+}
+
+function mockStorage() {
+  const store = {};
+  return {
+    load: key => (Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null),
+    save: (key, val) => { store[key] = val; },
+  };
+}
+
+// ── Grundfunktionen ─────────────────────────────────────────────────
+document.getElementById('out').textContent += '── Grundfunktionen ──\n';
+
+assert('getSyncState: leerer Storage → {}', typeof getSyncState(mockStorage()) === 'object');
+assert('getScopeSyncStatus: unbekannter Scope → null', getScopeSyncStatus({}, 'x') === null);
+assert('hasPendingSync: immer false', hasPendingSync({}, 'x') === false);
+assert('isConflictSync: kein Eintrag → false', isConflictSync({}, 'x') === false);
+assert('isWriteBlockedSync: null → false', isWriteBlockedSync(null) === false);
+assert('isWriteBlockedSync: synced → false', isWriteBlockedSync({ mode: 'synced' }) === false);
+assert('isWriteBlockedSync: conflict → true', isWriteBlockedSync({ mode: 'conflict' }) === true);
+assert('isWriteBlockedSync: offline-readonly → true', isWriteBlockedSync({ mode: 'offline-readonly' }) === true);
+assert('isWriteBlockedSync: auth-required → true', isWriteBlockedSync({ mode: 'auth-required' }) === true);
+
+// ── markSyncSuccess ─────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── markSyncSuccess ──\n';
+const stateErfolg = markSyncSuccess({}, 'bestellungen', '/pfad', { etag: 'e-abc' });
+const statusErfolg = getScopeSyncStatus(stateErfolg, 'bestellungen');
+assert('markSyncSuccess: mode === synced', statusErfolg?.mode === 'synced');
+assert('markSyncSuccess: writable === true', statusErfolg?.writable === true);
+assert('markSyncSuccess: etag gespeichert', statusErfolg?.etag === 'e-abc');
+assert('markSyncSuccess: andere Scopes unberührt', getScopeSyncStatus(stateErfolg, 'rechnungen') === null);
+
+// ── syncHinweisText ─────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── syncHinweisText ──\n';
+assert('syncHinweisText: null → leerer String', syncHinweisText(null) === '');
+assert('syncHinweisText: synced enthält synchronisiert', syncHinweisText({ mode: 'synced' }, 'Daten').includes('synchronisiert'));
+assert('syncHinweisText: auth-required enthält Nextcloud', syncHinweisText({ mode: 'auth-required' }, 'Daten').includes('Nextcloud'));
+assert('syncHinweisText: offline-readonly enthält lesbar', syncHinweisText({ mode: 'offline-readonly' }, 'Daten').includes('lesbar'));
+assert('syncHinweisText: conflict enthält remote', syncHinweisText({ mode: 'conflict' }, 'Daten').includes('remote'));
+
+// ── persistJsonWithSync: kein Client ────────────────────────────────
+document.getElementById('out').textContent += '\n── persistJsonWithSync ──\n';
+
+const s1 = mockStorage();
+const r1 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [], client: null, remotePath: '/p', storage: s1 });
+assert('kein Client: ok === false', r1.ok === false);
+assert('kein Client: mode === auth-required', r1.sync?.mode === 'auth-required');
+
+// frische 404 (Datei noch nicht vorhanden → erster Schreibvorgang)
+const s2 = mockStorage();
+const clientFrisch = {
+  head: async () => ({ ok: false, missing: true }),
+  writeJson: async () => ({ ok: true, etag: 'etag-neu' }),
+};
+const r2 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [1], client: clientFrisch, remotePath: '/p', storage: s2 });
+assert('frische 404: ok === true', r2.ok === true);
+assert('frische 404: mode === synced', r2.sync?.mode === 'synced');
+
+// ETag-Match (normale Aktualisierung)
+const s3 = mockStorage();
+s3.save('lo_sync_status', markSyncSuccess({}, 'test', '/p', { etag: 'v1' }));
+const clientMatch = {
+  head: async () => ({ ok: true, etag: 'v1', missing: false }),
+  writeJson: async () => ({ ok: true, etag: 'v2' }),
+};
+const r3 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [2], client: clientMatch, remotePath: '/p', storage: s3 });
+assert('ETag-Match: ok === true', r3.ok === true);
+assert('ETag-Match: mode === synced', r3.sync?.mode === 'synced');
+
+// ETag-Konflikt (Remote hat sich geändert)
+const s4 = mockStorage();
+s4.save('lo_sync_status', markSyncSuccess({}, 'test', '/p', { etag: 'v1' }));
+const clientKonflikt = {
+  head: async () => ({ ok: true, etag: 'v2-remote', missing: false }),
+};
+const r4 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [3], client: clientKonflikt, remotePath: '/p', storage: s4 });
+assert('ETag-Konflikt: ok === false', r4.ok === false);
+assert('ETag-Konflikt: mode === conflict', r4.sync?.mode === 'conflict');
+assert('ETag-Konflikt: remote.conflict === true', r4.remote?.conflict === true);
+assert('ETag-Konflikt: isConflictSync erkannt', isConflictSync(s4.load('lo_sync_status'), 'test') === true);
+assert('ETag-Konflikt: isWriteBlockedSync auf gespeichertem Status', isWriteBlockedSync(s4.load('lo_sync_status')?.test) === true);
+
+// Netzwerkfehler beim HEAD
+const s5 = mockStorage();
+const clientOffline = {
+  head: async () => ({ ok: false, missing: false, error: 'Verbindung abgelehnt' }),
+};
+const r5 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [], client: clientOffline, remotePath: '/p', storage: s5 });
+assert('Netzwerkfehler: ok === false', r5.ok === false);
+assert('Netzwerkfehler: mode === offline-readonly', r5.sync?.mode === 'offline-readonly');
+
+// writeJson schlägt fehl (412 Precondition Failed → conflict)
+const s6 = mockStorage();
+const clientPrecondition = {
+  head: async () => ({ ok: false, missing: true }),
+  writeJson: async () => ({ ok: false, conflict: true, error: '412 Precondition Failed' }),
+};
+const r6 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [], client: clientPrecondition, remotePath: '/p', storage: s6 });
+assert('412 Precondition: ok === false', r6.ok === false);
+assert('412 Precondition: mode === conflict', r6.sync?.mode === 'conflict');
+
+// ── hydrateJsonFromSync ─────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── hydrateJsonFromSync ──\n';
+
+// kein Client → lokale Daten
+const s7 = mockStorage();
+s7.save('lo_data', [{ id: 'lokal' }]);
+const h1 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: null, remotePath: '/p', storage: s7 });
+assert('hydrate kein Client: source === local-no-client', h1.source === 'local-no-client');
+assert('hydrate kein Client: lokale Daten zurück', h1.data?.[0]?.id === 'lokal');
+assert('hydrate kein Client: mode === auth-required', h1.sync?.mode === 'auth-required');
+
+// gültiger Remote → Remote-Daten
+const s8 = mockStorage();
+s8.save('lo_data', [{ id: 'alt' }]);
+const clientRemote = {
+  readJson: async () => ({ ok: true, data: [{ id: 'remote' }], etag: 'e1' }),
+};
+const h2 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientRemote, remotePath: '/p', isValidRemote: d => Array.isArray(d), storage: s8 });
+assert('hydrate Remote: source === remote', h2.source === 'remote');
+assert('hydrate Remote: Remote-Daten zurück', h2.data?.[0]?.id === 'remote');
+assert('hydrate Remote: mode === synced', h2.sync?.mode === 'synced');
+
+// Remote-Fehler → lokaler Fallback
+const s9 = mockStorage();
+s9.save('lo_data', [{ id: 'fallback' }]);
+const clientFehler = {
+  readJson: async () => ({ ok: false, error: 'Netzwerk' }),
+};
+const h3 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientFehler, remotePath: '/p', storage: s9 });
+assert('hydrate Fallback: source === local-fallback', h3.source === 'local-fallback');
+assert('hydrate Fallback: lokale Daten zurück', h3.data?.[0]?.id === 'fallback');
+assert('hydrate Fallback: mode === offline-readonly', h3.sync?.mode === 'offline-readonly');
+
+// isValidRemote schlägt fehl → lokaler Fallback
+const s10 = mockStorage();
+s10.save('lo_data', [{ id: 'lokal2' }]);
+const clientInvalid = {
+  readJson: async () => ({ ok: true, data: 'kein-array', etag: 'e2' }),
+};
+const h4 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientInvalid, remotePath: '/p', isValidRemote: d => Array.isArray(d), storage: s10 });
+assert('hydrate invalid Remote: source === local-fallback', h4.source === 'local-fallback');
+assert('hydrate invalid Remote: lokale Daten zurück', h4.data?.[0]?.id === 'lokal2');
+
+document.getElementById('out').textContent += `\n${ok}/${ok + fail} Tests bestanden — ${fail} fehlgeschlagen`;
+</script></body></html>

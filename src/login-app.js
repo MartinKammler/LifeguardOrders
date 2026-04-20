@@ -5,6 +5,7 @@ import {
   leseNcKonfiguration,
   speichereNcKonfiguration,
 } from './auth.js';
+import { setHTML, raw } from './dom.js';
 import { ladeAktiveStempeluhrBenutzer, authentifiziereMitglied } from './stempeluhr-auth.js';
 import { getNextPath, SESSION_KEY_NC_PASS, setFunctionSession, setMemberSession } from './session.js';
 
@@ -96,7 +97,7 @@ function renderActingPersons(list) {
   const select = document.getElementById('acting-person');
   if (!select) return;
   const vorher = select.value;
-  select.innerHTML = '<option value="">– bitte wählen –</option>';
+  setHTML(select, raw('<option value="">– bitte wählen –</option>'));
   for (const person of list) {
     const option = document.createElement('option');
     option.value = person.id;

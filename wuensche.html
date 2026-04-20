@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Meine Wünsche – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .status-badge-offen              { background: rgba(245,200,66,.18);  color: var(--amber);  border: 1px solid rgba(245,200,66,.35);  }
     .status-badge-uebernommen        { background: rgba(76,175,125,.18);  color: var(--green);  border: 1px solid rgba(76,175,125,.35);  }
@@ -262,6 +263,20 @@ async function storniereWunsch(wunschId) {
     return;
   }
 
+  const auditResult = await auditAktion({
+    client,
+    user: session,
+    action: 'WUNSCH_STORNIERT',
+    scope: SYNC_SCOPE_W,
+    entityId: wunschId,
+    summary: `Wunsch "${wunsch.name}" storniert`,
+    changes: { wunschId, artikelNr: wunsch.artikelNr, mitgliedId: mitgliedId() },
+  });
+  if (!auditResult.ok) {
+    toast('Audit-Protokoll nicht schreibbar. Stornierung nicht durchgeführt.', 'error', 7000);
+    return;
+  }
+
   const vorher = [...wuensche];
   wuensche = wuensche.map(w => w.id === wunschId ? aktualisiert : w);
 
@@ -280,16 +295,6 @@ async function storniereWunsch(wunschId) {
     renderWunschliste();
     return;
   }
-
-  await auditAktion({
-    client,
-    user: session,
-    action: 'WUNSCH_STORNIERT',
-    scope: SYNC_SCOPE_W,
-    entityId: wunschId,
-    summary: `Wunsch "${wunsch.name}" storniert`,
-    changes: { wunschId, artikelNr: wunsch.artikelNr, mitgliedId: mitgliedId() },
-  });
 
   updateSyncBanner();
   toast('Wunsch storniert.', 'success');
@@ -403,6 +408,20 @@ async function wunschHinzufuegen() {
     return;
   }
 
+  const auditResult = await auditAktion({
+    client,
+    user: session,
+    action: 'WUNSCH_ERSTELLT',
+    scope: SYNC_SCOPE_W,
+    entityId: neuerWunsch.id,
+    summary: `Wunsch "${neuerWunsch.name}" eingetragen`,
+    changes: { wunschId: neuerWunsch.id, artikelNr: neuerWunsch.artikelNr, variante, menge, mitgliedId: mitgliedId() },
+  });
+  if (!auditResult.ok) {
+    toast('Audit-Protokoll nicht schreibbar. Wunsch nicht gespeichert.', 'error', 7000);
+    return;
+  }
+
   const vorher = [...wuensche];
   wuensche = [...wuensche, neuerWunsch];
 
@@ -420,16 +439,6 @@ async function wunschHinzufuegen() {
     toast(syncHinweisText(gespeichert.sync, 'Wünsche') || 'Speichern fehlgeschlagen.', 'error', 7000);
     return;
   }
-
-  await auditAktion({
-    client,
-    user: session,
-    action: 'WUNSCH_ERSTELLT',
-    scope: SYNC_SCOPE_W,
-    entityId: neuerWunsch.id,
-    summary: `Wunsch "${neuerWunsch.name}" eingetragen`,
-    changes: { wunschId: neuerWunsch.id, artikelNr: neuerWunsch.artikelNr, variante, menge, mitgliedId: mitgliedId() },
-  });
 
   // Formular zurücksetzen
   document.getElementById('input-artikel-suche').value = '';
@@ -505,6 +514,5 @@ async function init() {
 init();
 </script>
 
-<script type="module" src="src/auth-guard.js"></script>
 </body>
 </html>

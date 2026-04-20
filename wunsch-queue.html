@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wunsch-Queue – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .status-badge-offen              { background: rgba(245,200,66,.18);  color: var(--amber);  border: 1px solid rgba(245,200,66,.35); }
     .status-badge-uebernommen        { background: rgba(76,175,125,.18);  color: var(--green);  border: 1px solid rgba(76,175,125,.35); }
@@ -391,6 +392,20 @@ async function aktualisiereWunsch(wunschId, neuerStatus, opts, auditAction, audi
   const vorher = [...wuensche];
   wuensche = wuensche.map(w => w.id === wunschId ? aktualisiert : w);
 
+  const auditResult = await auditAktion({
+    client,
+    user: session,
+    action: auditAction,
+    scope: SYNC_SCOPE_W,
+    entityId: wunschId,
+    summary: auditSummary,
+    changes: { wunschId, mitgliedId: wunsch.mitgliedId, artikelNr: wunsch.artikelNr, ...auditChanges },
+  });
+  if (!auditResult.ok) {
+    toast('Audit-Protokoll nicht schreibbar. Aktion nicht durchgeführt.', 'error', 7000);
+    return false;
+  }
+
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_W,
     storageKey: STORAGE_KEY_W,
@@ -406,16 +421,6 @@ async function aktualisiereWunsch(wunschId, neuerStatus, opts, auditAction, audi
     renderQueue();
     return false;
   }
-
-  await auditAktion({
-    client,
-    user: session,
-    action: auditAction,
-    scope: SYNC_SCOPE_W,
-    entityId: wunschId,
-    summary: auditSummary,
-    changes: { wunschId, mitgliedId: wunsch.mitgliedId, artikelNr: wunsch.artikelNr, ...auditChanges },
-  });
 
   updateSyncBanner();
   renderQueue();
@@ -630,6 +635,5 @@ async function init() {
 init();
 </script>
 
-<script type="module" src="src/auth-guard.js"></script>
 </body>
 </html>

@@ -30,8 +30,8 @@ function rechnungsPrefix(datum) {
  */
 export function berechneFoerderung(artikel, menge, opts = {}) {
   const gesamt = runde(artikel.einzelpreis * menge);
-  const bv     = runde(artikel.bvFoerderung * menge);
-  const lv     = runde(artikel.lvFoerderung * menge);
+  const bv     = runde((artikel.bvFoerderung || 0) * menge);
+  const lv     = runde((artikel.lvFoerderung || 0) * menge);
 
   if (opts.ogKostenlos) {
     const og = Math.max(0, runde(gesamt - bv - lv));
