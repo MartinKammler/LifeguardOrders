@@ -31,5 +31,62 @@ assert('istRechnungUnveraendert: geänderte Positionen → false', (() => {
   return istRechnungUnveraendert(rechnung, geaendert) === false;
 })());
 
+document.getElementById('out').textContent += '\n── Gruppe: actor-Block (Sprint 09) ──\n';
+
+// ── Gruppe: actor-Block (Sprint 09) ──────────────────────────────
+
+// 1. Funktions-Session-Objekt
+const funktionsSession = {
+  id: 'finanzen',
+  name: 'Finanzen',
+  rolle: 'finanzen',
+  authType: 'lokal',
+  actingPersonId: 'nicole_weber',
+  actingPersonName: 'Nicole Weber',
+};
+const entryFunktion = logAktion('TEST', funktionsSession, {});
+assert('actor (Funktion): userId === finanzen', entryFunktion.actor?.userId === 'finanzen');
+assert('actor (Funktion): userName === Finanzen', entryFunktion.actor?.userName === 'Finanzen');
+assert('actor (Funktion): authType === lokal', entryFunktion.actor?.authType === 'lokal');
+assert('actor (Funktion): sessionRole === finanzen', entryFunktion.actor?.sessionRole === 'finanzen');
+assert('actor (Funktion): actingPersonId === nicole_weber', entryFunktion.actor?.actingPersonId === 'nicole_weber');
+assert('actor (Funktion): actingPersonName === Nicole Weber', entryFunktion.actor?.actingPersonName === 'Nicole Weber');
+assert('actor (Funktion): Legacy user === finanzen', entryFunktion.user === 'finanzen');
+
+// 2. Mitglieds-Session
+const mitgliedsSession = {
+  id: 'max_mustermann',
+  name: 'Max Mustermann',
+  rolle: 'user',
+  authType: 'stempeluhr',
+};
+const entryMitglied = logAktion('TEST', mitgliedsSession, {});
+assert('actor (Mitglied): userId === max_mustermann', entryMitglied.actor?.userId === 'max_mustermann');
+assert('actor (Mitglied): authType === stempeluhr', entryMitglied.actor?.authType === 'stempeluhr');
+assert('actor (Mitglied): actingPersonId === leer', entryMitglied.actor?.actingPersonId === '');
+assert('actor (Mitglied): actingPersonName === leer', entryMitglied.actor?.actingPersonName === '');
+assert('actor (Mitglied): Legacy user === max_mustermann', entryMitglied.user === 'max_mustermann');
+
+// 3. Rückwärtskompatibilität: String-Input
+const entryString = logAktion('TEST', 'alter-string-wert', {});
+assert('actor (String): userId === alter-string-wert', entryString.actor?.userId === 'alter-string-wert');
+assert('actor (String): authType === leer', entryString.actor?.authType === '');
+assert('actor (String): sessionRole === leer', entryString.actor?.sessionRole === '');
+assert('actor (String): Legacy user === alter-string-wert', entryString.user === 'alter-string-wert');
+
+// 4. null-Input – kein Fehler
+let entryNull;
+let noThrowNull = true;
+try { entryNull = logAktion('TEST', null, {}); } catch { noThrowNull = false; }
+assert('actor (null): kein throw', noThrowNull);
+assert('actor (null): userId === leer', entryNull?.actor?.userId === '');
+
+// 5. undefined-Input – kein Fehler
+let entryUndef;
+let noThrowUndef = true;
+try { entryUndef = logAktion('TEST', undefined, {}); } catch { noThrowUndef = false; }
+assert('actor (undefined): kein throw', noThrowUndef);
+assert('actor (undefined): userId === leer', entryUndef?.actor?.userId === '');
+
 document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;
 </script></body></html>

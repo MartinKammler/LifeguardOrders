@@ -36,22 +36,50 @@ function defaultStorage() {
 }
 
 /**
+ * Baut einen actor-Block aus einem Session-Objekt oder String.
+ * @param {string|object|null|undefined} user
+ * @returns {object}
+ */
+function buildActor(user) {
+  if (!user || typeof user !== 'object') {
+    return {
+      userId:           typeof user === 'string' ? user : '',
+      userName:         '',
+      authType:         '',
+      sessionRole:      '',
+      actingPersonId:   '',
+      actingPersonName: '',
+    };
+  }
+  return {
+    userId:           String(user.id           || ''),
+    userName:         String(user.name         || ''),
+    authType:         String(user.authType     || ''),
+    sessionRole:      String(user.rolle        || ''),
+    actingPersonId:   String(user.actingPersonId   || ''),
+    actingPersonName: String(user.actingPersonName || ''),
+  };
+}
+
+/**
  * Schreibt einen Audit-Eintrag in localStorage.
- * @param {string} action    z.B. 'RECHNUNG_ERSTELLT', 'ZAHLUNG_GESETZT'
- * @param {string} user      mitgliedId des ausführenden Nutzers
- * @param {object} changes   Freitextdaten zur Aktion
- * @returns {object}         Der gespeicherte Eintrag
+ * @param {string}        action   z.B. 'RECHNUNG_ERSTELLT', 'ZAHLUNG_GESETZT'
+ * @param {string|object} user     Session-Objekt oder mitgliedId-String
+ * @param {object}        changes  Freitextdaten zur Aktion
+ * @returns {object}               Der gespeicherte Eintrag
  */
 export function logAktion(action, user, changes = {}, meta = {}) {
+  const actor = buildActor(user);
   const eintrag = {
     id: randomId(),
     action,
-    user,
+    user: actor.userId,
     timestamp: new Date().toISOString(),
     changes,
     scope: meta.scope || '',
     entityId: meta.entityId || '',
     summary: meta.summary || '',
+    actor,
   };
   try {
     const log = ladeLog();
@@ -134,8 +162,7 @@ export async function auditAktion({
   storage = defaultStorage(),
   remotePath = NC_PFAD_AUDIT,
 }) {
-  const userId = typeof user === 'string' ? user : user?.id || '';
-  const entry = logAktion(action, userId, changes, { scope, entityId, summary });
+  const entry = logAktion(action, user, changes, { scope, entityId, summary });
   const remote = await schreibeAuditEintragRemote({
     client,
     entry,
