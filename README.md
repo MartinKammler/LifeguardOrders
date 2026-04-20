@@ -31,14 +31,18 @@ einstellungen.html        ← Konfiguration: NC-Zugangsdaten, OG-Stammdaten, Mit
 Phase 1 – Sammlung (bestellung-sammeln.html):
   Admin legt Bestellung an → erfasst Wünsche (Mitglied + Artikel + Variante + Menge)
   → optional "OG übernimmt Kosten" → CSV-Export für Materialstelle-Bestellformular
+  → "Als bestellt markieren" übergibt an Phase 2
 
-Phase 2 – Eingang (bestellung-abgleich.html):
-  Admin importiert Materialstelle-Rechnung → System gleicht Rechnung ↔ Wünsche ab
-  → Abweichungen (zu viel / zu wenig / nicht bestellt) werden reviewt
+Phase 2 – Eingang / Abgleich (bestellung-abgleich.html):
+  Admin importiert DLRG-Verkaufsrechnung als PDF oder Auftragsbestätigung als Text
+  → parse-verkaufsrechnung.js / parser.js extrahieren Positionen (inkl. Varianten, Förderabzüge)
+  → System gleicht Rechnung ↔ Wünsche ab (exakter Match + Fuzzy-Match für Variantenkodierung)
+  → Abweichungen (Menge, nicht geliefert, nicht bestellt) werden reviewt
 
 Phase 3 – Anprobe (bestellung-abgleich.html):
-  Admin prüft finale Verteilung → kann Mengen ummelden, Teilmengen als Retoure
-  oder Lagerbestand markieren → Abschluss erst wenn alle Mengen vollständig zugeordnet
+  Admin prüft Mengen-Zuweisung je Mitglied → kann Retoure- und Lagerbestandsmengen markieren
+  → Abschluss erst wenn alle Positionen vollständig zugeordnet
+  → "Bestellung wieder öffnen" → zurück zu Phase 1 (Wünsche bearbeiten) oder Phase 2 (Neuabgleich)
 
 Phase 4 – Abschluss & Rechnungen:
   Rechnungen je Mitglied werden erzeugt (PDF via pdf-lib, Template-basiert)
@@ -66,28 +70,34 @@ Phase 4 – Abschluss & Rechnungen:
 
 ```
 src/
-  webdav.js          — WebDAV-Client, Factory-Pattern, strukturierte Fehler
-  sync.js            — persistJsonWithSync, hydrateJsonFromSync, Pending-State
-  storage.js         — localStorage load/save
-  dom.js             — html``, raw(), setHTML() (XSS-Schutz)
-  parser.js          — Auftragsbestätigung-Parser (3 Formate: Produktseite, mehrzeilig, Tab)
-  berechnung.js      — berechneFoerderung: bv, lv, og, mitglied, ogUebernimmtRest, ogKostenlos
-  sammlung.js        — aggregiereWuensche, exportiereCSV, validiereWunsch
-  abgleich.js        — gleiche_ab, bauePositionenAusAbgleich, normalisierePosition
-  stunden.js         — berechneStunden, verechneSchuld, ampelStatus
-  kassenwart.js      — Kassenwart-Zeilen aus gespeicherten Positions-Snapshots
-  pdf.js             — druckePDF, erstelleRechnungsDaten (pdf-lib, Template)
-  mitglieder.js      — Mitglieder-Import (JS-Literal + JSON-Format)
-  materialbestand.js — Materialbestand-Logik, Bewegungen, Normalisierung
-  materialverkauf.js — Lagerverkauf: Bestandsabgang + Bestellung + Rechnung in einem Schritt
-  artikel-katalog.js — Artikelkatalog-Logik
-  artikel-app.js     — Artikelseite UI
-  materialbestand-app.js — Materialbestand UI
-  einstellungen-app.js   — Einstellungen UI
-  konstanten.js      — EXTERN_ID, OG_ID (virtuelle Mitglieder)
-  validation.js      — Eingabevalidierung
-  audit.js           — Audit-Log
-  defaults.js        — Standardwerte
+  webdav.js               — WebDAV-Client, Factory-Pattern, strukturierte Fehler
+  sync.js                 — persistJsonWithSync, hydrateJsonFromSync, Pending-State
+  storage.js              — localStorage load/save
+  dom.js                  — html``, raw(), setHTML() (XSS-Schutz)
+  parser.js               — Auftragsbestätigung-Parser (3 Formate: Produktseite, mehrzeilig, Tab)
+  parse-verkaufsrechnung.js — DLRG-Verkaufsrechnung-Parser (PDF-Textextraktion):
+                              Artikelzeilen mit/ohne Preis (Bundlekomponenten werden ignoriert),
+                              gesplittete Zeilen (Variante auf Folgezeile), MITTELVERW. BV/LV,
+                              EILAUFTRAG; extrahiert Varianten aus Klammern oder als bareSize-Token;
+                              Seiten-/Zeilenverfolgung (_seite, _zeile) für Debug-Anzeige im UI
+  berechnung.js           — berechneFoerderung: bv, lv, og, mitglied, ogUebernimmtRest, ogKostenlos
+  sammlung.js             — aggregiereWuensche, exportiereCSV, validiereWunsch
+  abgleich.js             — gleiche_ab (2-Pass: exakt + fuzzy), bauePositionenAusAbgleich,
+                              normalisierePosition, verteileGelieferteMenge
+  stunden.js              — berechneStunden, verechneSchuld, ampelStatus
+  kassenwart.js           — Kassenwart-Zeilen aus gespeicherten Positions-Snapshots
+  pdf.js                  — druckePDF, erstelleRechnungsDaten (pdf-lib, Template)
+  mitglieder.js           — Mitglieder-Import (JS-Literal + JSON-Format)
+  materialbestand.js      — Materialbestand-Logik, Bewegungen, Normalisierung
+  materialverkauf.js      — Lagerverkauf: Bestandsabgang + Bestellung + Rechnung in einem Schritt
+  artikel-katalog.js      — Artikelkatalog-Logik
+  artikel-app.js          — Artikelseite UI
+  materialbestand-app.js  — Materialbestand UI
+  einstellungen-app.js    — Einstellungen UI
+  konstanten.js           — EXTERN_ID, OG_ID (virtuelle Mitglieder)
+  validation.js           — Eingabevalidierung
+  audit.js                — Audit-Log
+  defaults.js             — Standardwerte
 
 lib/
   pdf-lib.esm.min.js — PDF-Erzeugung (lokal, kein CDN)
@@ -167,7 +177,10 @@ node tests/review-regression.mjs
 ```
 
 Testabdeckung: parser.js (39), berechnung.js (22), webdav.js (19), mitglieder.js (8),
-sammlung.js, abgleich.js, stunden.js, kassenwart.js, materialbestand.js, validation.js.
+sammlung.js, abgleich.js (inkl. Fuzzy-Match, Wunsch-Variante, Doppel-Position-Summierung),
+parse-verkaufsrechnung.js (Bundle, Split-Zeile, VPE-False-Positive, Seitentracking),
+stunden.js, kassenwart.js, materialbestand.js, validation.js, authz.js, wunsch.js, audit.js,
+sync.js, session.js — 48 Regressions-Assertions in review-regression.mjs.
 
 ---
 

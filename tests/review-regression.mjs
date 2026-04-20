@@ -630,6 +630,41 @@ test('gleiche_ab exakter Match laeuft weiterhin vor Fuzzy-Pass', () => {
   assertEqual(result.abweichungen.length, 0, 'Keine Abweichungen');
 });
 
+test('gleiche_ab summiert Mengen bei doppeltem Vorkommen derselben artikelNr+variante in Positionen', () => {
+  // Rechnungs-PDF listet dasselbe Bundle zweimal mit menge:1 statt einmal mit menge:2
+  const wuensche  = [{ artikelNr: '18508500', variante: '', name: 'Bekleidungspaket', menge: 2 }];
+  const positionen = [
+    { artikelNr: '18508500', variante: '', name: 'Bekleidungspaket', menge: 1 },
+    { artikelNr: '18508500', variante: '', name: 'Bekleidungspaket', menge: 1 },
+  ];
+  const result = gleiche_ab(wuensche, positionen);
+  assertEqual(result.gematch.length, 1, 'Beide Positionen werden als ein Match summiert');
+  assertEqual(result.abweichungen.length, 0, 'Keine Abweichung nach Summierung');
+  assertEqual(result.gematch[0].position.menge, 2, 'Summierte Menge ist 2');
+});
+
+test('bauePositionenAusAbgleich nutzt Wunsch-Variante fuer Zuweisung bei Fuzzy-Match', () => {
+  // Wunsch hat Variante '21CM', Rechnung hat Variante '' → Fuzzy-Match
+  const wuensche = [
+    { id: 'w1', mitgliedId: 'max', artikelNr: 'A1', variante: '21CM', name: 'Armband', menge: 1 },
+    { id: 'w2', mitgliedId: 'lea', artikelNr: 'A1', variante: '21CM', name: 'Armband', menge: 1 },
+  ];
+  const abgleichResult = {
+    gematch: [
+      {
+        wunsch:   { artikelNr: 'A1', variante: '21CM', name: 'Armband', menge: 2 },
+        position: { artikelNr: 'A1', variante: '',     name: 'Armband', menge: 2, einzelpreis: 5 },
+      },
+    ],
+    abweichungen: [],
+    og_kosten: [],
+  };
+  const positionen = bauePositionenAusAbgleich(abgleichResult, wuensche, []);
+  assertEqual(positionen.length, 1, 'Eine Position erstellt');
+  assertEqual(positionen[0].zuweisung.length, 2, 'Beide Mitglieder zugewiesen');
+  assertEqual(positionen[0].zuweisung.map(z => z.mitgliedId).sort().join(','), 'lea,max', 'max und lea in Zuweisung');
+});
+
 test('bauePositionenAusAbgleich uebernimmt Mengenabweichungen nur bei Aktion uebernehmen', () => {
   const abgleichResult = {
     gematch: [],
@@ -1108,7 +1143,7 @@ EILAUFTRAG Kosten für Eilauftrag 1 5,95 5,95 A
   assertEqual(jacke.lvFoerderung, 52.5, 'LV-Förderung Wetterjacke');
 });
 
-test('parseVerkaufsrechnung erkennt Bundlekomponenten ohne Preis und Größe in Beschreibungsmitte', () => {
+test('parseVerkaufsrechnung ignoriert Bundlekomponenten ohne Preis, Größe in Beschreibungsmitte', () => {
   const text = `
 18508500 DLRG-NIVEA Bekleidungspaket 2.0 1 134,90 134,90 A
 MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -104,90 -104,90 C
@@ -1116,46 +1151,61 @@ MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -104,90 -104,90 C
 18504111 Inzip-Fleece Jacke schwer (M)- rot - 1 57,90 57,90 A
 `;
   const result = parseVerkaufsrechnung(text);
-  assertEqual(result.artikel.length, 3, 'Bundle + Komponente + weiterer Artikel');
+  assertEqual(result.artikel.length, 2, 'Bundlekomponente ohne Preis wird ignoriert');
 
   const bundle = result.artikel[0];
   assertEqual(bundle.artikelNr, '18508500', 'Bundle ArtNr');
   assertEqual(bundle.einzelpreis, 134.9, 'Bundle-Preis');
   assertEqual(bundle.bvFoerderung, 104.9, 'Bundle BV-Förderung');
 
-  const komp = result.artikel[1];
-  assertEqual(komp.einzelpreis, 0, 'Bundlekomponente hat keinen Preis');
-  assertEqual(komp.menge, 1, 'Bundlekomponente: Menge 1');
-
-  const fleece = result.artikel[2];
+  const fleece = result.artikel[1];
   assertEqual(fleece.variante, 'M', 'Größe in Beschreibungsmitte per Fallback erkannt');
   assertEqual(fleece.einzelpreis, 57.9, 'Fleece-Preis korrekt');
 });
 
-test('parseVerkaufsrechnung ignoriert VPE-Zahlen in Beschreibung (kein false-positive menge)', () => {
+test('parseVerkaufsrechnung ignoriert VPE-Zahlen in Beschreibung (kein false-positive menge/variante)', () => {
   const text = `57406909 DLRG Kugelschreiber gelb/rot VPE 50 1 29,90 29,90 A\nStück\n`;
   const result = parseVerkaufsrechnung(text);
   assertEqual(result.artikel[0]?.menge, 1, 'Menge ist 1, nicht 50');
   assertEqual(result.artikel[0]?.einzelpreis, 29.9, 'Preis korrekt');
+  assertEqual(result.artikel[0]?.variante, '', 'VPE-Zahl darf nicht als Variante extrahiert werden');
+  assert(result.artikel[0]?.name?.includes('50'), 'VPE-Zahl bleibt im Namen');
   assert(!result.artikel[0]?.name?.includes('Stück'), '"Stück"-Einheit darf nicht in Beschreibung landen');
+});
+
+test('parseVerkaufsrechnung erkennt Variante auf Folgezeile (gesplittetes Zeilenformat)', () => {
+  const text = `
+18507110 T-Shirt rot - DLRG Ausbildung - JAKO
+(3XL)
+1 14,50 14,50 A
+MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -5,00 -5,00 C
+18507110 T-Shirt rot - DLRG Ausbildung - JAKO (M)
+2 14,50 29,00 A
+`;
+  const result = parseVerkaufsrechnung(text);
+  assertEqual(result.artikel.length, 2, 'Beide T-Shirts erkannt');
+  const tshirt3xl = result.artikel[0];
+  assertEqual(tshirt3xl.variante, '3XL', 'Variante 3XL aus Folgezeile');
+  assertEqual(tshirt3xl.menge, 1, 'Menge 3XL korrekt');
+  assertEqual(tshirt3xl.bvFoerderung, 5, 'BV-Förderung korrekt zugeordnet');
+  const tshirtM = result.artikel[1];
+  assertEqual(tshirtM.variante, 'M', 'Variante M aus Beschreibungsende auf Folge-Preiszeile');
+  assertEqual(tshirtM.menge, 2, 'Menge M korrekt');
 });
 
 test('auditAktion schreibt append-only auf Remote und cached lokal', async () => {
   const storage = createMemoryStorage();
   let remoteLog = [];
   const client = {
-    async head() {
-      return remoteLog.length
-        ? { ok: true, etag: '"audit-1"' }
-        : { ok: false, missing: true, error: 'Datei nicht gefunden.' };
-    },
     async readJson() {
-      return { ok: true, data: remoteLog };
+      if (!remoteLog.length) return { ok: false, missing: true, error: 'Datei nicht gefunden.' };
+      return { ok: true, data: remoteLog, etag: '"audit-1"' };
     },
     async writeJson(path, data, opts) {
       assertEqual(path, '/LifeguardOrders/audit.log.json', 'Audit muss unter audit.log.json liegen');
-      if (!remoteLog.length) {
-        assertEqual(opts.ifNoneMatch, '*', 'Erster Audit-Write muss exklusiv anlegen');
+      if (remoteLog.length === 0) {
+        // kein ifNoneMatch – CORS-Preflight blockiert If-None-Match auf Nextcloud
+        assertEqual(opts.ifNoneMatch, undefined, 'Erster Audit-Write darf kein ifNoneMatch senden');
       } else {
         assertEqual(opts.ifMatch, '"audit-1"', 'Folge-Write muss ETag absichern');
       }

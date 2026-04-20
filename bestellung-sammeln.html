@@ -363,6 +363,13 @@ let bestellungId    = null; // null = neue Bestellung
 let client          = null;
 let artikelListe    = [];
 let mitglieder      = [];
+let hatAenderungen  = false; // ungespeicherte Änderungen
+
+window.addEventListener('beforeunload', e => {
+  if (hatAenderungen) {
+    e.preventDefault();
+  }
+});
 let sortierteArtikel = [];
 let artikelBasen    = [];
 let bearbeitenId = null; // ID des aktuell bearbeiteten Wunsches
@@ -814,6 +821,7 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
   }
 
   wuensche = mergeWuensche(neuerWunsch);
+  hatAenderungen = true;
 
   schliesseBearbeitenModal();
   renderWunschliste();
@@ -900,6 +908,7 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
   }
 
   wuensche = mergeWuensche([...wuensche, neuerWunsch]);
+  hatAenderungen = true;
   renderWunschliste();
 
   // Formular zurücksetzen (Mitglied behalten, Menge auf 1)
@@ -978,7 +987,7 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     return;
   }
   updateSyncBanner();
-
+  hatAenderungen = false;
   location.href = 'bestellungen.html?saved=1';
 });
 
@@ -1073,7 +1082,11 @@ async function init() {
       document.getElementById('inp-bezeichnung').value      = bestehend.bezeichnung;
       wuensche = bestehend.wuensche || [];
       // "Als bestellt markieren" nur bei existierender Bestellung
-      document.getElementById('btn-bestellt').style.display = '';
+      const btnBestellt = document.getElementById('btn-bestellt');
+      btnBestellt.style.display = '';
+      if (bestehend.status === 'bestellt' || bestehend.status === 'anprobe') {
+        btnBestellt.textContent = 'Weiter zum Abgleich →';
+      }
     } else {
       bestellungId = null; // ID ungültig, neue Bestellung erstellen
     }
@@ -1114,6 +1127,7 @@ async function init() {
       oeffneBearbeitenModal(id);
       return; // kein renderWunschliste() — Modal übernimmt nach Speichern
     }
+    hatAenderungen = true;
     renderWunschliste();
   });
 

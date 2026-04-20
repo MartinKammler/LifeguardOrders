@@ -114,26 +114,24 @@ export async function schreibeAuditEintragRemote({
     return { ok: false, error: 'Nextcloud nicht konfiguriert.' };
   }
 
-  const meta = await client.head(remotePath);
+  let remote = await client.readJson(remotePath);
+  if (!remote.ok && !remote.missing) {
+    await new Promise(r => setTimeout(r, 400));
+    remote = await client.readJson(remotePath);
+  }
   let log = [];
   let writeOptions = {};
 
-  if (!meta.ok) {
-    if (!meta.missing) {
-      return { ok: false, error: meta.error || 'Audit-Log konnte nicht geprüft werden.' };
-    }
-    writeOptions = { ifNoneMatch: '*' };
+  if (remote.missing) {
+    writeOptions = {}; // kein If-None-Match – Nextcloud blockiert diesen Header per CORS-Preflight
+  } else if (!remote.ok) {
+    return { ok: false, error: remote.error || 'Audit-Log konnte nicht geladen werden.' };
+  } else if (!Array.isArray(remote.data)) {
+    return { ok: false, error: 'Audit-Log ist ungültig.' };
   } else {
-    const remote = await client.readJson(remotePath);
-    if (!remote.ok) {
-      return { ok: false, error: remote.error || 'Audit-Log konnte nicht geladen werden.' };
-    }
-    if (!Array.isArray(remote.data)) {
-      return { ok: false, error: 'Audit-Log ist ungültig.' };
-    }
     log = remote.data;
-    if (meta.etag) {
-      writeOptions = { ifMatch: meta.etag };
+    if (remote.etag) {
+      writeOptions = { ifMatch: remote.etag };
     }
   }
 

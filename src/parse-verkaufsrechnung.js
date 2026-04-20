@@ -23,11 +23,12 @@ function parsePreis(raw) {
 
 /**
  * Extracts size variant from description.
- * Primary: trailing "(M)", "( XL )", "( 50 )" at end of string.
- * Fallback: last "(SIZE)" in string where SIZE is a known size pattern (e.g. "(M)- rot -").
+ * 1. Trailing "(M)", "( XL )", "( 50 )" at end of string.
+ * 2. Last "(SIZE)" anywhere in string (e.g. "(M)- rot -").
+ * 3. Bare size token at end of string without parens (PDF-Extrakt-Artefakt).
  */
 function extractVariante(name) {
-  // Primary: size at end of string
+  // 1. Size in parens at end
   const endMatch = name.match(/\s*\(\s*([^)]+?)\s*\)\s*$/);
   if (endMatch) {
     return {
@@ -35,8 +36,8 @@ function extractVariante(name) {
       variante:  endMatch[1].trim().toUpperCase(),
     };
   }
-  // Fallback: last paren group that looks like a size (1–5 chars: XS/S/M/L/XL/XXL/3XL or 2–3 digit numbers)
-  const sizeRe = /\(\s*(\d{2,3}|[XSML]{1,2}|[2-6]XL|XS)\s*\)/gi;
+  // 2. Last paren group that looks like a size anywhere in string
+  const sizeRe = /\(\s*(\d{2,3}(?:\/\d{2,3})?|[XSML]{1,2}|[2-6]XL|XXL|XS)\s*\)/gi;
   let lastMatch = null;
   let m;
   while ((m = sizeRe.exec(name)) !== null) lastMatch = m;
@@ -46,6 +47,19 @@ function extractVariante(name) {
     return {
       cleanName: (before + (after ? ' ' + after : '')).trim(),
       variante:  lastMatch[1].trim().toUpperCase(),
+    };
+  }
+  // 3. Bare size token at end (kein Klammern, z. B. "T-Shirt rot JAKO M")
+  //    Nicht anwenden wenn das vorherige Token eine Mengenangabe wie VPE ist.
+  const bareMatch = name.match(/\s+(XS|XXL|XXXL|[2-9]XL|XL|[SML]|\d{2,3}(?:\/\d{2,3})?)$/);
+  if (bareMatch) {
+    const before = name.slice(0, bareMatch.index);
+    if (/\bVPE$/i.test(before)) {
+      return { cleanName: name.trim(), variante: '' };
+    }
+    return {
+      cleanName: before.trim(),
+      variante:  bareMatch[1].toUpperCase(),
     };
   }
   return { cleanName: name.trim(), variante: '' };
@@ -107,6 +121,10 @@ const ARTNR_PREFIX_RE = /^\d{6,10}\s/;
 const MITTELVERW_RE = /^MITTELVERW\. (BV|LV)\s+.+\s+(\d+)\s+STÜCK\s+(-\d+,\d+)\s+(-\d+,\d+)\s+C$/;
 /** EILAUFTRAG-Zeile */
 const EILAUFTRAG_RE = /^EILAUFTRAG\s+.+?\s+(\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+([AB])$/;
+/** Preis-Abschlusszeile nach gesplitteter Artikelzeile: menge E-Preis Betrag A|B */
+const PREIS_ABSCHLUSS_RE = /^(\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+([AB])$/;
+/** Kein-Preis-Abschluss nach gesplitteter Bundlezeile: menge A|B */
+const KEIN_PREIS_ABSCHLUSS_RE = /^(\d+)\s+([AB])$/;
 
 // ── Parser ────────────────────────────────────────────────────────────────────
 
@@ -127,21 +145,30 @@ export function parseVerkaufsrechnung(text) {
   let pendingMenge    = 0;
   let pendingPreis    = 0;
   let pendingHasPreis = false;
+  let pendingSeite    = 1;
+  let pendingZeile    = 0;
+
+  let aktuelleSeite   = 1;
+  let aktuelleZeile   = 0;
 
   function commitPending() {
     if (!pendingNr) return;
-    const { cleanName, variante } = extractVariante(pendingDesc);
-    const entry = {
-      artikelNr:    pendingNr,
-      name:         cleanName,
-      variante,
-      menge:        pendingMenge,
-      einzelpreis:  pendingHasPreis ? pendingPreis : 0,
-      bvFoerderung: 0,
-      lvFoerderung: 0,
-    };
-    artikel.push(entry);
-    letzterArtikel = entry;
+    if (pendingHasPreis) {
+      const { cleanName, variante } = extractVariante(pendingDesc);
+      const entry = {
+        artikelNr:    pendingNr,
+        name:         cleanName,
+        variante,
+        menge:        pendingMenge,
+        einzelpreis:  pendingPreis,
+        bvFoerderung: 0,
+        lvFoerderung: 0,
+        _seite:       pendingSeite,
+        _zeile:       pendingZeile,
+      };
+      artikel.push(entry);
+      letzterArtikel = entry;
+    }
     pendingNr       = null;
     pendingDesc     = '';
     pendingMenge    = 0;
@@ -152,6 +179,11 @@ export function parseVerkaufsrechnung(text) {
   const zeilen = text.split('\n').map(z => z.trim()).filter(Boolean);
 
   for (const zeile of zeilen) {
+    // ── Seiten-Marker ([S2], [S3] …) ─────────────────────────────
+    const seitenMatch = zeile.match(/^\[S(\d+)\]$/);
+    if (seitenMatch) { aktuelleSeite = parseInt(seitenMatch[1]); aktuelleZeile = 0; continue; }
+
+    aktuelleZeile++;
     if (shouldSkip(zeile)) continue;
 
     // ── MITTELVERW. BV / LV ──────────────────────────────────────
@@ -194,9 +226,11 @@ export function parseVerkaufsrechnung(text) {
         pendingMenge    = parseInt(wpMatch[2], 10);
         pendingPreis    = parsePreis(wpMatch[3]);
         pendingHasPreis = true;
+        pendingSeite    = aktuelleSeite;
+        pendingZeile    = aktuelleZeile;
         continue;
       }
-      // Ohne Preis (Bundlekomponente)
+      // Ohne Preis (Bundlekomponente, einzeilig)
       const npMatch = zeile.match(ARTIKEL_KEIN_PREIS_RE);
       if (npMatch) {
         commitPending();
@@ -206,6 +240,33 @@ export function parseVerkaufsrechnung(text) {
         pendingDesc     = full.slice(artNr.length).trim();
         pendingMenge    = parseInt(npMatch[2], 10);
         pendingPreis    = 0;
+        pendingHasPreis = false;
+        pendingSeite    = aktuelleSeite;
+        pendingZeile    = aktuelleZeile;
+        continue;
+      }
+      // Beschreibung über mehrere Zeilen gesplittet (Preis/Menge folgen später)
+      commitPending();
+      const artNr = (zeile.match(/^(\d{6,10})/) || [])[1] || '';
+      pendingNr   = artNr;
+      pendingDesc = zeile.slice(artNr.length).trim();
+      pendingSeite = aktuelleSeite;
+      pendingZeile = aktuelleZeile;
+      continue;
+    }
+
+    // ── Preis-Abschlusszeile nach gesplitteter Artikelzeile ───────
+    if (pendingNr) {
+      const paMatch = zeile.match(PREIS_ABSCHLUSS_RE);
+      if (paMatch) {
+        pendingMenge    = parseInt(paMatch[1], 10);
+        pendingPreis    = parsePreis(paMatch[2]);
+        pendingHasPreis = true;
+        continue;
+      }
+      const kpMatch = zeile.match(KEIN_PREIS_ABSCHLUSS_RE);
+      if (kpMatch) {
+        pendingMenge    = parseInt(kpMatch[1], 10);
         pendingHasPreis = false;
         continue;
       }

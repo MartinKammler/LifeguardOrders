@@ -37,7 +37,14 @@ export function gleiche_ab(wuensche, positionen) {
   });
 
   const posMap = new Map();
-  for (const p of artikelPositionen) posMap.set(`${p.artikelNr}\x00${p.variante}`, p);
+  for (const p of artikelPositionen) {
+    const key = `${p.artikelNr}\x00${p.variante}`;
+    if (posMap.has(key)) {
+      posMap.get(key).menge += p.menge;
+    } else {
+      posMap.set(key, { ...p });
+    }
+  }
 
   const gematchteWKeys = new Set();
   const gematchtePoKeys = new Set();
@@ -201,7 +208,7 @@ export function bauePositionenAusAbgleich(abgleichResult, wuensche, artikelListe
   const { gematch = [], abweichungen = [], og_kosten = [] } = abgleichResult || {};
 
   for (const match of gematch) {
-    positionen.push(baueArtikelPosition(match.position, wuensche, artikelListe));
+    positionen.push(baueArtikelPosition(match.position, wuensche, artikelListe, match.wunsch.variante));
   }
 
   for (const abweichung of abweichungen) {
@@ -211,7 +218,8 @@ export function bauePositionenAusAbgleich(abgleichResult, wuensche, artikelListe
     positionen.push(baueArtikelPosition(
       { ...abweichung.position, menge: abweichung.geliefert },
       wuensche,
-      artikelListe
+      artikelListe,
+      abweichung.wunsch.variante
     ));
   }
 
@@ -236,14 +244,17 @@ export function bauePositionenAusAbgleich(abgleichResult, wuensche, artikelListe
   return positionen;
 }
 
-function baueArtikelPosition(position, wuensche, artikelListe) {
+function baueArtikelPosition(position, wuensche, artikelListe, wunschVariante) {
+  const posVariante = position.variante || '';
+  // Nach Fuzzy-Match kann wunschVariante von posVariante abweichen (z. B. '21CM' vs '').
+  // Für die Mitglieder-Zuweisung zählt die Wunsch-Variante; für Artikelkatalog-Lookup die Position-Variante.
   const artikel = (artikelListe || []).find(
-    a => a.artikelNr === position.artikelNr && (a.variante || '') === (position.variante || '')
+    a => a.artikelNr === position.artikelNr && (a.variante || '') === posVariante
   );
   const verteilung = verteileGelieferteMenge(
     wuensche,
     position.artikelNr,
-    position.variante || '',
+    wunschVariante !== undefined ? wunschVariante : posVariante,
     position.menge
   );
 

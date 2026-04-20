@@ -58,6 +58,8 @@
     .typ-nicht-gel     { background: rgba(247,110,110,.2); color: #f76e6e; }
     .typ-nicht-bestellt{ background: rgba(126,184,247,.2); color: #7eb8f7; }
 
+    .pdf-quelle { font-size: .72rem; color: var(--text-2); margin-left: 4px; opacity: .7; }
+
     .zuweisung-liste {
       font-size: .78rem;
       color: var(--text-2);
@@ -715,10 +717,11 @@ function renderAbgleich() {
     const key = `${m.wunsch.artikelNr}\x00${m.wunsch.variante}`;
     const zuw = berechneZuweisung(m.wunsch.artikelNr, m.wunsch.variante, m.position.menge);
     const zuwHtml = html`${zuw.map(z => html`<span>${z.name} ×${z.zugeteiltMenge}</span>`)}`;
+    const quelle  = m.position._seite != null ? raw(html` <small class="pdf-quelle">S.${m.position._seite}/Z.${m.position._zeile}</small>`) : raw('');
     rows.push(html`
       <tr class="abgleich-row-match" data-key="${key}">
         <td><span class="status-dot dot-green"></span></td>
-        <td>${m.wunsch.name}${m.wunsch.variante ? raw(html` <span class="badge badge-blue">${m.wunsch.variante}</span>`) : raw('')}</td>
+        <td>${m.wunsch.name}${m.wunsch.variante ? raw(html` <span class="badge badge-blue">${m.wunsch.variante}</span>`) : raw('')}${quelle}</td>
         <td style="text-align:right">${m.wunsch.menge}</td>
         <td style="text-align:right">${m.position.menge}</td>
         <td><div class="zuweisung-liste">${zuwHtml}</div></td>
@@ -738,6 +741,8 @@ function renderAbgleich() {
     let geliefert = '–';
     let zuwHtml  = '';
     let aktionenHtml = '';
+
+    const quellePos = (a.position?._seite != null) ? raw(html` <small class="pdf-quelle">S.${a.position._seite}/Z.${a.position._zeile}</small>`) : raw('');
 
     if (a.typ === 'menge') {
       dotCls    = 'dot-yellow';
@@ -789,7 +794,7 @@ function renderAbgleich() {
         <td>
           ${a.wunsch
             ? raw(html`${a.wunsch.name}${a.wunsch.variante ? raw(html` <span class="badge badge-blue">${a.wunsch.variante}</span>`) : raw('')}`)
-            : (a.position ? a.position.name : '–')}
+            : (a.position ? raw(html`${a.position.name}${a.position.variante ? raw(html` <span class="badge badge-blue">${a.position.variante}</span>`) : raw('')}${quellePos}`) : '–')}
           ${typBadge}
         </td>
         <td style="text-align:right">${bestellt}</td>
@@ -1345,6 +1350,7 @@ async function extrahierePdfText(datei) {
   const doc    = await getDocument({ data: new Uint8Array(buffer) }).promise;
   const zeilen = [];
   for (let p = 1; p <= doc.numPages; p++) {
+    if (p > 1) zeilen.push(`[S${p}]`);
     const page    = await doc.getPage(p);
     const content = await page.getTextContent();
     const items   = content.items.filter(i => i.str && i.str.trim());
@@ -1712,7 +1718,7 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
     },
   });
 
-  location.reload();
+  location.href = `bestellung-sammeln.html?id=${encodeURIComponent(bestellung.id)}`;
 });
 
 /* ── Init ────────────────────────────────────────────────────── */

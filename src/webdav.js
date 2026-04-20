@@ -96,13 +96,15 @@ export function createWebDavClient(creds, fetchFn = globalThis.fetch) {
       });
       return resp;
     } catch (err) {
-      return null; // Netzwerkfehler
+      console.warn('[WebDAV] Netzwerkfehler:', method, path, err?.message || err);
+      return null;
     }
   }
 
   async function readJson(path) {
     const resp = await request('GET', path);
     if (!resp) return { ok: false, error: 'Nextcloud nicht erreichbar.' };
+    if (resp.status === 404) return { ok: false, missing: true, error: fehlerText(resp.status) };
     if (!resp.ok) return { ok: false, error: fehlerText(resp.status) };
     try {
       const text = await resp.text();

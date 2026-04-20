@@ -46,16 +46,11 @@ MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -104,90 -104,90 C
 18505840 DLRG Sonnenhut ( XL ) 1 A
 `;
 const r2 = parseVerkaufsrechnung(textBundle);
-assert('Bundle: 3 Artikel', r2.artikel.length === 3);
+assert('Bundle: 1 Artikel (Komponenten ignoriert)', r2.artikel.length === 1);
 const bundle = r2.artikel[0];
 assert('Bundle: artikelNr 18508500', bundle?.artikelNr === '18508500');
 assert('Bundle: preis 134.90', bundle?.einzelpreis === 134.9);
 assert('Bundle: bvFoerderung 104.90', bundle?.bvFoerderung === 104.9);
-const sporttasche = r2.artikel[1];
-assert('Bundlekomponente: kein Preis', sporttasche?.einzelpreis === 0);
-assert('Bundlekomponente: menge 1', sporttasche?.menge === 1);
-const sonnenhut = r2.artikel[2];
-assert('Sonnenhut: variante XL', sonnenhut?.variante === 'XL');
 
 // ── Mehrzeilige Beschreibung ─────────────────────────────────────────────────
 document.getElementById('out').textContent += '\n── Mehrzeilige Beschreibung ──\n';

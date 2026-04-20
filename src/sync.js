@@ -206,7 +206,7 @@ export async function persistJsonWithSync({
   }
 
   const remote = await client.writeJson(remotePath, data, meta.missing
-    ? { ifNoneMatch: '*' }
+    ? {} // kein If-None-Match – Nextcloud blockiert diesen Header per CORS-Preflight
     : (meta.etag ? { ifMatch: meta.etag } : {}));
 
   if (!remote.ok) {
@@ -254,6 +254,13 @@ export async function hydrateJsonFromSync({
     state = markSyncReadSuccess(state, scope, remotePath, remote);
     schreibeSyncState(state, storage);
     return { data: remote.data, source: 'remote', sync: getScopeSyncStatus(state, scope), remote };
+  }
+
+  // Datei existiert noch nicht auf NC → kein Fehler, lokaler Stand gilt
+  if (remote.missing) {
+    state = markSyncReadSuccess(state, scope, remotePath, {});
+    schreibeSyncState(state, storage);
+    return { data: lokal, source: 'local-new', sync: getScopeSyncStatus(state, scope), remote };
   }
 
   state = markSyncOfflineReadonly(state, scope, remotePath, remote.error || 'Nextcloud nicht erreichbar.');
