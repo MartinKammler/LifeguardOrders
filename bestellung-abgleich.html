@@ -325,6 +325,7 @@ import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
 import { html, raw, setHTML }               from './src/dom.js';
 import { auditAktion }                      from './src/audit.js';
 import { getSession }                       from './src/session.js';
+import { darfAktion }                       from './src/authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import { validateListe, validatePosition, validateWunsch } from './src/validation.js';
 import {
@@ -360,6 +361,18 @@ let einstellungen = null;
 let abgleichResult = null;
 // Map: key (artikelNr\x00variante) → 'uebernehmen' | 'ignorieren'
 const aufgeloest = new Map();
+
+function darfBestellungSchreiben() {
+  return darfAktion('bestellung-schreiben', getSession());
+}
+
+function darfBestellungAbschliessen() {
+  return darfAktion('bestellung-abschliessen', getSession());
+}
+
+function darfRechnungErstellen() {
+  return darfAktion('rechnung-erstellen', getSession());
+}
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function eur(v) {
@@ -1071,6 +1084,9 @@ function renderRechnungenCard() {
   const linkUebersicht = document.querySelector('a[href="rechnungen.html"]');
   const btnWieder   = document.getElementById('btn-wieder-oeffnen');
   const serienWrap  = document.getElementById('rechnungsserie-wrap');
+  const kannBestellungSchreiben = darfBestellungSchreiben();
+  const kannBestellungAbschliessen = darfBestellungAbschliessen();
+  const kannRechnungErstellen = darfRechnungErstellen();
 
   if (bestellung.status === 'anprobe') {
     const pruefung = pruefeAnprobePositionen();
@@ -1081,10 +1097,15 @@ function renderRechnungenCard() {
     serienWrap.style.display = 'none';
     linkUebersicht.style.display = 'none';
     btnWieder.style.display = '';
-    btnFinalize.disabled = !pruefung.ok;
+    btnSave.disabled = !kannBestellungSchreiben;
+    btnFinalize.disabled = !pruefung.ok || !kannBestellungAbschliessen;
     btnFinalize.title = pruefung.ok
       ? ''
       : (pruefung.invalid[0]?.fehler || `${pruefung.offene.length} Position(en) haben noch offene Mengen.`);
+    if (!kannBestellungAbschliessen) {
+      btnFinalize.title = 'Du darfst die Anprobe nicht abschließen.';
+    }
+    btnWieder.disabled = !kannBestellungSchreiben;
     setHTML(el, html`
       <div class="hinweis ${pruefung.ok ? 'hinweis-info' : 'hinweis-warn'}">
         ${pruefung.ok
@@ -1101,6 +1122,8 @@ function renderRechnungenCard() {
   serienWrap.style.display = '';
   linkUebersicht.style.display = '';
   btnWieder.style.display = '';
+  btnAlle.disabled = !kannRechnungErstellen;
+  btnWieder.disabled = !kannBestellungSchreiben;
   aktualisiereRechnungsserienFeld();
   const ids         = betroffeneMitgliederIds();
   const vorhanden   = bestellung.rechnungen || [];
@@ -1120,7 +1143,9 @@ function renderRechnungenCard() {
         <span class="badge badge-blue" style="margin-right:6px">${rechnung.nummer}</span>
         <button class="btn btn-ghost btn-sm" data-pdf-id="${rechnung.id}">PDF</button>`);
     } else {
-      aktionenHtml = raw(html`<button class="btn btn-primary btn-sm" data-erzeugen-id="${mid}">Rechnung erzeugen</button>`);
+      aktionenHtml = kannRechnungErstellen
+        ? raw(html`<button class="btn btn-primary btn-sm" data-erzeugen-id="${mid}">Rechnung erzeugen</button>`)
+        : raw('<span class="meta">Keine Berechtigung</span>');
     }
     const betragsHtml = rechnung
       ? raw(html`<td style="text-align:right">${eur(rechnung.gesamtbetrag)}</td>`)
@@ -1180,13 +1205,17 @@ function renderRechnungenCard() {
 
   // Alle-Button: nur aktiv wenn noch welche fehlen
   const alleErzeugt = ids.every(mid => vorhanden.some(r => r.mitgliedId === mid));
-  document.getElementById('btn-alle-rechnungen').disabled = alleErzeugt;
+  document.getElementById('btn-alle-rechnungen').disabled = alleErzeugt || !kannRechnungErstellen;
   document.getElementById('btn-alle-rechnungen').textContent = alleErzeugt
     ? 'Alle Rechnungen vorhanden'
     : 'Alle Rechnungen erzeugen';
 }
 
 async function erzeugeRechnungFuerMitglied(mitgliedId, opts = {}) {
+  if (!darfRechnungErstellen()) {
+    toast('Du darfst keine Rechnungen erzeugen.', 'error');
+    return;
+  }
   const alleRechnungen = alleRechnungenAusAllenBestellungen();
   const rechnung = erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, artikelListe, alleRechnungen, opts);
   if (!rechnung) return;
@@ -1250,6 +1279,10 @@ function zeigeStatus(text, art = 'info') {
 
 /* ── Parsen & Abgleich ───────────────────────────────────────── */
 document.getElementById('btn-parsen').addEventListener('click', () => {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst diese Bestellung nicht bearbeiten.', 'error');
+    return;
+  }
   const text    = document.getElementById('inp-rechnung').value.trim();
   const fehlerEl = document.getElementById('parse-fehler');
 
@@ -1289,6 +1322,10 @@ document.getElementById('btn-parsen').addEventListener('click', () => {
 
 /* ── Wünsche direkt übernehmen (ohne externe Rechnung) ──────── */
 document.getElementById('btn-direkt-uebernehmen').addEventListener('click', () => {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst diese Bestellung nicht bearbeiten.', 'error');
+    return;
+  }
   const wuensche = bestellung.wuensche || [];
   if (!wuensche.length) {
     const fehlerEl = document.getElementById('parse-fehler');
@@ -1328,6 +1365,10 @@ document.getElementById('btn-direkt-uebernehmen').addEventListener('click', () =
 
 /* ── Abschließen ─────────────────────────────────────────────── */
 document.getElementById('btn-abschliessen').addEventListener('click', async () => {
+  if (!darfBestellungAbschliessen()) {
+    toast('Du darfst die Bestellung nicht in die Anprobe übernehmen.', 'error');
+    return;
+  }
   const bestaetigt = await confirmDialog({
     title: 'In Anprobe übernehmen?',
     body: 'Rechnungen werden erst im nächsten Schritt freigeschaltet.',
@@ -1397,6 +1438,10 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
 
 /* ── Alle Rechnungen erzeugen ────────────────────────────────── */
 document.getElementById('btn-alle-rechnungen').addEventListener('click', async () => {
+  if (!darfRechnungErstellen()) {
+    toast('Du darfst keine Rechnungen erzeugen.', 'error');
+    return;
+  }
   const ids = betroffeneMitgliederIds();
   const vorhanden = bestellung.rechnungen || [];
   const fehlende  = ids.filter(mid => !vorhanden.some(r => r.mitgliedId === mid));
@@ -1434,6 +1479,10 @@ document.getElementById('btn-alle-rechnungen').addEventListener('click', async (
 });
 
 document.getElementById('btn-anprobe-speichern').addEventListener('click', async () => {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst die Anprobe nicht speichern.', 'error');
+    return;
+  }
   const positionen = (bestellung.positionen || []).map(position =>
     position.typ === 'artikel' ? normalisierePosition(position) : position
   );
@@ -1462,6 +1511,10 @@ document.getElementById('btn-anprobe-speichern').addEventListener('click', async
 });
 
 document.getElementById('btn-anprobe-abschliessen').addEventListener('click', async () => {
+  if (!darfBestellungAbschliessen()) {
+    toast('Du darfst die Anprobe nicht abschließen.', 'error');
+    return;
+  }
   const positionen = (bestellung.positionen || []).map(position =>
     position.typ === 'artikel'
       ? (() => {
@@ -1523,6 +1576,10 @@ document.getElementById('btn-anprobe-abschliessen').addEventListener('click', as
 
 /* ── Wieder öffnen ───────────────────────────────────────────── */
 document.getElementById('btn-wieder-oeffnen').addEventListener('click', async () => {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst die Bestellung nicht wieder öffnen.', 'error');
+    return;
+  }
   const hatLagerbestand = (bestellung.positionen || []).some(
     p => p.typ === 'artikel' && (p.ogBestandMenge || 0) > 0
   );
@@ -1643,6 +1700,10 @@ async function init() {
   setHTML(document.getElementById('info-status'), html`<span class="badge badge-blue">${statusLabel(bestellung.status)}</span>`);
   document.title = `Abgleich: ${bestellung.bezeichnung} – LifeguardOrders`;
   document.getElementById('seiten-titel').textContent = `Abgleich: ${bestellung.bezeichnung}`;
+
+  document.getElementById('btn-parsen').disabled = !darfBestellungSchreiben();
+  document.getElementById('btn-direkt-uebernehmen').disabled = !darfBestellungSchreiben();
+  document.getElementById('btn-abschliessen').disabled = document.getElementById('btn-abschliessen').disabled || !darfBestellungAbschliessen();
 
   if (bestellung.status === 'abgeschlossen' || bestellung.status === 'anprobe') {
     // Positionen + Rechnungen-Bereich anzeigen

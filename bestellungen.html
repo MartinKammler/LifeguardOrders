@@ -42,6 +42,8 @@
 import { load }               from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { html, raw, setHTML } from './src/dom.js';
+import { getSession }         from './src/session.js';
+import { darfAktion }         from './src/authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import {
   getScopeSyncStatus,
@@ -58,6 +60,10 @@ const SYNC_SCOPE_B  = 'bestellungen';
 
 let bestellungen = [];
 let client = null;
+
+function darfBestellungSchreiben() {
+  return darfAktion('bestellung-schreiben', getSession());
+}
 
 function eur(v) { return Number(v).toFixed(2).replace('.', ',') + ' €'; }
 
@@ -118,6 +124,10 @@ function mengenInfo(b) {
 }
 
 function aktionenHtml(b) {
+  const darfSchreiben = darfBestellungSchreiben();
+  if (!darfSchreiben) {
+    return raw('<span class="meta">Nur Ansicht</span>');
+  }
   switch (b.status) {
     case 'sammlung':
       return raw(html`<a class="btn btn-ghost btn-sm" href="bestellung-sammeln.html?id=${encodeURIComponent(b.id)}">Bearbeiten</a>`);
@@ -135,6 +145,10 @@ function aktionenHtml(b) {
 }
 
 window.oeffneWieder = async function(id) {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst Bestellungen nicht wieder öffnen.', 'error');
+    return;
+  }
   const bestaetigt = await confirmDialog({
     title: 'Bestellung wieder öffnen?',
     body: 'Positionen und Rechnungen werden gelöscht. Wünsche bleiben erhalten.\nDer Abgleich kann danach erneut durchgeführt werden.',
@@ -243,6 +257,12 @@ async function init() {
 
   render();
   updateSyncBanner();
+
+  document.querySelectorAll('a[href="bestellung-sammeln.html"]').forEach(link => {
+    if (!darfBestellungSchreiben()) {
+      link.style.display = 'none';
+    }
+  });
 
   if (new URLSearchParams(location.search).get('saved')) {
     toast('Wünsche gespeichert.', 'success', 3000);

@@ -6,15 +6,15 @@ import { isFunctionSession, isMemberSession } from './session.js';
 
 const READ_SCOPES = {
   admin:       ['bestellungen', 'rechnungen', 'kassenwart', 'artikel', 'materialbestand', 'einstellungen', 'dashboard', 'wuensche', 'wunsch-queue'],
-  finanzen:    ['bestellungen', 'rechnungen', 'kassenwart', 'dashboard'],
-  materialwart:['bestellungen', 'artikel', 'materialbestand', 'dashboard'],
+  finanzen:    ['bestellungen', 'rechnungen', 'kassenwart', 'materialbestand', 'dashboard'],
+  materialwart:['bestellungen', 'materialbestand', 'dashboard'],
   user:        ['mitglied', 'wuensche'],
 };
 
 const WRITE_SCOPES = {
   admin:       ['bestellungen', 'rechnungen', 'kassenwart', 'artikel', 'materialbestand', 'einstellungen', 'wuensche', 'wunsch-queue'],
   finanzen:    ['rechnungen', 'kassenwart'],
-  materialwart:['artikel', 'materialbestand'],
+  materialwart:['materialbestand'],
   user:        ['wuensche'],
 };
 
@@ -24,8 +24,10 @@ const AKTIONS_ROLLEN = {
   'rechnung-erstellen':         ['admin', 'finanzen'],
   'zahlung-setzen':             ['admin', 'finanzen'],
   'foerderung-aendern':         ['admin', 'finanzen'],
-  'artikel-schreiben':          ['admin', 'materialwart'],
+  'artikel-schreiben':          ['admin'],
   'materialbestand-schreiben':  ['admin', 'materialwart'],
+  'lagerverkauf-finalisieren':  ['admin', 'finanzen'],
+  'lageranfrage-freigeben':     ['admin', 'finanzen'],
   'einstellungen-schreiben':    ['admin'],
   'nutzer-verwalten':           ['admin'],
   'zugriff-setzen':             ['admin'],
@@ -40,8 +42,8 @@ const SEITEN_ROLLEN = {
   'bestellung-neu.html':      ['admin'],
   'bestellung-sammeln.html':  ['admin'],
   'bestellung-abgleich.html': ['admin'],
-  'artikel.html':             ['admin', 'materialwart'],
-  'materialbestand.html':     ['admin', 'materialwart'],
+  'artikel.html':             ['admin'],
+  'materialbestand.html':     ['admin', 'finanzen', 'materialwart'],
   'rechnungen.html':          ['admin', 'finanzen'],
   'kassenwart.html':          ['admin', 'finanzen'],
   'dashboard.html':           ['admin', 'finanzen', 'materialwart'],

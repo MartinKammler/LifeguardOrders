@@ -39,13 +39,14 @@ assert('canRead: admin – mitglied NICHT',  canRead('mitglied',        s.admin)
 assert('canRead: finanzen – rechnungen',      canRead('rechnungen',   s.finanzen) === true);
 assert('canRead: finanzen – kassenwart',      canRead('kassenwart',   s.finanzen) === true);
 assert('canRead: finanzen – bestellungen',    canRead('bestellungen', s.finanzen) === true);
+assert('canRead: finanzen – materialbestand', canRead('materialbestand', s.finanzen) === true);
 assert('canRead: finanzen – dashboard',       canRead('dashboard',    s.finanzen) === true);
 assert('canRead: finanzen – artikel NICHT',   canRead('artikel',      s.finanzen) === false);
 assert('canRead: finanzen – einstellungen NICHT', canRead('einstellungen', s.finanzen) === false);
 assert('canRead: finanzen – mitglied NICHT',  canRead('mitglied',     s.finanzen) === false);
 
 // materialwart
-assert('canRead: materialwart – artikel',         canRead('artikel',         s.materialwart) === true);
+assert('canRead: materialwart – artikel NICHT',   canRead('artikel',         s.materialwart) === false);
 assert('canRead: materialwart – materialbestand', canRead('materialbestand', s.materialwart) === true);
 assert('canRead: materialwart – bestellungen',    canRead('bestellungen',    s.materialwart) === true);
 assert('canRead: materialwart – dashboard',       canRead('dashboard',       s.materialwart) === true);
@@ -82,7 +83,7 @@ assert('canWrite: finanzen – bestellungen NICHT', canWrite('bestellungen', s.f
 assert('canWrite: finanzen – einstellungen NICHT', canWrite('einstellungen', s.finanzen) === false);
 
 // materialwart
-assert('canWrite: materialwart – artikel',         canWrite('artikel',         s.materialwart) === true);
+assert('canWrite: materialwart – artikel NICHT',   canWrite('artikel',         s.materialwart) === false);
 assert('canWrite: materialwart – materialbestand', canWrite('materialbestand', s.materialwart) === true);
 assert('canWrite: materialwart – rechnungen NICHT',canWrite('rechnungen',      s.materialwart) === false);
 assert('canWrite: materialwart – bestellungen NICHT', canWrite('bestellungen', s.materialwart) === false);
@@ -115,14 +116,20 @@ assert('darfAktion: admin – zugriff-setzen',            darfAktion('zugriff-se
 assert('darfAktion: finanzen – rechnung-erstellen',        darfAktion('rechnung-erstellen',  s.finanzen) === true);
 assert('darfAktion: finanzen – zahlung-setzen',            darfAktion('zahlung-setzen',      s.finanzen) === true);
 assert('darfAktion: finanzen – foerderung-aendern',        darfAktion('foerderung-aendern',  s.finanzen) === true);
+assert('darfAktion: finanzen – lageranfrage-freigeben',    darfAktion('lageranfrage-freigeben', s.finanzen) === true);
 assert('darfAktion: finanzen – bestellung-schreiben NICHT',darfAktion('bestellung-schreiben',s.finanzen) === false);
 assert('darfAktion: finanzen – nutzer-verwalten NICHT',    darfAktion('nutzer-verwalten',    s.finanzen) === false);
 
 // materialwart
-assert('darfAktion: materialwart – artikel-schreiben',         darfAktion('artikel-schreiben',         s.materialwart) === true);
+assert('darfAktion: materialwart – artikel-schreiben NICHT',   darfAktion('artikel-schreiben',         s.materialwart) === false);
 assert('darfAktion: materialwart – materialbestand-schreiben', darfAktion('materialbestand-schreiben', s.materialwart) === true);
 assert('darfAktion: materialwart – rechnung-erstellen NICHT',  darfAktion('rechnung-erstellen',        s.materialwart) === false);
+assert('darfAktion: materialwart – lageranfrage-freigeben NICHT', darfAktion('lageranfrage-freigeben', s.materialwart) === false);
+assert('darfAktion: materialwart – lagerverkauf-finalisieren NICHT', darfAktion('lagerverkauf-finalisieren', s.materialwart) === false);
 assert('darfAktion: materialwart – nutzer-verwalten NICHT',    darfAktion('nutzer-verwalten',          s.materialwart) === false);
+
+assert('darfAktion: admin – lagerverkauf-finalisieren',        darfAktion('lagerverkauf-finalisieren', s.admin) === true);
+assert('darfAktion: finanzen – lagerverkauf-finalisieren',     darfAktion('lagerverkauf-finalisieren', s.finanzen) === true);
 
 // user
 assert('darfAktion: user – bestellung-schreiben NICHT',      darfAktion('bestellung-schreiben',      s.user) === false);
@@ -156,6 +163,7 @@ assert('requireSeite: admin – unbekannt.html ✅',           requireSeite('unb
 assert('requireSeite: finanzen – rechnungen.html ✅',     requireSeite('rechnungen.html',    s.finanzen).erlaubt === true);
 assert('requireSeite: finanzen – kassenwart.html ✅',     requireSeite('kassenwart.html',    s.finanzen).erlaubt === true);
 assert('requireSeite: finanzen – bestellungen.html ✅',   requireSeite('bestellungen.html',  s.finanzen).erlaubt === true);
+assert('requireSeite: finanzen – materialbestand.html ✅',requireSeite('materialbestand.html',s.finanzen).erlaubt === true);
 assert('requireSeite: finanzen – dashboard.html ✅',      requireSeite('dashboard.html',     s.finanzen).erlaubt === true);
 assert('requireSeite: finanzen – index.html ✅',          requireSeite('index.html',         s.finanzen).erlaubt === true);
 assert('requireSeite: finanzen – einstellungen.html ❌',  requireSeite('einstellungen.html', s.finanzen).erlaubt === false);
@@ -164,7 +172,7 @@ assert('requireSeite: finanzen – mitglied.html ❌',       requireSeite('mitgl
 assert('requireSeite: finanzen – unbekannt.html ❌',      requireSeite('unbekannt.html',     s.finanzen).erlaubt === false);
 
 // materialwart
-assert('requireSeite: materialwart – artikel.html ✅',         requireSeite('artikel.html',         s.materialwart).erlaubt === true);
+assert('requireSeite: materialwart – artikel.html ❌',         requireSeite('artikel.html',         s.materialwart).erlaubt === false);
 assert('requireSeite: materialwart – materialbestand.html ✅', requireSeite('materialbestand.html', s.materialwart).erlaubt === true);
 assert('requireSeite: materialwart – bestellungen.html ✅',    requireSeite('bestellungen.html',    s.materialwart).erlaubt === true);
 assert('requireSeite: materialwart – dashboard.html ✅',       requireSeite('dashboard.html',       s.materialwart).erlaubt === true);

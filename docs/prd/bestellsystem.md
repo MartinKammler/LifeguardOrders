@@ -443,10 +443,47 @@ bewegungen[]        — Bestandsbewegungen, neueste zuerst
   notiz             string   — optional
 ```
 
+**`materialanfragen.json`** — erfasste Lagerausgaben mit Freigabefluss:
+```
+id                  string
+status              enum     — "offen" | "abgerechnet" | "abgelehnt"
+materialId          string   — Referenz auf den Lagerposten
+nummer              string
+bezeichnung         string
+variante            string
+menge               number
+mitgliedId          string
+mitgliedName        string
+hinweis             string   — optional
+foerderwunsch       boolean  — Materialwart fordert Finanz-/Förderentscheidung an
+angelegtAm          string   — ISO-Zeitstempel
+angelegtVonRolle    string
+angelegtVonName     string
+entscheidung        enum     — "" | "normal" | "og" | "abgelehnt"
+entschiedenAm       string   — optional, ISO-Zeitstempel
+entschiedenVonRolle string   — optional
+entschiedenVonName  string   — optional
+bestellungId        string   — optional, nach Freigabe
+rechnungId          string   — optional, nach Freigabe
+rechnungsnummer     string   — optional, nach Freigabe
+ogKostenlos         boolean
+```
+
 **Artikel-/Varianten-Auswahl in der UI**
 - Sammelbestellung (`bestellung-sammeln.html`): erst Suche nach Basisartikel über `Nummer + Bezeichnung`, danach separate Variantenauswahl
 - Materialbestand (`materialbestand.html`): gleicher Ablauf; alternativ bleiben Nummer, Bezeichnung und Variante manuell editierbar
 - Die fachliche Datenbasis bleibt trotzdem `artikelNr + variante`; die zweistufige Auswahl dient nur der besseren Bedienbarkeit bei vielen Größen
+
+### Materialwart / Lagerfreigabe
+
+- `materialwart` erfasst Lagerausgaben operativ im Materialbestand
+- dabei wird die Menge sofort als Bestandsabgang gebucht
+- die Ausgabe landet zunächst in `materialanfragen.json` mit Status `offen`
+- `admin` oder `finanzen` entscheiden anschließend:
+  - normal abrechnen
+  - `OG übernimmt`
+  - ablehnen und Bestand zurückbuchen
+- erst mit dieser Freigabe entsteht die abrechnungswirksame Bestellung samt Rechnung
 
 ### Import-Parser
 

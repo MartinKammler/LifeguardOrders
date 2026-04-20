@@ -6,6 +6,7 @@ import { druckePDF } from './pdf.js';
 import { auditAktion } from './audit.js';
 import { EXTERN_ID, OG_ID } from './konstanten.js';
 import { getSession } from './session.js';
+import { darfAktion } from './authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './ui-feedback.js';
 import {
   bucheMaterialBewegung,
@@ -14,6 +15,11 @@ import {
   validateMaterialEintrag,
   zusammenfassungMaterialbestand,
 } from './materialbestand.js';
+import {
+  normalisiereMaterialanfrage,
+  sortiereMaterialanfragen,
+  validateMaterialanfrage,
+} from './materialanfragen.js';
 import { erstelleLagerverkauf, findeArtikelFuerBestand } from './materialverkauf.js';
 import {
   getScopeSyncStatus,
@@ -27,24 +33,49 @@ const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_M = 'lo_materialbestand';
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_A = 'lo_artikel';
+const STORAGE_KEY_R = 'lo_materialanfragen';
 const NC_PFAD_M = '/LifeguardOrders/materialbestand.json';
 const NC_PFAD_B = '/LifeguardOrders/bestellungen.json';
 const NC_PFAD_A = '/LifeguardOrders/artikel.json';
+const NC_PFAD_R = '/LifeguardOrders/materialanfragen.json';
 const SYNC_SCOPE_M = 'materialbestand';
 const SYNC_SCOPE_B = 'bestellungen';
 const SYNC_SCOPE_A = 'artikel';
+const SYNC_SCOPE_R = 'materialanfragen';
 
 let materialbestand = [];
 let bestellungen = [];
 let artikelListe = [];
+let materialanfragen = [];
 let einstellungen = null;
 let mitglieder = [];
 let client = null;
 const offeneHistorien = new Set();
 let _artikelBasenCache = null;
 
+function darfMaterialbestandSchreiben() {
+  return darfAktion('materialbestand-schreiben', getSession());
+}
+
+function darfLagerverkaufFinalisieren() {
+  return darfAktion('lagerverkauf-finalisieren', getSession());
+}
+
+function darfLageranfrageFreigeben() {
+  return darfAktion('lageranfrage-freigeben', getSession());
+}
+
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function aktiveRolle() {
+  return String(getSession()?.rolle || '').trim();
+}
+
+function aktivePersonName() {
+  const session = getSession();
+  return session?.actingPersonName || session?.name || '';
 }
 
 async function schreibeAuditWarnung({ action, scope = 'materialbestand', entityId, summary, changes }) {
@@ -67,14 +98,19 @@ function updateSyncBanner() {
   const state = getSyncState();
   const materialStatus = getScopeSyncStatus(state, SYNC_SCOPE_M);
   const bestellStatus = getScopeSyncStatus(state, SYNC_SCOPE_B);
-  const status = [materialStatus, bestellStatus].find(item => item && item.mode !== 'synced') || null;
-  const label = status === bestellStatus ? 'Bestellungen' : 'Materialbestand';
+  const anfrageStatus = getScopeSyncStatus(state, SYNC_SCOPE_R);
+  const status = [materialStatus, bestellStatus, anfrageStatus].find(item => item && item.mode !== 'synced') || null;
+  const label = status === bestellStatus
+    ? 'Bestellungen'
+    : status === anfrageStatus
+      ? 'Lagerfreigaben'
+      : 'Materialbestand';
   renderSyncBanner({
     target: document.getElementById('sync-status-banner'),
     status,
     label,
     onReload: () => window.location.reload(),
-    exportData: () => ({ materialbestand, bestellungen }),
+    exportData: () => ({ materialbestand, bestellungen, materialanfragen }),
     exportFilename: 'materialbestand-konfliktkopie.json',
   });
 }
@@ -234,6 +270,24 @@ function mitgliedName(id) {
   return mitglied ? mitglied.name : id;
 }
 
+function anfrageStatusBadge(anfrage) {
+  switch (anfrage.status) {
+    case 'abgerechnet':
+      return raw('<span class="badge badge-green">Abgerechnet</span>');
+    case 'abgelehnt':
+      return raw('<span class="badge badge-red">Abgelehnt</span>');
+    default:
+      return raw('<span class="badge badge-amber">Freigabe offen</span>');
+  }
+}
+
+function anfrageEntscheidLabel(anfrage) {
+  if (anfrage.status === 'abgelehnt') return 'Abgelehnt';
+  if (anfrage.ogKostenlos) return 'OG übernimmt';
+  if (anfrage.status === 'abgerechnet') return 'Normal abgerechnet';
+  return anfrage.foerderwunsch ? 'Förderentscheidung angefragt' : 'Normale Abrechnung vorgesehen';
+}
+
 function alleRechnungen() {
   return bestellungen.flatMap(bestellung => bestellung.rechnungen || []);
 }
@@ -288,8 +342,72 @@ function aktualisiereStatistik() {
   document.getElementById('stat-ausgesondert').textContent = String(summe.postenAusgesondert);
 }
 
+function renderAnfragen() {
+  const ziel = document.getElementById('anfragen-inhalt');
+  const liste = sortiereMaterialanfragen(materialanfragen.map(normalisiereMaterialanfrage));
+  const kannFreigeben = darfLageranfrageFreigeben();
+
+  if (!liste.length) {
+    setHTML(ziel, '<div class="text-sm" style="color:var(--text-2)">Noch keine Lagerfreigaben erfasst.</div>');
+    return;
+  }
+
+  setHTML(ziel, html`
+    <table>
+      <thead>
+        <tr>
+          <th>Datum</th>
+          <th>Mitglied</th>
+          <th>Artikel</th>
+          <th style="text-align:right">Menge</th>
+          <th>Entscheidung</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${liste.map(anfrage => html`
+          <tr>
+            <td class="text-sm">${new Date(anfrage.angelegtAm).toLocaleDateString('de-DE')}</td>
+            <td>
+              <strong>${anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId)}</strong>
+              <div class="text-sm" style="margin-top:4px;color:var(--text-2)">${anfrage.angelegtVonRolle || '–'} · ${anfrage.angelegtVonName || '–'}</div>
+            </td>
+            <td>
+              <strong>${anfrage.bezeichnung}</strong>
+              <div class="text-sm" style="margin-top:4px;color:var(--text-2)">
+                ${anfrage.nummer}${anfrage.variante ? ` · ${anfrage.variante}` : ''}${anfrage.hinweis ? ` · ${anfrage.hinweis}` : ''}
+              </div>
+            </td>
+            <td class="menge">${anfrage.menge}</td>
+            <td>
+              ${anfrageEntscheidLabel(anfrage)}
+              ${anfrage.rechnungsnummer ? html`<div class="text-sm" style="margin-top:4px;color:var(--text-2)">${anfrage.rechnungsnummer}</div>` : ''}
+            </td>
+            <td>${anfrageStatusBadge(anfrage)}</td>
+            <td class="text-right" style="white-space:nowrap">
+              ${anfrage.status === 'offen' && kannFreigeben
+                ? html`
+                    <button class="btn btn-primary btn-sm" data-anfrage-action="freigabe-normal" data-id="${anfrage.id}">Normal</button>
+                    <button class="btn btn-ghost btn-sm" data-anfrage-action="freigabe-og" data-id="${anfrage.id}">OG übernimmt</button>
+                    <button class="btn btn-danger btn-sm" data-anfrage-action="freigabe-ablehnen" data-id="${anfrage.id}">Ablehnen</button>
+                  `
+                : ''}
+              ${anfrage.status === 'abgerechnet' && anfrage.rechnungId
+                ? html`<button class="btn btn-ghost btn-sm" data-anfrage-action="pdf" data-id="${anfrage.id}">PDF</button>`
+                : ''}
+            </td>
+          </tr>
+        `)}
+      </tbody>
+    </table>
+  `);
+}
+
 function render() {
+  const kannSchreiben = darfMaterialbestandSchreiben();
   aktualisiereStatistik();
+  renderAnfragen();
 
   const liste = gefilterterBestand();
   const leerHinweis = document.getElementById('leer-hinweis');
@@ -321,12 +439,18 @@ function render() {
         <td>${eintrag.lagerort || '–'}</td>
         <td class="text-sm">${eintrag.herkunftBestellungId || '–'}</td>
         <td class="text-right" style="white-space:nowrap">
-          <button class="btn btn-primary btn-sm" data-action="verkauf" data-id="${eintrag.id}">Verkaufen</button>
-          <button class="btn btn-ghost btn-sm" data-action="zugang" data-id="${eintrag.id}">Zugang</button>
-          <button class="btn btn-ghost btn-sm" data-action="abgang" data-id="${eintrag.id}">Abgang</button>
+          ${kannSchreiben
+            ? html`<button class="btn btn-primary btn-sm" data-action="verkauf" data-id="${eintrag.id}">Ausgabe</button>`
+            : ''}
+          ${kannSchreiben
+            ? html`<button class="btn btn-ghost btn-sm" data-action="zugang" data-id="${eintrag.id}">Zugang</button>
+                <button class="btn btn-ghost btn-sm" data-action="abgang" data-id="${eintrag.id}">Abgang</button>`
+            : ''}
           <button class="btn btn-ghost btn-sm" data-action="historie" data-id="${eintrag.id}">${istOffen ? 'Historie ausblenden' : 'Historie'}</button>
-          <button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${eintrag.id}">Bearbeiten</button>
-          <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${eintrag.id}">Löschen</button>
+          ${kannSchreiben
+            ? html`<button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${eintrag.id}">Bearbeiten</button>
+                <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${eintrag.id}">Löschen</button>`
+            : ''}
         </td>
       </tr>
       ${istOffen ? html`
@@ -372,6 +496,10 @@ function render() {
 }
 
 function oeffneModal(id = '') {
+  if (!darfMaterialbestandSchreiben()) {
+    toast('Du darfst den Materialbestand nicht bearbeiten.', 'error');
+    return;
+  }
   const eintrag = id ? materialbestand.find(item => item.id === id) : null;
   document.getElementById('modal-titel').textContent = eintrag ? 'Bestandsposten bearbeiten' : 'Bestandsposten anlegen';
   document.getElementById('modal-id').value = eintrag?.id || '';
@@ -395,6 +523,10 @@ function schliesseModal() {
 }
 
 function oeffneBewegungModal(id, typ) {
+  if (!darfMaterialbestandSchreiben()) {
+    toast('Du darfst keine Bestandsbewegungen buchen.', 'error');
+    return;
+  }
   const eintrag = materialbestand.find(item => item.id === id);
   if (!eintrag) return;
   document.getElementById('bewegung-titel').textContent = typ === 'zugang' ? 'Zugang buchen' : 'Abgang buchen';
@@ -412,6 +544,10 @@ function schliesseBewegungModal() {
 }
 
 function oeffneVerkaufModal(id) {
+  if (!darfMaterialbestandSchreiben()) {
+    toast('Du darfst keine Lagerausgabe erfassen.', 'error', 7000);
+    return;
+  }
   const eintrag = materialbestand.find(item => item.id === id);
   if (!eintrag) return;
   const artikel = findeArtikelFuerBestand(artikelListe, eintrag);
@@ -453,6 +589,96 @@ async function speichereMaterialbestand() {
     client,
     remotePath: NC_PFAD_M,
   });
+}
+
+async function speichereMaterialanfragen() {
+  return persistJsonWithSync({
+    scope: SYNC_SCOPE_R,
+    storageKey: STORAGE_KEY_R,
+    data: materialanfragen,
+    client,
+    remotePath: NC_PFAD_R,
+  });
+}
+
+async function speichereMaterialbestandUndAnfragen(statusText = '') {
+  const vorherMaterial = cloneData(load(STORAGE_KEY_M) || []);
+  const vorherAnfragen = cloneData(load(STORAGE_KEY_R) || []);
+
+  const materialResult = await persistJsonWithSync({
+    scope: SYNC_SCOPE_M,
+    storageKey: STORAGE_KEY_M,
+    data: materialbestand,
+    client,
+    remotePath: NC_PFAD_M,
+  });
+  if (!materialResult.ok) {
+    return { ok: false, materialResult, anfrageResult: null, rollback: null };
+  }
+
+  const anfrageResult = await persistJsonWithSync({
+    scope: SYNC_SCOPE_R,
+    storageKey: STORAGE_KEY_R,
+    data: materialanfragen,
+    client,
+    remotePath: NC_PFAD_R,
+  });
+  if (anfrageResult.ok) {
+    if (statusText) toast(statusText, 'success');
+    updateSyncBanner();
+    return { ok: true, materialResult, anfrageResult, rollback: null };
+  }
+
+  materialbestand = cloneData(vorherMaterial);
+  materialanfragen = cloneData(vorherAnfragen);
+  const rollback = await persistJsonWithSync({
+    scope: SYNC_SCOPE_M,
+    storageKey: STORAGE_KEY_M,
+    data: vorherMaterial,
+    client,
+    remotePath: NC_PFAD_M,
+  });
+  return { ok: false, materialResult, anfrageResult, rollback };
+}
+
+async function speichereBestellungenUndAnfragen(statusText = '') {
+  const vorherBestellungen = cloneData(load(STORAGE_KEY_B) || []);
+  const vorherAnfragen = cloneData(load(STORAGE_KEY_R) || []);
+
+  const bestellResult = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  if (!bestellResult.ok) {
+    return { ok: false, bestellResult, anfrageResult: null, rollback: null };
+  }
+
+  const anfrageResult = await persistJsonWithSync({
+    scope: SYNC_SCOPE_R,
+    storageKey: STORAGE_KEY_R,
+    data: materialanfragen,
+    client,
+    remotePath: NC_PFAD_R,
+  });
+  if (anfrageResult.ok) {
+    if (statusText) toast(statusText, 'success');
+    updateSyncBanner();
+    return { ok: true, bestellResult, anfrageResult, rollback: null };
+  }
+
+  bestellungen = cloneData(vorherBestellungen);
+  materialanfragen = cloneData(vorherAnfragen);
+  const rollback = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: vorherBestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  return { ok: false, bestellResult, anfrageResult, rollback };
 }
 
 async function speichereMaterialbestandUndBestellungen(statusText = '') {
@@ -511,6 +737,10 @@ function leseFormular() {
 }
 
 async function loescheEintrag(id) {
+  if (!darfMaterialbestandSchreiben()) {
+    toast('Du darfst den Materialbestand nicht bearbeiten.', 'error');
+    return;
+  }
   const bestaetigt = await confirmDialog({
     title: 'Bestandsposten löschen?',
     body: 'Der Bestandsposten wird dauerhaft aus dem Materialbestand entfernt.',
@@ -547,6 +777,10 @@ async function loescheEintrag(id) {
 }
 
 async function speichereBewegung() {
+  if (!darfMaterialbestandSchreiben()) {
+    toast('Du darfst keine Bestandsbewegungen buchen.', 'error');
+    return;
+  }
   const id = document.getElementById('bewegung-id').value;
   const typ = document.getElementById('bewegung-typ').value;
   const menge = parseInt(document.getElementById('bewegung-menge').value, 10);
@@ -600,7 +834,7 @@ async function speichereVerkauf() {
   const mitgliedId = document.getElementById('verkauf-mitglied').value;
   const menge = parseInt(document.getElementById('verkauf-menge').value, 10);
   const hinweis = document.getElementById('verkauf-hinweis').value.trim();
-  const ogKostenlos = document.getElementById('verkauf-og-kostenlos').checked;
+  const foerderwunsch = document.getElementById('verkauf-og-kostenlos').checked;
 
   const index = materialbestand.findIndex(item => item.id === id);
   if (index < 0) return;
@@ -617,22 +851,31 @@ async function speichereVerkauf() {
   }
 
   const memberName = mitgliedName(mitgliedId);
-  const verkauf = erstelleLagerverkauf(
-    { ...eintrag, menge },
-    artikel,
+  const anfrage = normalisiereMaterialanfrage({
+    materialId: eintrag.id,
+    nummer: eintrag.nummer,
+    bezeichnung: eintrag.bezeichnung,
+    variante: eintrag.variante || '',
+    menge,
     mitgliedId,
-    memberName,
-    einstellungen,
-    alleRechnungen(),
-    { ogKostenlos }
-  );
+    mitgliedName: memberName,
+    hinweis,
+    foerderwunsch,
+    angelegtVonRolle: aktiveRolle(),
+    angelegtVonName: aktivePersonName(),
+  });
+  const validierung = validateMaterialanfrage(anfrage);
+  if (!validierung.ok) {
+    toast(validierung.fehler, 'error');
+    return;
+  }
 
   const bewegung = bucheMaterialBewegung(eintrag, {
     typ: 'abgang',
     menge,
-    quelle: 'lagerverkauf',
-    referenz: verkauf.bestellung.id,
-    notiz: hinweis || `${ogKostenlos ? 'OG übernimmt · ' : ''}Verkauf an ${memberName}`,
+    quelle: 'lageranfrage',
+    referenz: anfrage.id,
+    notiz: hinweis || `${foerderwunsch ? 'Förderentscheidung prüfen · ' : ''}Ausgabe an ${memberName}`,
   });
   if (!bewegung.ok) {
     toast(bewegung.fehler, 'error');
@@ -640,18 +883,18 @@ async function speichereVerkauf() {
   }
 
   const vorherMaterial = cloneData(materialbestand);
-  const vorherBestellungen = cloneData(bestellungen);
+  const vorherAnfragen = cloneData(materialanfragen);
   materialbestand[index] = bewegung.eintrag;
-  bestellungen = [...bestellungen, verkauf.bestellung];
-  const gespeichert = await speichereMaterialbestandUndBestellungen('Lagerverkauf gespeichert und Rechnung erzeugt.');
+  materialanfragen = [anfrage, ...materialanfragen];
+  const gespeichert = await speichereMaterialbestandUndAnfragen('Lagerausgabe erfasst und zur Freigabe vorgemerkt.');
   if (!gespeichert.ok) {
     materialbestand = vorherMaterial;
-    bestellungen = vorherBestellungen;
+    materialanfragen = vorherAnfragen;
     const meldungen = [];
-    if (gespeichert.bestellResult && !gespeichert.bestellResult.ok) {
-      meldungen.push(syncHinweisText(gespeichert.bestellResult.sync, 'Bestellungen'));
-    } else if (gespeichert.materialResult && !gespeichert.materialResult.ok) {
+    if (gespeichert.materialResult && !gespeichert.materialResult.ok) {
       meldungen.push(syncHinweisText(gespeichert.materialResult.sync, 'Materialbestand'));
+    } else if (gespeichert.anfrageResult && !gespeichert.anfrageResult.ok) {
+      meldungen.push(syncHinweisText(gespeichert.anfrageResult.sync, 'Lagerfreigaben'));
     }
     if (gespeichert.rollback && !gespeichert.rollback.ok) {
       meldungen.push('Rollback des Materialbestands ist fehlgeschlagen. Bitte Remote-Stand manuell prüfen.');
@@ -665,14 +908,12 @@ async function speichereVerkauf() {
   render();
   schliesseVerkaufModal();
   await schreibeAuditWarnung({
-    action: 'LAGERVERKAUF_ERSTELLT',
-    scope: 'bestellungen',
-    entityId: verkauf.bestellung.id,
-    summary: `Lagerverkauf ${verkauf.bestellung.bezeichnung} wurde erzeugt`,
+    action: 'LAGERANFRAGE_ERFASST',
+    scope: 'materialanfragen',
+    entityId: anfrage.id,
+    summary: `Lagerausgabe für ${memberName} wurde zur Freigabe erfasst`,
     changes: {
-      bestellungId: verkauf.bestellung.id,
-      rechnungId: verkauf.rechnung?.id || '',
-      rechnungsnummer: verkauf.rechnung?.nummer || '',
+      anfrageId: anfrage.id,
       materialId: eintrag.id,
       nummer: eintrag.nummer,
       bezeichnung: eintrag.bezeichnung,
@@ -680,14 +921,196 @@ async function speichereVerkauf() {
       mitgliedId,
       mitgliedName: memberName,
       menge,
-      ogKostenlos,
+      foerderwunsch,
       hinweis,
       bestandNeu: materialbestand[index]?.menge ?? 0,
     },
   });
-  if (verkauf.rechnung) {
-    await druckePDF(verkauf.rechnung, memberName, einstellungen);
+}
+
+async function finalisiereLageranfrage(anfrageId, { ogKostenlos = false } = {}) {
+  if (!darfLageranfrageFreigeben()) {
+    toast('Du darfst Lagerfreigaben nicht abschließen.', 'error');
+    return;
   }
+  const index = materialanfragen.findIndex(item => item.id === anfrageId);
+  if (index < 0) return;
+
+  const anfrage = normalisiereMaterialanfrage(materialanfragen[index]);
+  if (anfrage.status !== 'offen') {
+    toast('Diese Lagerfreigabe ist bereits entschieden.', 'warn');
+    return;
+  }
+
+  const artikel = findeArtikelFuerBestand(artikelListe, {
+    nummer: anfrage.nummer,
+    variante: anfrage.variante,
+  });
+  if (!artikel) {
+    toast('Der passende Artikel wurde im Katalog nicht gefunden.', 'error');
+    return;
+  }
+
+  const verkauf = erstelleLagerverkauf(
+    { nummer: anfrage.nummer, bezeichnung: anfrage.bezeichnung, variante: anfrage.variante, menge: anfrage.menge },
+    artikel,
+    anfrage.mitgliedId,
+    anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId),
+    einstellungen,
+    alleRechnungen(),
+    {
+      ogKostenlos,
+      quelle: 'lagerfreigabe',
+      referenzAnfrageId: anfrage.id,
+    }
+  );
+
+  const vorherBestellungen = cloneData(bestellungen);
+  const vorherAnfragen = cloneData(materialanfragen);
+  bestellungen = [...bestellungen, verkauf.bestellung];
+  materialanfragen[index] = normalisiereMaterialanfrage({
+    ...anfrage,
+    status: 'abgerechnet',
+    entscheidung: ogKostenlos ? 'og' : 'normal',
+    entschiedenAm: new Date().toISOString(),
+    entschiedenVonRolle: aktiveRolle(),
+    entschiedenVonName: aktivePersonName(),
+    ogKostenlos,
+    bestellungId: verkauf.bestellung.id,
+    rechnungId: verkauf.rechnung?.id || '',
+    rechnungsnummer: verkauf.rechnung?.nummer || '',
+  });
+
+  const gespeichert = await speichereBestellungenUndAnfragen(
+    ogKostenlos
+      ? 'Lagerfreigabe abgeschlossen und OG-Übernahme gesetzt.'
+      : 'Lagerfreigabe abgeschlossen und Rechnung erzeugt.'
+  );
+  if (!gespeichert.ok) {
+    bestellungen = vorherBestellungen;
+    materialanfragen = vorherAnfragen;
+    const meldungen = [];
+    if (gespeichert.bestellResult && !gespeichert.bestellResult.ok) {
+      meldungen.push(syncHinweisText(gespeichert.bestellResult.sync, 'Bestellungen'));
+    } else if (gespeichert.anfrageResult && !gespeichert.anfrageResult.ok) {
+      meldungen.push(syncHinweisText(gespeichert.anfrageResult.sync, 'Lagerfreigaben'));
+    }
+    if (gespeichert.rollback && !gespeichert.rollback.ok) {
+      meldungen.push('Rollback der Bestellungen ist fehlgeschlagen. Bitte Remote-Stand manuell prüfen.');
+    }
+    updateSyncBanner();
+    toast(meldungen.filter(Boolean).join('\n'), 'error', 9000);
+    render();
+    return;
+  }
+
+  render();
+  await schreibeAuditWarnung({
+    action: 'LAGERANFRAGE_FREIGEGEBEN',
+    scope: 'materialanfragen',
+    entityId: anfrage.id,
+    summary: `Lagerfreigabe für ${anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId)} wurde ${ogKostenlos ? 'mit OG-Übernahme' : 'normal'} abgeschlossen`,
+    changes: {
+      anfrageId: anfrage.id,
+      bestellungId: verkauf.bestellung.id,
+      rechnungId: verkauf.rechnung?.id || '',
+      rechnungsnummer: verkauf.rechnung?.nummer || '',
+      ogKostenlos,
+      menge: anfrage.menge,
+      mitgliedId: anfrage.mitgliedId,
+      mitgliedName: anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId),
+    },
+  });
+  if (verkauf.rechnung) {
+    await druckePDF(verkauf.rechnung, anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId), einstellungen);
+  }
+}
+
+async function lehneLageranfrageAb(anfrageId) {
+  if (!darfLageranfrageFreigeben()) {
+    toast('Du darfst Lagerfreigaben nicht ablehnen.', 'error');
+    return;
+  }
+  const index = materialanfragen.findIndex(item => item.id === anfrageId);
+  if (index < 0) return;
+  const anfrage = normalisiereMaterialanfrage(materialanfragen[index]);
+  if (anfrage.status !== 'offen') {
+    toast('Diese Lagerfreigabe ist bereits entschieden.', 'warn');
+    return;
+  }
+
+  const materialIndex = materialbestand.findIndex(item => item.id === anfrage.materialId);
+  if (materialIndex < 0) {
+    toast('Der zugehörige Bestandsposten wurde nicht gefunden.', 'error');
+    return;
+  }
+
+  const bestaetigt = await confirmDialog({
+    title: 'Lagerfreigabe ablehnen?',
+    body: 'Die Menge wird wieder in den Lagerbestand zurückgebucht.',
+    confirmText: 'Ablehnen',
+    confirmTone: 'danger',
+  });
+  if (!bestaetigt) return;
+
+  const rueckbuchung = bucheMaterialBewegung(materialbestand[materialIndex], {
+    typ: 'zugang',
+    menge: anfrage.menge,
+    quelle: 'lagerfreigabe-abgelehnt',
+    referenz: anfrage.id,
+    notiz: `Rückbuchung aus abgelehnter Lagerfreigabe ${anfrage.id}`,
+  });
+  if (!rueckbuchung.ok) {
+    toast(rueckbuchung.fehler, 'error');
+    return;
+  }
+
+  const vorherMaterial = cloneData(materialbestand);
+  const vorherAnfragen = cloneData(materialanfragen);
+  materialbestand[materialIndex] = rueckbuchung.eintrag;
+  materialanfragen[index] = normalisiereMaterialanfrage({
+    ...anfrage,
+    status: 'abgelehnt',
+    entscheidung: 'abgelehnt',
+    entschiedenAm: new Date().toISOString(),
+    entschiedenVonRolle: aktiveRolle(),
+    entschiedenVonName: aktivePersonName(),
+  });
+
+  const gespeichert = await speichereMaterialbestandUndAnfragen('Lagerfreigabe abgelehnt und Bestand zurückgebucht.');
+  if (!gespeichert.ok) {
+    materialbestand = vorherMaterial;
+    materialanfragen = vorherAnfragen;
+    const meldungen = [];
+    if (gespeichert.materialResult && !gespeichert.materialResult.ok) {
+      meldungen.push(syncHinweisText(gespeichert.materialResult.sync, 'Materialbestand'));
+    } else if (gespeichert.anfrageResult && !gespeichert.anfrageResult.ok) {
+      meldungen.push(syncHinweisText(gespeichert.anfrageResult.sync, 'Lagerfreigaben'));
+    }
+    if (gespeichert.rollback && !gespeichert.rollback.ok) {
+      meldungen.push('Rollback des Materialbestands ist fehlgeschlagen. Bitte Remote-Stand manuell prüfen.');
+    }
+    updateSyncBanner();
+    toast(meldungen.filter(Boolean).join('\n'), 'error', 9000);
+    render();
+    return;
+  }
+
+  render();
+  await schreibeAuditWarnung({
+    action: 'LAGERANFRAGE_ABGELEHNT',
+    scope: 'materialanfragen',
+    entityId: anfrage.id,
+    summary: `Lagerfreigabe für ${anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId)} wurde abgelehnt`,
+    changes: {
+      anfrageId: anfrage.id,
+      materialId: anfrage.materialId,
+      menge: anfrage.menge,
+      mitgliedId: anfrage.mitgliedId,
+      mitgliedName: anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId),
+      bestandNeu: materialbestand[materialIndex]?.menge ?? 0,
+    },
+  });
 }
 
 async function init() {
@@ -701,9 +1124,10 @@ async function init() {
   materialbestand = load(STORAGE_KEY_M) || [];
   bestellungen = load(STORAGE_KEY_B) || [];
   artikelListe = load(STORAGE_KEY_A) || [];
+  materialanfragen = (load(STORAGE_KEY_R) || []).map(normalisiereMaterialanfrage);
   _artikelBasenCache = null;
   if (client) {
-    const [materialLoaded, bestellungenLoaded, artikelLoaded] = await Promise.all([
+    const [materialLoaded, bestellungenLoaded, artikelLoaded, anfragenLoaded] = await Promise.all([
       hydrateJsonFromSync({
         scope: SYNC_SCOPE_M,
         storageKey: STORAGE_KEY_M,
@@ -725,6 +1149,13 @@ async function init() {
         remotePath: NC_PFAD_A,
         isValidRemote: data => Array.isArray(data),
       }),
+      hydrateJsonFromSync({
+        scope: SYNC_SCOPE_R,
+        storageKey: STORAGE_KEY_R,
+        client,
+        remotePath: NC_PFAD_R,
+        isValidRemote: data => Array.isArray(data),
+      }),
     ]);
     if (Array.isArray(materialLoaded.data)) {
       materialbestand = materialLoaded.data.map(normalisiereMaterialEintrag);
@@ -736,14 +1167,20 @@ async function init() {
       artikelListe = artikelLoaded.data;
       _artikelBasenCache = null;
     }
+    if (Array.isArray(anfragenLoaded.data)) {
+      materialanfragen = anfragenLoaded.data.map(normalisiereMaterialanfrage);
+    }
   } else {
     materialbestand = materialbestand.map(normalisiereMaterialEintrag);
+    materialanfragen = materialanfragen.map(normalisiereMaterialanfrage);
   }
 
   render();
   updateSyncBanner();
 
   document.getElementById('btn-neu').addEventListener('click', () => oeffneModal());
+  document.getElementById('btn-neu').disabled = !darfMaterialbestandSchreiben();
+  document.getElementById('btn-neu-leer')?.toggleAttribute('disabled', !darfMaterialbestandSchreiben());
   document.getElementById('btn-download-material')?.addEventListener('click', () => {
     if (!materialbestand.length) {
       toast('Kein Materialbestand zum Exportieren.', 'warn');
@@ -795,6 +1232,10 @@ async function init() {
   });
 
   document.getElementById('modal-speichern').addEventListener('click', async () => {
+    if (!darfMaterialbestandSchreiben()) {
+      toast('Du darfst den Materialbestand nicht bearbeiten.', 'error');
+      return;
+    }
     const eintrag = leseFormular();
     const validierung = validateMaterialEintrag(eintrag);
     if (!validierung.ok) {
@@ -850,6 +1291,29 @@ async function init() {
   });
   document.getElementById('bewegung-speichern').addEventListener('click', speichereBewegung);
   document.getElementById('verkauf-speichern').addEventListener('click', speichereVerkauf);
+  document.getElementById('anfragen-inhalt').addEventListener('click', async event => {
+    const button = event.target.closest('[data-anfrage-action]');
+    if (!button) return;
+    const id = button.dataset.id;
+    if (button.dataset.anfrageAction === 'freigabe-normal') {
+      await finalisiereLageranfrage(id, { ogKostenlos: false });
+    }
+    if (button.dataset.anfrageAction === 'freigabe-og') {
+      await finalisiereLageranfrage(id, { ogKostenlos: true });
+    }
+    if (button.dataset.anfrageAction === 'freigabe-ablehnen') {
+      await lehneLageranfrageAb(id);
+    }
+    if (button.dataset.anfrageAction === 'pdf') {
+      const anfrage = materialanfragen.find(item => item.id === id);
+      if (!anfrage?.rechnungId || !anfrage?.bestellungId) return;
+      const bestellung = bestellungen.find(item => item.id === anfrage.bestellungId);
+      const rechnung = (bestellung?.rechnungen || []).find(item => item.id === anfrage.rechnungId);
+      if (rechnung) {
+        await druckePDF(rechnung, anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId), einstellungen);
+      }
+    }
+  });
 
   document.getElementById('filter-suche').addEventListener('input', render);
   document.getElementById('filter-status').addEventListener('change', render);

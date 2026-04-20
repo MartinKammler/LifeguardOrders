@@ -154,9 +154,16 @@
   </div>
 
   <div class="hinweis hinweis-info">
-    Bestandsposten können manuell gepflegt werden. Lagerbestand aus abgeschlossenen Bestellungen wird automatisch über Nummer, Variante und Bezeichnung zusammengeführt. Weitere Zu- und Abgänge werden als Bewegungen protokolliert. Verkäufe aus dem Lager erzeugen direkt eine Rechnung.
+    Bestandsposten können manuell gepflegt werden. Lagerbestand aus abgeschlossenen Bestellungen wird automatisch über Nummer, Variante und Bezeichnung zusammengeführt. Weitere Zu- und Abgänge werden als Bewegungen protokolliert. Lagerausgaben werden erst erfasst und anschließend durch Admin oder Finanzen abgerechnet oder abgelehnt.
   </div>
   <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
+
+  <div class="card">
+    <div class="section-label" style="margin-bottom:12px">Lagerfreigaben</div>
+    <div id="anfragen-inhalt" class="text-sm" style="color:var(--text-2)">
+      Noch keine Lagerfreigaben erfasst.
+    </div>
+  </div>
 
   <div class="stat-grid">
     <div class="stat-card">
@@ -280,7 +287,7 @@
 
 <div class="modal-backdrop" id="verkauf-backdrop">
   <div class="modal">
-    <h2>Aus Lager verkaufen</h2>
+    <h2>Lagerausgabe erfassen</h2>
     <input type="hidden" id="verkauf-id">
     <div class="form-grid">
       <div class="field span2">
@@ -302,13 +309,13 @@
       <div class="field span2">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="verkauf-og-kostenlos">
-          OG übernimmt Kosten
+          Förderentscheidung durch Admin/Finanzen nötig
         </label>
       </div>
     </div>
     <div class="flex gap-8 mt-16" style="justify-content:flex-end">
       <button class="btn btn-ghost" id="verkauf-abbrechen">Abbrechen</button>
-      <button class="btn btn-primary" id="verkauf-speichern">Verkaufen & Rechnung erzeugen</button>
+      <button class="btn btn-primary" id="verkauf-speichern">Ausgabe erfassen</button>
     </div>
   </div>
 </div>

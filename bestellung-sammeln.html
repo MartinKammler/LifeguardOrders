@@ -335,6 +335,8 @@ import { load }               from './src/storage.js';
 import { aggregiereWuensche, berechneBestellsummen, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
 import { html, raw, setHTML } from './src/dom.js';
+import { getSession }         from './src/session.js';
+import { darfAktion }         from './src/authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import { validateListe }      from './src/validation.js';
 import {
@@ -365,6 +367,10 @@ let sortierteArtikel = [];
 let artikelBasen    = [];
 let bearbeitenId = null; // ID des aktuell bearbeiteten Wunsches
 const LEERE_VARIANTE = '__OHNE_VARIANTE__';
+
+function darfBestellungSchreiben() {
+  return darfAktion('bestellung-schreiben', getSession());
+}
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function uuid() { return crypto.randomUUID(); }
@@ -765,6 +771,10 @@ function schliesseBearbeitenModal() {
 document.getElementById('btn-bearbeiten-abbrechen').addEventListener('click', schliesseBearbeitenModal);
 
 document.getElementById('btn-bearbeiten-speichern').addEventListener('click', () => {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst diese Bestellung nicht bearbeiten.', 'error');
+    return;
+  }
   if (!bearbeitenId) return;
 
   const mitgliedId  = document.getElementById('sel-mitglied-edit').value;
@@ -853,6 +863,10 @@ function befuelleSelects() {
 
 /* ── Wunsch hinzufügen ───────────────────────────────────────── */
 document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst diese Bestellung nicht bearbeiten.', 'error');
+    return;
+  }
   const mitgliedId = document.getElementById('sel-mitglied').value;
   const basisKey   = document.getElementById('sel-artikel-basis').value;
   const variante   = gewaehlteVariante('sel-artikel-variante');
@@ -913,6 +927,10 @@ document.getElementById('btn-csv-kopieren').addEventListener('click', async () =
 
 /* ── Speichern ───────────────────────────────────────────────── */
 document.getElementById('btn-speichern').addEventListener('click', async () => {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst Bestellungen nicht speichern.', 'error');
+    return;
+  }
   const datum       = document.getElementById('inp-datum').value;
   const bezeichnung = document.getElementById('inp-bezeichnung').value.trim();
 
@@ -966,6 +984,10 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
 
 /* ── Als bestellt markieren ──────────────────────────────────── */
 document.getElementById('btn-bestellt').addEventListener('click', async () => {
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst Bestellungen nicht weiterbearbeiten.', 'error');
+    return;
+  }
   if (!bestellungId) return;
   const idx = bestellungen.findIndex(b => b.id === bestellungId);
   if (idx < 0) return;
@@ -1064,6 +1086,10 @@ async function init() {
   document.getElementById('wunsch-tbody').addEventListener('click', async e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
+    if (!darfBestellungSchreiben()) {
+      toast('Du darfst diese Bestellung nicht bearbeiten.', 'error');
+      return;
+    }
     const id     = btn.dataset.id;
     const action = btn.dataset.action;
     if (action === 'loeschen') {
@@ -1090,6 +1116,14 @@ async function init() {
     }
     renderWunschliste();
   });
+
+  if (!darfBestellungSchreiben()) {
+    document.querySelectorAll('#wunsch-formular input, #wunsch-formular select, #wunsch-formular button, #inp-datum, #inp-bezeichnung').forEach(el => {
+      el.disabled = true;
+    });
+    document.getElementById('btn-speichern').disabled = true;
+    document.getElementById('btn-bestellt').disabled = true;
+  }
 }
 
 init();

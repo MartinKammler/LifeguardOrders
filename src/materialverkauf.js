@@ -23,8 +23,9 @@ export function erstelleLagerverkauf(bestandseintrag, artikel, mitgliedId, mitgl
     id: crypto.randomUUID(),
     datum,
     bezeichnung,
-    status: 'abgeschlossen',
-    quelle: 'lagerverkauf',
+    status: opts.status || 'abgeschlossen',
+    quelle: opts.quelle || 'lagerverkauf',
+    referenzAnfrageId: opts.referenzAnfrageId || '',
     wuensche: [],
     positionen: [
       {

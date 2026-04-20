@@ -111,6 +111,7 @@ import { html, raw, setHTML }  from './src/dom.js';
 import { EXTERN_ID, OG_ID }    from './src/konstanten.js';
 import { auditAktion }         from './src/audit.js';
 import { getSession }          from './src/session.js';
+import { darfAktion }          from './src/authz.js';
 import { renderSyncBanner, toast, confirmDialog } from './src/ui-feedback.js';
 import {
   getScopeSyncStatus,
@@ -131,6 +132,10 @@ let bestellungen  = [];
 let einstellungen = null;
 let mitglieder    = [];
 let client        = null;
+
+function darfZahlungSetzen() {
+  return darfAktion('zahlung-setzen', getSession());
+}
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function cloneData(value) {
@@ -225,9 +230,11 @@ function renderTabelle() {
     const statusBadge = r.bezahlt
       ? raw(html`<span class="badge badge-green">Bezahlt<span style="opacity:.7;font-size:.72rem;margin-left:4px">${r.bezahltDatum || ''}</span></span>`)
       : raw('<span class="badge badge-amber">Offen</span>');
-    const bezahltBtn = r.bezahlt
-      ? raw(html`<button class="btn btn-ghost btn-sm" data-unbezahlt="${r.id}" data-bestell="${r.bestellungId}">Rückgängig</button>`)
-      : raw(html`<button class="btn btn-success btn-sm" data-bezahlt="${r.id}" data-bestell="${r.bestellungId}">Als bezahlt</button>`);
+    const bezahltBtn = !darfZahlungSetzen()
+      ? raw('<span class="meta">Nur Ansicht</span>')
+      : (r.bezahlt
+          ? raw(html`<button class="btn btn-ghost btn-sm" data-unbezahlt="${r.id}" data-bestell="${r.bestellungId}">Rückgängig</button>`)
+          : raw(html`<button class="btn btn-success btn-sm" data-bezahlt="${r.id}" data-bestell="${r.bestellungId}">Als bezahlt</button>`));
     return html`
       <tr>
         <td style="font-family:monospace;font-size:.82rem">${r.nummer}</td>
@@ -282,6 +289,10 @@ function findeRechnung(rechnungId, bestellungId) {
 
 /* ── Zahlungsstatus setzen ────────────────────────────────────── */
 async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
+  if (!darfZahlungSetzen()) {
+    toast('Du darfst den Zahlungsstatus nicht ändern.', 'error');
+    return;
+  }
   const bIdx = bestellungen.findIndex(b => b.id === bestellungId);
   if (bIdx < 0) return;
 

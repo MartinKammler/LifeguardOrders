@@ -16,6 +16,10 @@ import {
   verbucheLagerbestandAusBestellung,
   storniereLagerbestandAusBestellung,
 } from '../src/materialbestand.js';
+import {
+  normalisiereMaterialanfrage,
+  validateMaterialanfrage,
+} from '../src/materialanfragen.js';
 import { erstelleLagerverkauf, findeArtikelFuerBestand } from '../src/materialverkauf.js';
 import { auditAktion } from '../src/audit.js';
 import { erstelleRechnungsDaten } from '../src/pdf.js';
@@ -501,6 +505,41 @@ test('erstelleLagerverkauf respektiert OG uebernimmt wie im normalen Bestellflus
   assertEqual(verkauf.bestellung.positionen[0].zuweisung[0].ogKostenlos, true, 'Lagerverkauf muss ogKostenlos in die Zuweisung schreiben');
   assertEqual(verkauf.rechnung.gesamtbetrag, 0, 'Wenn OG uebernimmt, muss die Rechnung 0 Euro ausweisen');
   assertEqual(verkauf.rechnung.ogAnteil, 45, 'Der Rest muss als OG-Anteil gerechnet werden');
+});
+
+test('normalisiereMaterialanfrage setzt Status und Entscheidungsfelder stabil', () => {
+  const anfrage = normalisiereMaterialanfrage({
+    materialId: 'mat1',
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    menge: 2,
+    mitgliedId: 'max',
+    foerderwunsch: true,
+  });
+
+  assertEqual(anfrage.status, 'offen', 'Neue Materialanfragen muessen offen starten');
+  assertEqual(anfrage.foerderwunsch, true, 'Foerderwunsch muss erhalten bleiben');
+  assertEqual(anfrage.entscheidung, '', 'Entscheidung darf vor Freigabe leer sein');
+});
+
+test('validateMaterialanfrage verlangt Materialbezug, Mitglied und positive Menge', () => {
+  const ok = validateMaterialanfrage({
+    materialId: 'mat1',
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    menge: 1,
+    mitgliedId: 'max',
+  });
+  assertEqual(ok.ok, true, 'Gueltige Materialanfrage muss akzeptiert werden');
+
+  const fehler = validateMaterialanfrage({
+    materialId: '',
+    nummer: '4711',
+    bezeichnung: 'Einsatzhose',
+    menge: 0,
+    mitgliedId: '',
+  });
+  assertEqual(fehler.ok, false, 'Ungueltige Materialanfrage muss abgelehnt werden');
 });
 
 test('verbucheLagerbestandAusBestellung fuehrt gleiche Nummer, Variante und Bezeichnung zusammen', () => {

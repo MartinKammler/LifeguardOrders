@@ -70,7 +70,8 @@ Echte Autorisierung statt nur Login.
 - `src/authz.js` einführen:
   - `canRead(scope, session)`
   - `canWrite(scope, session)`
-  - `requirePermission(...)`
+  - `darfAktion(...)`
+  - `requireSeite(...)`
 - `/LifeguardOrders/zugriff.json` einführen:
   - globale Sperren
   - individuelle Nutzersperren
@@ -93,6 +94,30 @@ Echte Autorisierung statt nur Login.
 - `finanzen` kann fördern, sperren und abrechnen, aber keine Benutzer oder Systemeinstellungen ändern
 - `materialwart` kann weder Preisabweichungen noch OG-Förderung finalisieren
 - Globale und individuelle Sperren blockieren nur neue Wünsche und neue Lageranfragen
+
+### Aktueller Stand
+
+Begonnen.
+
+Bereits umgesetzt:
+
+- zentrale Rollenmatrix in `src/authz.js`
+- Seitensperren über `src/auth-guard.js`
+- erste harte Aktionssperren in:
+  - `artikel-app`
+  - `materialbestand-app`
+  - `bestellungen`
+  - `bestellung-sammeln`
+  - `bestellung-abgleich`
+  - `rechnungen`
+- Lagerausgaben laufen als Freigabefall:
+  - operative Erfassung durch `materialwart`
+  - finale Abrechnung oder OG-Übernahme durch `admin` / `finanzen`
+
+Noch offen:
+
+- Restliche Mutationspfade vollständig gegen `darfAktion(...)` prüfen
+- Förder-/Freigabefall für Lagerausgaben optional noch feiner mit eigenem Statusmodell ausbauen
 
 ---
 

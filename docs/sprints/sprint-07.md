@@ -35,12 +35,12 @@ Das Bestellsystem bekommt die technische Basis für den Mehrnutzerbetrieb:
 
 ## Acceptance Criteria
 
-- [ ] Mitgliedslogin funktioniert mit gültiger Stempeluhr-PIN
-- [ ] Ungültige oder nicht aktive Stempeluhr-Nutzer werden sauber abgewiesen
-- [ ] Funktionslogin bleibt verfügbar, aber klar vom Mitgliedslogin getrennt
-- [ ] Session enthält `authType` und je nach Loginweg die passenden Identitätsfelder
-- [ ] `zugriff.json` kann globale und individuelle Sperren beschreiben
-- [ ] Gesperrte Mitglieder sehen den Sperrhinweis, können aber keine neuen Wünsche anlegen
+- [x] Mitgliedslogin funktioniert mit gültiger Stempeluhr-PIN
+- [x] Ungültige oder nicht aktive Stempeluhr-Nutzer werden sauber abgewiesen
+- [x] Funktionslogin bleibt verfügbar, aber klar vom Mitgliedslogin getrennt
+- [x] Session enthält `authType` und je nach Loginweg die passenden Identitätsfelder
+- [x] `zugriff.json` kann globale und individuelle Sperren beschreiben
+- [x] Gesperrte Mitglieder sehen den Sperrhinweis, können aber keine neuen Wünsche anlegen
 
 ---
 
@@ -55,5 +55,16 @@ Das Bestellsystem bekommt die technische Basis für den Mehrnutzerbetrieb:
 
 ## Ergebnis
 
-Geplant. Dieser Sprint ist die Brücke zwischen dem bisherigen App-Login und dem späteren
-Mehrnutzerbetrieb mit Rollen, Wunschqueue und Mitglieder-Dashboard.
+Umgesetzt.
+
+Enthalten sind:
+
+- Mitgliedslogin über `/LifeguardClock/lgc_users.json`
+- `mustChangePIN` wird im Bestellsystem abgewiesen und an die Stempeluhr verwiesen
+- Funktionslogin mit verpflichtender handelnder Person aus der Mitgliederliste
+- getrennte Sessions `stempeluhr` / `lokal`
+- 30 Minuten Inaktivitäts-Timeout für Funktionssessions
+- Zugriffsoverlay für globale und individuelle Sperren
+- erster Mitgliederbereich mit Sperrhinweis als Zielseite nach Mitgliedslogin
+
+Die harte Rollenprüfung pro Seite und Aktion läuft anschließend in Sprint 08 weiter.

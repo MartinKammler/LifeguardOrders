@@ -8,6 +8,8 @@ import { parseBestellung }                     from './parser.js';
 import { ladeDefaultArtikel, downloadAlsJson } from './defaults.js';
 import { load, save }                          from './storage.js';
 import { html, raw, setHTML }                  from './dom.js';
+import { getSession }                          from './session.js';
+import { darfAktion }                          from './authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './ui-feedback.js';
 import { validateArtikel }                     from './validation.js';
 import {
@@ -32,6 +34,10 @@ const SYNC_SCOPE_A   = 'artikel';
 let artikel    = [];   // aktueller Katalog
 let importiert = [];   // geparste Artikel aus Import-Vorschau
 let client     = null;
+
+function darfArtikelSchreiben() {
+  return darfAktion('artikel-schreiben', getSession());
+}
 
 /* ── Hilfsfunktionen ────────────────────────────────────────── */
 
@@ -225,6 +231,10 @@ window.oeffneModal = function(id) {
 };
 
 window.loescheArtikelUI = async function(id) {
+  if (!darfArtikelSchreiben()) {
+    toast('Du darfst den Artikelkatalog nicht bearbeiten.', 'error');
+    return;
+  }
   const bestaetigt = await confirmDialog({
     title: 'Artikel löschen?',
     body: 'Der Artikel wird aus dem Katalog entfernt.',
@@ -256,6 +266,10 @@ document.getElementById('modal-backdrop').addEventListener('click', e => {
 });
 
 document.getElementById('modal-speichern').addEventListener('click', async () => {
+  if (!darfArtikelSchreiben()) {
+    toast('Du darfst den Artikelkatalog nicht bearbeiten.', 'error');
+    return;
+  }
   const id = document.getElementById('modal-id').value;
   const geaendert = {
     id:              id || uuid(),
@@ -327,6 +341,10 @@ document.getElementById('btn-parsen').addEventListener('click', () => {
 });
 
 document.getElementById('btn-uebernehmen').addEventListener('click', async () => {
+  if (!darfArtikelSchreiben()) {
+    toast('Du darfst den Artikelkatalog nicht bearbeiten.', 'error');
+    return;
+  }
   const { katalog: neu, hinzugefuegt, aktualisiert, duplikate, ungueltig } = fuegeArtikelHinzu(artikel, importiert);
   const vorher = cloneData(artikel);
   artikel = neu;
@@ -361,7 +379,13 @@ document.getElementById('btn-uebernehmen').addEventListener('click', async () =>
   if (meldungen.length) toast(meldungen.join('\n'), 'info', 9000);
 });
 
-document.getElementById('btn-neu').addEventListener('click', () => oeffneModal(null));
+document.getElementById('btn-neu').addEventListener('click', () => {
+  if (!darfArtikelSchreiben()) {
+    toast('Du darfst den Artikelkatalog nicht bearbeiten.', 'error');
+    return;
+  }
+  oeffneModal(null);
+});
 
 /* ── Init ───────────────────────────────────────────────────── */
 

@@ -28,8 +28,8 @@ Seiten prüfen Schreib-Aktionen vor jedem Speichervorgang.
 | bestellung-neu.html     | ✅    | ❌       | ❌           | ❌   |
 | bestellung-sammeln.html | ✅    | ❌       | ❌           | ❌   |
 | bestellung-abgleich.html| ✅    | ❌       | ❌           | ❌   |
-| artikel.html            | ✅    | ❌       | ✅           | ❌   |
-| materialbestand.html    | ✅    | ❌       | ✅           | ❌   |
+| artikel.html            | ✅    | ❌       | ❌           | ❌   |
+| materialbestand.html    | ✅    | ✅       | ✅           | ❌   |
 | rechnungen.html         | ✅    | ✅       | ❌           | ❌   |
 | kassenwart.html         | ✅    | ✅       | ❌           | ❌   |
 | dashboard.html          | ✅    | ✅       | ✅           | ❌   |
@@ -45,8 +45,10 @@ Seiten prüfen Schreib-Aktionen vor jedem Speichervorgang.
 | rechnung-erstellen       | ✅    | ✅       | ❌           | ❌   |
 | zahlung-setzen           | ✅    | ✅       | ❌           | ❌   |
 | foerderung-aendern       | ✅    | ✅       | ❌           | ❌   |
-| artikel-schreiben        | ✅    | ❌       | ✅           | ❌   |
+| artikel-schreiben        | ✅    | ❌       | ❌           | ❌   |
 | materialbestand-schreiben| ✅    | ❌       | ✅           | ❌   |
+| lageranfrage-freigeben   | ✅    | ✅       | ❌           | ❌   |
+| lagerverkauf-finalisieren| ✅    | ✅       | ❌           | ❌   |
 | einstellungen-schreiben  | ✅    | ❌       | ❌           | ❌   |
 | nutzer-verwalten         | ✅    | ❌       | ❌           | ❌   |
 | zugriff-setzen           | ✅    | ❌       | ❌           | ❌   |
@@ -70,8 +72,8 @@ Seiten prüfen Schreib-Aktionen vor jedem Speichervorgang.
 - [x] `canWrite(scope, session)` gibt für alle Rollen/Scope-Kombinationen das richtige Ergebnis
 - [x] `darfAktion(aktion, session)` gibt für alle Aktions/Rollen-Kombinationen das richtige Ergebnis
 - [x] `auth-guard.js` blockiert Funktionssessions, die eine nicht erlaubte Seite aufrufen
-- [x] `finanzen` kann `rechnungen.html` und `kassenwart.html` öffnen, nicht aber `einstellungen.html`
-- [x] `materialwart` kann `artikel.html` und `materialbestand.html` öffnen, nicht aber `rechnungen.html`
+- [x] `finanzen` kann `rechnungen.html`, `kassenwart.html` und `materialbestand.html` öffnen, nicht aber `einstellungen.html`
+- [x] `materialwart` kann `materialbestand.html` öffnen, nicht aber `artikel.html` oder `rechnungen.html`
 - [x] `user` wird von allen Seiten außer `mitglied.html` ferngehalten
 - [x] Alle 11 bestehenden Testseiten bleiben grün (+ 1 neue: test_authz.html, 109 Assertions)
 
@@ -79,4 +81,9 @@ Seiten prüfen Schreib-Aktionen vor jedem Speichervorgang.
 
 ## Ergebnis
 
-Abgeschlossen. 109 Assertions in test_authz.html, 12/12 Testseiten grün.
+Abgeschlossen und anschließend nachgeschärft.
+
+- `materialwart` ist auf operative Lagerarbeit begrenzt
+- `finanzen` kann Lagerfreigaben auf `materialbestand.html` finalisieren
+- finale Lagerausgaben laufen nicht mehr direkt beim Erfassen, sondern über einen Freigabefall
+- Tests stehen aktuell bei 116 Assertions in `test_authz.html`
