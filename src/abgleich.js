@@ -26,51 +26,81 @@
  * }}
  */
 export function gleiche_ab(wuensche, positionen) {
-  const gematch     = [];
+  const gematch      = [];
   const abweichungen = [];
-  const og_kosten   = [];
+  const og_kosten    = [];
 
   // OG-Kosten herausfiltern
   const artikelPositionen = positionen.filter(p => {
-    if (p.typ === 'og-kosten') {
-      og_kosten.push(p);
-      return false;
-    }
+    if (p.typ === 'og-kosten') { og_kosten.push(p); return false; }
     return true;
   });
 
-  // Wünsche als Map für O(1)-Lookup
-  const wunschMap = new Map();
-  for (const w of wuensche) {
-    const key = `${w.artikelNr}\x00${w.variante}`;
-    wunschMap.set(key, w);
-  }
-
-  // Positionen als Map für O(1)-Lookup
   const posMap = new Map();
-  for (const p of artikelPositionen) {
-    const key = `${p.artikelNr}\x00${p.variante}`;
-    posMap.set(key, p);
-  }
+  for (const p of artikelPositionen) posMap.set(`${p.artikelNr}\x00${p.variante}`, p);
 
-  // Wünsche durchgehen
-  for (const w of wuensche) {
-    const key = `${w.artikelNr}\x00${w.variante}`;
-    const p   = posMap.get(key);
+  const gematchteWKeys = new Set();
+  const gematchtePoKeys = new Set();
 
-    if (!p) {
-      abweichungen.push({ typ: 'nicht_geliefert', erwartet: w.menge, wunsch: w });
-    } else if (p.menge === w.menge) {
+  function verarbeiteMatch(w, p) {
+    gematchteWKeys.add(`${w.artikelNr}\x00${w.variante}`);
+    gematchtePoKeys.add(`${p.artikelNr}\x00${p.variante}`);
+    if (p.menge === w.menge) {
       gematch.push({ wunsch: w, position: p });
     } else {
       abweichungen.push({ typ: 'menge', erwartet: w.menge, geliefert: p.menge, wunsch: w, position: p });
     }
   }
 
-  // Positionen ohne Wunsch
-  for (const p of artikelPositionen) {
-    const key = `${p.artikelNr}\x00${p.variante}`;
-    if (!wunschMap.has(key)) {
+  // ── Pass 1: exakter Match (artikelNr + variante) ──────────────
+  for (const w of wuensche) {
+    const p = posMap.get(`${w.artikelNr}\x00${w.variante}`);
+    if (p) verarbeiteMatch(w, p);
+  }
+
+  // ── Pass 2: Fallback-Match nur nach artikelNr ─────────────────
+  // Wird angewendet wenn beide Seiten nach dem exakten Pass dieselbe
+  // Anzahl ungematchter Einträge für eine artikelNr haben (1:1 eindeutig).
+  // Deckt z. B. Varianten-Encoding-Unterschiede zwischen Bestellsystem
+  // und Rechnung ab (»Sailor« 21CM vs. SAILOR - 21 cm).
+  const offeneWuensche = wuensche.filter(w => !gematchteWKeys.has(`${w.artikelNr}\x00${w.variante}`));
+  const offenePos      = artikelPositionen.filter(p => !gematchtePoKeys.has(`${p.artikelNr}\x00${p.variante}`));
+
+  const offeneWByNr = new Map();
+  for (const w of offeneWuensche) {
+    if (!offeneWByNr.has(w.artikelNr)) offeneWByNr.set(w.artikelNr, []);
+    offeneWByNr.get(w.artikelNr).push(w);
+  }
+  const offenePByNr = new Map();
+  for (const p of offenePos) {
+    if (!offenePByNr.has(p.artikelNr)) offenePByNr.set(p.artikelNr, []);
+    offenePByNr.get(p.artikelNr).push(p);
+  }
+
+  const fuzzyWKeys = new Set();
+  const fuzzyPKeys = new Set();
+
+  for (const [artNr, ws] of offeneWByNr) {
+    const ps = offenePByNr.get(artNr);
+    if (!ps || ws.length !== ps.length) continue;
+    // Sortiert nach Variante für deterministisches Pairing
+    ws.sort((a, b) => (a.variante || '').localeCompare(b.variante || '', 'de'));
+    ps.sort((a, b) => (a.variante || '').localeCompare(b.variante || '', 'de'));
+    for (let i = 0; i < ws.length; i++) {
+      fuzzyWKeys.add(`${ws[i].artikelNr}\x00${ws[i].variante}`);
+      fuzzyPKeys.add(`${ps[i].artikelNr}\x00${ps[i].variante}`);
+      verarbeiteMatch(ws[i], ps[i]);
+    }
+  }
+
+  // ── Übrige: nicht_geliefert / nicht_bestellt ──────────────────
+  for (const w of offeneWuensche) {
+    if (!fuzzyWKeys.has(`${w.artikelNr}\x00${w.variante}`)) {
+      abweichungen.push({ typ: 'nicht_geliefert', erwartet: w.menge, wunsch: w });
+    }
+  }
+  for (const p of offenePos) {
+    if (!fuzzyPKeys.has(`${p.artikelNr}\x00${p.variante}`)) {
       abweichungen.push({ typ: 'nicht_bestellt', geliefert: p.menge, position: p });
     }
   }

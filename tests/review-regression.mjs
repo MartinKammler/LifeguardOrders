@@ -7,7 +7,7 @@ import {
 } from '../src/stunden.js';
 import { fuegeArtikelHinzu } from '../src/artikel-katalog.js';
 import { berechneKassenwartZeilen, berechneSondermengenZeilen } from '../src/kassenwart.js';
-import { bauePositionenAusAbgleich, normalisierePosition } from '../src/abgleich.js';
+import { gleiche_ab, bauePositionenAusAbgleich, normalisierePosition } from '../src/abgleich.js';
 import {
   bucheMaterialBewegung,
   normalisiereMaterialEintrag,
@@ -598,6 +598,36 @@ test('storniereLagerbestandAusBestellung reduziert zusammengefuehrten Bestand wi
   assertEqual(rueck.warnungen.length, 0, 'Passende Bestandsposten duerfen keine Warnung erzeugen');
   assertEqual(rueck.materialbestand[0].menge, 2, 'Rueckbuchung muss die Bestandserhoehung wieder abziehen');
   assertEqual(rueck.materialbestand[0].bewegungen[0].typ, 'storno', 'Rueckbuchung muss im Bewegungslog landen');
+});
+
+test('gleiche_ab matched bei gleicher artikelNr auch wenn Variante-Encoding abweicht (Fuzzy-Pass)', () => {
+  // Bestellsystem hat Variante "21CM", Rechnung hat Variante "" (Größe im Name)
+  const wuensche  = [{ artikelNr: '57406904', variante: '21CM', name: 'Armband Sailor 21CM', menge: 1 }];
+  const positionen = [{ artikelNr: '57406904', variante: '',    name: 'DLRG Armband SAILOR - 21 cm', menge: 1 }];
+  const result = gleiche_ab(wuensche, positionen);
+  assertEqual(result.gematch.length, 1, 'Fuzzy-Match muss greifen');
+  assertEqual(result.abweichungen.length, 0, 'Keine nicht_geliefert / nicht_bestellt');
+});
+
+test('gleiche_ab haelt Fuzzy-Pass zurueck wenn Anzahl auf beiden Seiten unterschiedlich', () => {
+  // 2 Wuensche (M und L), 1 Invoice-Item ohne Variante → kein eindeutiger Match
+  const wuensche  = [
+    { artikelNr: 'A1', variante: 'M', name: 'Shirt M', menge: 2 },
+    { artikelNr: 'A1', variante: 'L', name: 'Shirt L', menge: 1 },
+  ];
+  const positionen = [{ artikelNr: 'A1', variante: '', name: 'Shirt', menge: 3 }];
+  const result = gleiche_ab(wuensche, positionen);
+  assertEqual(result.gematch.length, 0, 'Kein Fuzzy-Match bei 2:1 Ambiguität');
+  assertEqual(result.abweichungen.filter(a => a.typ === 'nicht_geliefert').length, 2, 'Beide Wuensche als nicht_geliefert');
+  assertEqual(result.abweichungen.filter(a => a.typ === 'nicht_bestellt').length, 1, 'Invoice-Item als nicht_bestellt');
+});
+
+test('gleiche_ab exakter Match laeuft weiterhin vor Fuzzy-Pass', () => {
+  const wuensche  = [{ artikelNr: 'A1', variante: 'M', name: 'Shirt M', menge: 2 }];
+  const positionen = [{ artikelNr: 'A1', variante: 'M', name: 'Shirt M', menge: 2 }];
+  const result = gleiche_ab(wuensche, positionen);
+  assertEqual(result.gematch.length, 1, 'Exakter Match muss greifen');
+  assertEqual(result.abweichungen.length, 0, 'Keine Abweichungen');
 });
 
 test('bauePositionenAusAbgleich uebernimmt Mengenabweichungen nur bei Aktion uebernehmen', () => {
