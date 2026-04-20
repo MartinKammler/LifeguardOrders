@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wunsch-Queue – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .status-badge-offen              { background: rgba(245,200,66,.18);  color: var(--amber);  border: 1px solid rgba(245,200,66,.35); }
+    .status-badge-uebernommen        { background: rgba(76,175,125,.18);  color: var(--green);  border: 1px solid rgba(76,175,125,.35); }
+    .status-badge-teilweise          { background: rgba(91,138,245,.18);  color: var(--blue);   border: 1px solid rgba(91,138,245,.35); }
+    .status-badge-abgelehnt          { background: rgba(224,82,82,.18);   color: var(--red);    border: 1px solid rgba(224,82,82,.35);  }
+    .status-badge-storniert          { color: var(--text-2); font-style: italic; }
+    .wunsch-kommentar                { font-size: .76rem; color: var(--text-2); margin-top: 3px; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .stat-label { font-size: .78rem; color: var(--text-2); margin-bottom: 4px; }
+    .stat-wert  { font-size: 1.3rem; font-weight: 700; }
+    .filter-zeile {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .filter-zeile select { width: auto; flex: 1; min-width: 180px; max-width: 320px; }
+    .aktionen-zeile { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+    /* Dialog-Erweiterung für Formulare */
+    .app-dialog-body input,
+    .app-dialog-body select,
+    .app-dialog-body textarea {
+      width: 100%;
+      margin-top: 6px;
+    }
+    .dialog-form-group { margin-top: 10px; }
+    .dialog-form-group label { font-size: .82rem; color: var(--text-2); display: block; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="index.html">LifeguardOrders</a>
+  <a href="bestellungen.html">Bestellungen</a>
+  <a href="materialbestand.html">Materialbestand</a>
+  <a href="rechnungen.html">Rechnungen</a>
+  <a href="kassenwart.html">Kassenwart</a>
+  <a href="dashboard.html">Dashboard</a>
+  <a href="wunsch-queue.html" class="active">Wunsch-Queue</a>
+  <a href="einstellungen.html">Einstellungen</a>
+</nav>
+
+<div class="container">
+  <h1>Wunsch-Queue</h1>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
+
+  <!-- Statistik -->
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Gesamt offen</div>
+      <div class="stat-wert" id="stat-offen" style="color:var(--amber)">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Teilweise übernommen</div>
+      <div class="stat-wert" id="stat-teilweise" style="color:var(--blue)">–</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Heute eingegangen</div>
+      <div class="stat-wert" id="stat-heute">–</div>
+    </div>
+  </div>
+
+  <!-- Filter + Tabelle -->
+  <div class="card">
+    <div class="filter-zeile">
+      <select id="filter-status">
+        <option value="">Alle anzeigen</option>
+        <option value="offen" selected>Nur offen</option>
+        <option value="teilweise_uebernommen">Teilweise übernommen</option>
+        <option value="alle_aktiv">Offen + Teilweise</option>
+      </select>
+    </div>
+    <div id="queue-container">
+      <p class="meta" style="padding:16px 0">Lade Wünsche …</p>
+    </div>
+  </div>
+</div>
+
+<!-- Dialog: Wunsch übernehmen -->
+<div id="dialog-uebernehmen" class="app-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-uebernehmen-title" style="display:none">
+  <div class="app-dialog">
+    <h2 class="app-dialog-title" id="dlg-uebernehmen-title">Wunsch übernehmen</h2>
+    <div class="app-dialog-body">
+      <div id="dlg-uebernehmen-info" class="text-sm" style="color:var(--text-2);margin-bottom:10px"></div>
+      <div class="dialog-form-group">
+        <label for="dlg-uebernehmen-bestellung">Bestellung auswählen</label>
+        <select id="dlg-uebernehmen-bestellung">
+          <option value="">— Bestellung wählen —</option>
+        </select>
+      </div>
+    </div>
+    <div class="app-dialog-actions">
+      <button type="button" class="btn btn-ghost btn-sm" id="dlg-uebernehmen-cancel">Abbrechen</button>
+      <button type="button" class="btn btn-success btn-sm" id="dlg-uebernehmen-confirm">Übernehmen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dialog: Teilweise übernehmen -->
+<div id="dialog-teilweise" class="app-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-teilweise-title" style="display:none">
+  <div class="app-dialog">
+    <h2 class="app-dialog-title" id="dlg-teilweise-title">Teilweise übernehmen</h2>
+    <div class="app-dialog-body">
+      <div id="dlg-teilweise-info" class="text-sm" style="color:var(--text-2);margin-bottom:10px"></div>
+      <div class="dialog-form-group">
+        <label for="dlg-teilweise-menge">Übernommene Menge</label>
+        <input type="number" id="dlg-teilweise-menge" min="1" value="1">
+      </div>
+      <div class="dialog-form-group">
+        <label for="dlg-teilweise-bestellung">Bestellung auswählen</label>
+        <select id="dlg-teilweise-bestellung">
+          <option value="">— Bestellung wählen —</option>
+        </select>
+      </div>
+    </div>
+    <div class="app-dialog-actions">
+      <button type="button" class="btn btn-ghost btn-sm" id="dlg-teilweise-cancel">Abbrechen</button>
+      <button type="button" class="btn btn-primary btn-sm" id="dlg-teilweise-confirm">Teilweise übernehmen</button>
+    </div>
+  </div>
+</div>
+
+<!-- Dialog: Ablehnen -->
+<div id="dialog-ablehnen" class="app-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="dlg-ablehnen-title" style="display:none">
+  <div class="app-dialog">
+    <h2 class="app-dialog-title" id="dlg-ablehnen-title">Wunsch ablehnen</h2>
+    <div class="app-dialog-body">
+      <div id="dlg-ablehnen-info" class="text-sm" style="color:var(--text-2);margin-bottom:10px"></div>
+      <div class="dialog-form-group">
+        <label for="dlg-ablehnen-grund">Begründung (optional)</label>
+        <textarea id="dlg-ablehnen-grund" rows="3" placeholder="Warum wird der Wunsch abgelehnt?"></textarea>
+      </div>
+    </div>
+    <div class="app-dialog-actions">
+      <button type="button" class="btn btn-ghost btn-sm" id="dlg-ablehnen-cancel">Abbrechen</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="dlg-ablehnen-confirm" style="color:var(--red)">Ablehnen</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { load }               from './src/storage.js';
+import { createWebDavClient } from './src/webdav.js';
+import { html, raw, setHTML } from './src/dom.js';
+import { toast, confirmDialog, renderSyncBanner } from './src/ui-feedback.js';
+import {
+  getScopeSyncStatus,
+  getSyncState,
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './src/sync.js';
+import { getSession }  from './src/session.js';
+import { darfAktion }  from './src/authz.js';
+import { auditAktion } from './src/audit.js';
+import {
+  setzeStatus,
+  filterAdminQueue,
+  isValidWuenscheListe,
+  normalizeWunsch,
+  kannStornieren,
+} from './src/wunsch.js';
+
+/* ── Konstanten ──────────────────────────────────────────────── */
+const STORAGE_KEY_W  = 'lo_wuensche';
+const STORAGE_KEY_B  = 'lo_bestellungen';
+const STORAGE_KEY_E  = 'lo_einstellungen';
+const NC_PFAD_W      = '/LifeguardOrders/wuensche.json';
+const SYNC_SCOPE_W   = 'wuensche';
+
+/* ── Zustand ─────────────────────────────────────────────────── */
+let wuensche     = [];
+let bestellungen = [];
+let mitglieder   = [];
+let client       = null;
+let session      = null;
+
+/* ── Hilfsfunktionen ─────────────────────────────────────────── */
+function adminId() {
+  return session?.id || '';
+}
+
+function mitgliedName(id) {
+  const m = mitglieder.find(m => m.id === id);
+  return m ? m.name : id || '–';
+}
+
+function offeneBestellungen() {
+  return bestellungen.filter(b => b.status === 'sammlung' || b.status === 'bestellt');
+}
+
+function updateSyncBanner() {
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status: getScopeSyncStatus(getSyncState(), SYNC_SCOPE_W),
+    label: 'Wünsche',
+    onReload: () => window.location.reload(),
+    exportData: () => wuensche,
+    exportFilename: 'wuensche-queue-konfliktkopie.json',
+  });
+}
+
+function formatDatum(iso) {
+  if (!iso) return '–';
+  try {
+    return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+function statusBadge(wunsch) {
+  switch (wunsch.status) {
+    case 'offen':
+      return raw('<span class="badge status-badge-offen">Offen</span>');
+    case 'uebernommen':
+      return raw('<span class="badge status-badge-uebernommen">Übernommen</span>');
+    case 'teilweise_uebernommen':
+      return raw('<span class="badge status-badge-teilweise">Teilweise</span>');
+    case 'abgelehnt':
+      return raw('<span class="badge status-badge-abgelehnt">Abgelehnt</span>');
+    case 'storniert':
+      return raw('<span class="badge status-badge-storniert">Storniert</span>');
+    default:
+      return raw('<span class="badge">–</span>');
+  }
+}
+
+/* ── Statistik ───────────────────────────────────────────────── */
+function aktualisiereStatistik() {
+  const heute = new Date().toISOString().slice(0, 10);
+  const offen = wuensche.filter(w => w.status === 'offen').length;
+  const teilweise = wuensche.filter(w => w.status === 'teilweise_uebernommen').length;
+  const heuteCount = wuensche.filter(w => w.erstelltAm?.slice(0, 10) === heute).length;
+
+  document.getElementById('stat-offen').textContent    = offen;
+  document.getElementById('stat-teilweise').textContent = teilweise;
+  document.getElementById('stat-heute').textContent    = heuteCount;
+}
+
+/* ── Bestellungs-Optionen für Dialoge ────────────────────────── */
+function bestellungOptionen() {
+  return offeneBestellungen().map(b =>
+    html`<option value="${b.id}">${b.bezeichnung} (${b.status})</option>`
+  );
+}
+
+function befuelleBestellungSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  const opts = bestellungOptionen();
+  if (opts.length) {
+    setHTML(sel, html`<option value="">— Bestellung wählen —</option>${opts}`);
+  } else {
+    setHTML(sel, raw('<option value="">Keine offenen Bestellungen</option>'));
+  }
+}
+
+/* ── Tabelle rendern ──────────────────────────────────────────── */
+function gefilterteWuensche() {
+  const filterWert = document.getElementById('filter-status').value;
+  if (filterWert === 'offen') {
+    return wuensche
+      .filter(w => w.status === 'offen')
+      .sort((a, b) => a.erstelltAm.localeCompare(b.erstelltAm));
+  }
+  if (filterWert === 'teilweise_uebernommen') {
+    return wuensche
+      .filter(w => w.status === 'teilweise_uebernommen')
+      .sort((a, b) => a.erstelltAm.localeCompare(b.erstelltAm));
+  }
+  if (filterWert === 'alle_aktiv') {
+    return filterAdminQueue(wuensche);
+  }
+  // Alle
+  return [...wuensche].sort((a, b) => b.erstelltAm.localeCompare(a.erstelltAm));
+}
+
+function renderQueue() {
+  aktualisiereStatistik();
+  const container = document.getElementById('queue-container');
+  const liste = gefilterteWuensche();
+
+  if (!liste.length) {
+    setHTML(container, raw('<div class="hinweis hinweis-info">Keine Wünsche für diesen Filter.</div>'));
+    return;
+  }
+
+  setHTML(container, html`
+    <table>
+      <thead>
+        <tr>
+          <th>Mitglied</th>
+          <th>Artikel</th>
+          <th>Variante</th>
+          <th style="text-align:right">Menge</th>
+          <th>Status</th>
+          <th>Eingegangen</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${liste.map(w => {
+          const kommentarHtml = w.kommentar
+            ? html`<div class="wunsch-kommentar">${w.kommentar}</div>`
+            : '';
+          const mengeInfo = w.status === 'teilweise_uebernommen' && w.mengeUebernommen > 0
+            ? html`<div class="meta" style="margin-top:2px">${w.mengeUebernommen} übern.</div>`
+            : '';
+          const kannAktionen = w.status === 'offen' || w.status === 'teilweise_uebernommen';
+          const aktionen = kannAktionen
+            ? html`
+              <div class="aktionen-zeile">
+                <button class="btn btn-success btn-sm" data-aktion="uebernehmen" data-id="${w.id}">Übernehmen</button>
+                <button class="btn btn-ghost btn-sm"   data-aktion="teilweise"   data-id="${w.id}">Teilweise</button>
+                <button class="btn btn-ghost btn-sm"   data-aktion="ablehnen"    data-id="${w.id}">Ablehnen</button>
+                ${kannStornieren(w, session)
+                  ? html`<button class="btn btn-ghost btn-sm" data-aktion="stornieren" data-id="${w.id}">Stornieren</button>`
+                  : ''}
+              </div>`
+            : '';
+          return html`
+            <tr>
+              <td>${mitgliedName(w.mitgliedId)}</td>
+              <td>
+                <strong>${w.name}</strong>
+                <div class="meta" style="margin-top:2px">${w.artikelNr}</div>
+              </td>
+              <td>${w.variante || raw('<span class="meta">–</span>')}</td>
+              <td style="text-align:right">
+                ${w.menge}
+                ${mengeInfo}
+              </td>
+              <td>
+                ${statusBadge(w)}
+                ${kommentarHtml}
+              </td>
+              <td class="meta">${formatDatum(w.erstelltAm)}</td>
+              <td>${aktionen}</td>
+            </tr>`;
+        })}
+      </tbody>
+    </table>`);
+
+  // Event-Listener für Aktionen
+  container.querySelectorAll('[data-aktion]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      switch (btn.dataset.aktion) {
+        case 'uebernehmen': oeffneUebernehmenDialog(id); break;
+        case 'teilweise':   oeffneTeilweiseDialog(id);   break;
+        case 'ablehnen':    oeffneAblehnenDialog(id);    break;
+        case 'stornieren':  storniereAdmin(id);           break;
+      }
+    });
+  });
+}
+
+/* ── Wunsch aktualisieren ─────────────────────────────────────── */
+async function aktualisiereWunsch(wunschId, neuerStatus, opts, auditAction, auditSummary, auditChanges) {
+  const wunsch = wuensche.find(w => w.id === wunschId);
+  if (!wunsch) return false;
+
+  let aktualisiert;
+  try {
+    aktualisiert = setzeStatus(wunsch, neuerStatus, { geaendertVon: adminId(), ...opts });
+  } catch (err) {
+    toast(`Fehler: ${err.message}`, 'error');
+    return false;
+  }
+
+  const vorher = [...wuensche];
+  wuensche = wuensche.map(w => w.id === wunschId ? aktualisiert : w);
+
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_W,
+    storageKey: STORAGE_KEY_W,
+    data: wuensche,
+    client,
+    remotePath: NC_PFAD_W,
+  });
+
+  if (!gespeichert.ok) {
+    wuensche = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Wünsche') || 'Speichern fehlgeschlagen.', 'error', 7000);
+    renderQueue();
+    return false;
+  }
+
+  await auditAktion({
+    client,
+    user: session,
+    action: auditAction,
+    scope: SYNC_SCOPE_W,
+    entityId: wunschId,
+    summary: auditSummary,
+    changes: { wunschId, mitgliedId: wunsch.mitgliedId, artikelNr: wunsch.artikelNr, ...auditChanges },
+  });
+
+  updateSyncBanner();
+  renderQueue();
+  return true;
+}
+
+/* ── Dialog: Übernehmen ───────────────────────────────────────── */
+function oeffneUebernehmenDialog(wunschId) {
+  const wunsch = wuensche.find(w => w.id === wunschId);
+  if (!wunsch) return;
+
+  befuelleBestellungSelect('dlg-uebernehmen-bestellung');
+  setHTML(document.getElementById('dlg-uebernehmen-info'),
+    html`<strong>${wunsch.name}</strong> (${wunsch.menge} Stück) von ${mitgliedName(wunsch.mitgliedId)}`);
+
+  const dialog = document.getElementById('dialog-uebernehmen');
+  dialog.style.display = 'flex';
+
+  const cleanup = () => { dialog.style.display = 'none'; };
+
+  const onCancel  = () => cleanup();
+  const onConfirm = async () => {
+    const bestellungId = document.getElementById('dlg-uebernehmen-bestellung').value;
+    cleanup();
+    const ok = await aktualisiereWunsch(
+      wunschId, 'uebernommen', { bestellungId },
+      'WUNSCH_UEBERNOMMEN',
+      `Wunsch "${wunsch.name}" übernommen`,
+      { bestellungId },
+    );
+    if (ok) toast('Wunsch übernommen.', 'success');
+  };
+  const onBackdrop = e => { if (e.target === dialog) cleanup(); };
+  const onKeyDown  = e => { if (e.key === 'Escape') cleanup(); };
+
+  const cancelBtn  = document.getElementById('dlg-uebernehmen-cancel');
+  const confirmBtn = document.getElementById('dlg-uebernehmen-confirm');
+
+  // Einmalige Listener durch Klonen
+  const newCancel  = cancelBtn.cloneNode(true);
+  const newConfirm = confirmBtn.cloneNode(true);
+  cancelBtn.replaceWith(newCancel);
+  confirmBtn.replaceWith(newConfirm);
+
+  newCancel.addEventListener('click',  onCancel);
+  newConfirm.addEventListener('click', onConfirm);
+  dialog.addEventListener('click', onBackdrop, { once: true });
+  document.addEventListener('keydown', onKeyDown, { once: true });
+  newConfirm.focus();
+}
+
+/* ── Dialog: Teilweise übernehmen ────────────────────────────── */
+function oeffneTeilweiseDialog(wunschId) {
+  const wunsch = wuensche.find(w => w.id === wunschId);
+  if (!wunsch) return;
+
+  befuelleBestellungSelect('dlg-teilweise-bestellung');
+  setHTML(document.getElementById('dlg-teilweise-info'),
+    html`<strong>${wunsch.name}</strong> (Gewünscht: ${wunsch.menge} Stück) von ${mitgliedName(wunsch.mitgliedId)}`);
+
+  const mengeInput = document.getElementById('dlg-teilweise-menge');
+  mengeInput.max   = String(wunsch.menge);
+  mengeInput.value = '1';
+
+  const dialog = document.getElementById('dialog-teilweise');
+  dialog.style.display = 'flex';
+
+  const cleanup = () => { dialog.style.display = 'none'; };
+
+  const onCancel  = () => cleanup();
+  const onConfirm = async () => {
+    const bestellungId      = document.getElementById('dlg-teilweise-bestellung').value;
+    const mengeUebernommen  = parseInt(mengeInput.value, 10);
+    cleanup();
+    if (!Number.isInteger(mengeUebernommen) || mengeUebernommen < 1 || mengeUebernommen > wunsch.menge) {
+      toast('Ungültige Menge.', 'error');
+      return;
+    }
+    const ok = await aktualisiereWunsch(
+      wunschId, 'teilweise_uebernommen', { bestellungId, mengeUebernommen },
+      'WUNSCH_TEILWEISE_UEBERNOMMEN',
+      `Wunsch "${wunsch.name}" teilweise übernommen (${mengeUebernommen} von ${wunsch.menge})`,
+      { bestellungId, mengeUebernommen },
+    );
+    if (ok) toast(`${mengeUebernommen} von ${wunsch.menge} Stück übernommen.`, 'success');
+  };
+
+  const cancelBtn  = document.getElementById('dlg-teilweise-cancel');
+  const confirmBtn = document.getElementById('dlg-teilweise-confirm');
+  const newCancel  = cancelBtn.cloneNode(true);
+  const newConfirm = confirmBtn.cloneNode(true);
+  cancelBtn.replaceWith(newCancel);
+  confirmBtn.replaceWith(newConfirm);
+
+  newCancel.addEventListener('click',  onCancel);
+  newConfirm.addEventListener('click', onConfirm);
+  dialog.addEventListener('click', e => { if (e.target === dialog) cleanup(); }, { once: true });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') cleanup(); }, { once: true });
+  newConfirm.focus();
+}
+
+/* ── Dialog: Ablehnen ─────────────────────────────────────────── */
+function oeffneAblehnenDialog(wunschId) {
+  const wunsch = wuensche.find(w => w.id === wunschId);
+  if (!wunsch) return;
+
+  setHTML(document.getElementById('dlg-ablehnen-info'),
+    html`<strong>${wunsch.name}</strong> von ${mitgliedName(wunsch.mitgliedId)}`);
+
+  const grundInput = document.getElementById('dlg-ablehnen-grund');
+  grundInput.value = '';
+
+  const dialog = document.getElementById('dialog-ablehnen');
+  dialog.style.display = 'flex';
+
+  const cleanup = () => { dialog.style.display = 'none'; };
+
+  const onCancel  = () => cleanup();
+  const onConfirm = async () => {
+    const kommentar = grundInput.value.trim();
+    cleanup();
+    const ok = await aktualisiereWunsch(
+      wunschId, 'abgelehnt', { kommentar },
+      'WUNSCH_ABGELEHNT',
+      `Wunsch "${wunsch.name}" abgelehnt`,
+      { kommentar },
+    );
+    if (ok) toast('Wunsch abgelehnt.', 'info');
+  };
+
+  const cancelBtn  = document.getElementById('dlg-ablehnen-cancel');
+  const confirmBtn = document.getElementById('dlg-ablehnen-confirm');
+  const newCancel  = cancelBtn.cloneNode(true);
+  const newConfirm = confirmBtn.cloneNode(true);
+  cancelBtn.replaceWith(newCancel);
+  confirmBtn.replaceWith(newConfirm);
+
+  newCancel.addEventListener('click',  onCancel);
+  newConfirm.addEventListener('click', onConfirm);
+  dialog.addEventListener('click', e => { if (e.target === dialog) cleanup(); }, { once: true });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') cleanup(); }, { once: true });
+  newConfirm.focus();
+}
+
+/* ── Stornieren (Admin) ──────────────────────────────────────── */
+async function storniereAdmin(wunschId) {
+  const wunsch = wuensche.find(w => w.id === wunschId);
+  if (!wunsch) return;
+
+  const ok = await confirmDialog({
+    title: 'Wunsch stornieren?',
+    body: `"${wunsch.name}" von ${mitgliedName(wunsch.mitgliedId)} wird storniert.`,
+    confirmText: 'Stornieren',
+    confirmTone: 'primary',
+  });
+  if (!ok) return;
+
+  const success = await aktualisiereWunsch(
+    wunschId, 'storniert', {},
+    'WUNSCH_STORNIERT',
+    `Wunsch "${wunsch.name}" vom Admin storniert`,
+    {},
+  );
+  if (success) toast('Wunsch storniert.', 'success');
+}
+
+/* ── Init ─────────────────────────────────────────────────────── */
+async function init() {
+  session = getSession();
+
+  if (!darfAktion('wunsch-uebernehmen', session)) {
+    setHTML(document.querySelector('.container'), html`
+      <div class="hinweis hinweis-warn" style="margin-top:32px">
+        <strong>Zugriff verweigert.</strong> Diese Seite ist nur für Admins zugänglich.
+      </div>`);
+    return;
+  }
+
+  const einstellungen = load(STORAGE_KEY_E);
+  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
+  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
+    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
+  }
+
+  mitglieder   = einstellungen?.mitglieder || [];
+  bestellungen = load(STORAGE_KEY_B) || [];
+
+  const lokalWuensche = load(STORAGE_KEY_W);
+  if (Array.isArray(lokalWuensche)) wuensche = lokalWuensche;
+
+  if (client) {
+    setHTML(document.getElementById('queue-container'),
+      raw('<p class="meta" style="padding:16px 0">Synchronisiere mit Nextcloud …</p>'));
+    const r = await hydrateJsonFromSync({
+      scope: SYNC_SCOPE_W,
+      storageKey: STORAGE_KEY_W,
+      client,
+      remotePath: NC_PFAD_W,
+      isValidRemote: data => isValidWuenscheListe(data),
+    });
+    if (Array.isArray(r.data)) {
+      wuensche = r.data.map(normalizeWunsch);
+    }
+  }
+
+  renderQueue();
+  updateSyncBanner();
+
+  document.getElementById('filter-status').addEventListener('change', renderQueue);
+}
+
+init();
+</script>
+
+<script type="module" src="src/auth-guard.js"></script>
+</body>
+</html>

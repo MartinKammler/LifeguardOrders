@@ -5,17 +5,17 @@ import { isFunctionSession, isMemberSession } from './session.js';
 // ---------------------------------------------------------------------------
 
 const READ_SCOPES = {
-  admin:       ['bestellungen', 'rechnungen', 'kassenwart', 'artikel', 'materialbestand', 'einstellungen', 'dashboard'],
+  admin:       ['bestellungen', 'rechnungen', 'kassenwart', 'artikel', 'materialbestand', 'einstellungen', 'dashboard', 'wuensche', 'wunsch-queue'],
   finanzen:    ['bestellungen', 'rechnungen', 'kassenwart', 'dashboard'],
   materialwart:['bestellungen', 'artikel', 'materialbestand', 'dashboard'],
-  user:        ['mitglied'],
+  user:        ['mitglied', 'wuensche'],
 };
 
 const WRITE_SCOPES = {
-  admin:       ['bestellungen', 'rechnungen', 'kassenwart', 'artikel', 'materialbestand', 'einstellungen'],
+  admin:       ['bestellungen', 'rechnungen', 'kassenwart', 'artikel', 'materialbestand', 'einstellungen', 'wuensche', 'wunsch-queue'],
   finanzen:    ['rechnungen', 'kassenwart'],
   materialwart:['artikel', 'materialbestand'],
-  user:        [],
+  user:        ['wuensche'],
 };
 
 const AKTIONS_ROLLEN = {
@@ -29,6 +29,9 @@ const AKTIONS_ROLLEN = {
   'einstellungen-schreiben':    ['admin'],
   'nutzer-verwalten':           ['admin'],
   'zugriff-setzen':             ['admin'],
+  'wunsch-uebernehmen':         ['admin'],
+  'wunsch-ablehnen':            ['admin'],
+  'wunsch-schreiben':           ['admin', 'user'],
 };
 
 const SEITEN_ROLLEN = {
@@ -43,7 +46,9 @@ const SEITEN_ROLLEN = {
   'kassenwart.html':          ['admin', 'finanzen'],
   'dashboard.html':           ['admin', 'finanzen', 'materialwart'],
   'einstellungen.html':       ['admin'],
+  'wunsch-queue.html':        ['admin'],
   'mitglied.html':            ['user'],
+  'wuensche.html':            ['user'],
 };
 
 // ---------------------------------------------------------------------------

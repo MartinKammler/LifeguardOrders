@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meine Wünsche – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .status-badge-offen              { background: rgba(245,200,66,.18);  color: var(--amber);  border: 1px solid rgba(245,200,66,.35);  }
+    .status-badge-uebernommen        { background: rgba(76,175,125,.18);  color: var(--green);  border: 1px solid rgba(76,175,125,.35);  }
+    .status-badge-teilweise          { background: rgba(91,138,245,.18);  color: var(--blue);   border: 1px solid rgba(91,138,245,.35);  }
+    .status-badge-abgelehnt          { background: rgba(224,82,82,.18);   color: var(--red);    border: 1px solid rgba(224,82,82,.35);   }
+    .status-badge-storniert          { color: var(--text-2); font-style: italic; }
+    .wunsch-kommentar                { font-size: .76rem; color: var(--text-2); margin-top: 3px; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 12px;
+    }
+    @media (max-width: 600px) {
+      .form-grid { grid-template-columns: 1fr; }
+    }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: .82rem; color: var(--text-2); }
+    .search-results {
+      position: absolute;
+      z-index: 200;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+      min-width: 280px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.45);
+    }
+    .search-result-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: .85rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item:hover { background: var(--surface2); }
+    .search-result-item .artikel-nr { color: var(--text-2); font-size: .75rem; margin-right: 6px; }
+    .search-wrapper { position: relative; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="mitglied.html">LifeguardOrders</a>
+</nav>
+
+<div class="container">
+  <h1>Meine Wünsche</h1>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
+
+  <!-- Neuen Wunsch anlegen -->
+  <div class="card">
+    <h2 style="margin-bottom:14px">Neuen Wunsch eintragen</h2>
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="input-artikel-suche">Artikel (Nummer oder Bezeichnung)</label>
+        <div class="search-wrapper">
+          <input type="text" id="input-artikel-suche" placeholder="z.B. 2001 oder Einsatzjacke …" autocomplete="off">
+          <div id="search-results" class="search-results" style="display:none"></div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="select-variante">Variante</label>
+        <select id="select-variante" disabled>
+          <option value="">— keine Variante —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="input-menge">Menge</label>
+        <input type="number" id="input-menge" min="1" value="1" style="width:90px">
+      </div>
+    </div>
+    <div id="artikel-ausgewaehlt" class="hinweis hinweis-info" style="display:none;margin-bottom:10px"></div>
+    <button id="btn-wunsch-hinzufuegen" class="btn btn-primary">Wunsch eintragen</button>
+    <div id="wunsch-fehler" class="hinweis hinweis-warn" style="display:none;margin-top:10px"></div>
+  </div>
+
+  <!-- Eigene Wunschliste -->
+  <div class="card">
+    <h2 style="margin-bottom:14px">Meine Wunschliste</h2>
+    <div id="wunschliste-container">
+      <p class="meta" style="padding:16px 0">Lade Wünsche …</p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { load }               from './src/storage.js';
+import { createWebDavClient } from './src/webdav.js';
+import { html, raw, setHTML } from './src/dom.js';
+import { toast, confirmDialog, renderSyncBanner } from './src/ui-feedback.js';
+import {
+  getScopeSyncStatus,
+  getSyncState,
+  hydrateJsonFromSync,
+  persistJsonWithSync,
+  syncHinweisText,
+} from './src/sync.js';
+import { getSession, isMemberSession } from './src/session.js';
+import { auditAktion }                 from './src/audit.js';
+import {
+  erstelleWunsch,
+  validateWunschEintrag,
+  kannStornieren,
+  setzeStatus,
+  filterFuerMitglied,
+  isValidWuenscheListe,
+  normalizeWunsch,
+} from './src/wunsch.js';
+
+/* ── Konstanten ──────────────────────────────────────────────── */
+const STORAGE_KEY_W  = 'lo_wuensche';
+const STORAGE_KEY_E  = 'lo_einstellungen';
+const STORAGE_KEY_A  = 'lo_artikel';
+const NC_PFAD_W      = '/LifeguardOrders/wuensche.json';
+const SYNC_SCOPE_W   = 'wuensche';
+
+/* ── Zustand ─────────────────────────────────────────────────── */
+let wuensche        = [];
+let client          = null;
+let session         = null;
+let artikelKatalog  = [];
+let gewaehltArtikel = null;
+
+/* ── Session prüfen ──────────────────────────────────────────── */
+session = getSession();
+if (!session || !isMemberSession(session)) {
+  const container = document.querySelector('.container');
+  setHTML(container, html`
+    <div class="hinweis hinweis-warn" style="margin-top:32px">
+      <strong>Kein Zugriff.</strong> Diese Seite ist nur für Mitglieder zugänglich.
+      <br><a href="login.html" style="margin-top:8px;display:inline-block">Zum Login</a>
+    </div>`);
+  return;
+}
+
+/* ── Hilfsfunktionen ─────────────────────────────────────────── */
+function mitgliedId() {
+  return session.mitgliedId || session.id;
+}
+
+function updateSyncBanner() {
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status: getScopeSyncStatus(getSyncState(), SYNC_SCOPE_W),
+    label: 'Wünsche',
+    onReload: () => window.location.reload(),
+    exportData: () => wuensche,
+    exportFilename: 'wuensche-konfliktkopie.json',
+  });
+}
+
+function statusBadge(wunsch) {
+  switch (wunsch.status) {
+    case 'offen':
+      return raw('<span class="badge status-badge-offen">Offen</span>');
+    case 'uebernommen':
+      return raw('<span class="badge status-badge-uebernommen">Übernommen</span>');
+    case 'teilweise_uebernommen':
+      return raw('<span class="badge status-badge-teilweise">Teilweise übernommen</span>');
+    case 'abgelehnt':
+      return raw('<span class="badge status-badge-abgelehnt">Abgelehnt</span>');
+    case 'storniert':
+      return raw('<span class="badge status-badge-storniert">Storniert</span>');
+    default:
+      return raw('<span class="badge">Unbekannt</span>');
+  }
+}
+
+function formatDatum(iso) {
+  if (!iso) return '–';
+  try {
+    return new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch {
+    return iso.slice(0, 10);
+  }
+}
+
+/* ── Tabelle rendern ──────────────────────────────────────────── */
+function renderWunschliste() {
+  const container = document.getElementById('wunschliste-container');
+  const eigene = filterFuerMitglied(wuensche, mitgliedId());
+
+  if (!eigene.length) {
+    setHTML(container, raw('<div class="hinweis hinweis-info">Du hast noch keine Wünsche eingetragen.</div>'));
+    return;
+  }
+
+  setHTML(container, html`
+    <table>
+      <thead>
+        <tr>
+          <th>Artikel</th>
+          <th>Menge</th>
+          <th>Status</th>
+          <th>Eingetragen</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${eigene.map(w => {
+          const varianteText = w.variante ? html` <span class="meta">${w.variante}</span>` : '';
+          const kommentarHtml = w.kommentar
+            ? html`<div class="wunsch-kommentar">${w.kommentar}</div>`
+            : '';
+          const stornierbtn = kannStornieren(w, session)
+            ? html`<button class="btn btn-ghost btn-sm" data-stornieren="${w.id}">Stornieren</button>`
+            : '';
+          const mengeInfo = w.status === 'teilweise_uebernommen' && w.mengeUebernommen > 0
+            ? html` <span class="meta">(${w.mengeUebernommen} übernommen)</span>`
+            : '';
+          return html`
+            <tr>
+              <td>
+                <strong>${w.name}</strong>${varianteText}
+                <div class="meta" style="margin-top:2px">${w.artikelNr}</div>
+              </td>
+              <td>${w.menge}${mengeInfo}</td>
+              <td>
+                ${statusBadge(w)}
+                ${kommentarHtml}
+              </td>
+              <td class="meta">${formatDatum(w.erstelltAm)}</td>
+              <td style="text-align:right">${stornierbtn}</td>
+            </tr>`;
+        })}
+      </tbody>
+    </table>`);
+
+  container.querySelectorAll('[data-stornieren]').forEach(btn => {
+    btn.addEventListener('click', () => storniereWunsch(btn.dataset.stornieren));
+  });
+}
+
+/* ── Stornieren ───────────────────────────────────────────────── */
+async function storniereWunsch(wunschId) {
+  const wunsch = wuensche.find(w => w.id === wunschId);
+  if (!wunsch) return;
+
+  const ok = await confirmDialog({
+    title: 'Wunsch stornieren?',
+    body: `"${wunsch.name}" wird storniert und kann nicht mehr geändert werden.`,
+    confirmText: 'Stornieren',
+    confirmTone: 'primary',
+  });
+  if (!ok) return;
+
+  let aktualisiert;
+  try {
+    aktualisiert = setzeStatus(wunsch, 'storniert', { geaendertVon: mitgliedId() });
+  } catch (err) {
+    toast(`Fehler: ${err.message}`, 'error');
+    return;
+  }
+
+  const vorher = [...wuensche];
+  wuensche = wuensche.map(w => w.id === wunschId ? aktualisiert : w);
+
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_W,
+    storageKey: STORAGE_KEY_W,
+    data: wuensche,
+    client,
+    remotePath: NC_PFAD_W,
+  });
+
+  if (!gespeichert.ok) {
+    wuensche = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Wünsche') || 'Speichern fehlgeschlagen.', 'error', 7000);
+    renderWunschliste();
+    return;
+  }
+
+  await auditAktion({
+    client,
+    user: session,
+    action: 'WUNSCH_STORNIERT',
+    scope: SYNC_SCOPE_W,
+    entityId: wunschId,
+    summary: `Wunsch "${wunsch.name}" storniert`,
+    changes: { wunschId, artikelNr: wunsch.artikelNr, mitgliedId: mitgliedId() },
+  });
+
+  updateSyncBanner();
+  toast('Wunsch storniert.', 'success');
+  renderWunschliste();
+}
+
+/* ── Artikel-Suche ────────────────────────────────────────────── */
+function sucheArtikel(suchbegriff) {
+  const q = suchbegriff.trim().toLowerCase();
+  if (!q || q.length < 1) return [];
+  return artikelKatalog.filter(a => {
+    return (
+      String(a.artikelNr || '').toLowerCase().includes(q) ||
+      String(a.name      || '').toLowerCase().includes(q)
+    );
+  }).slice(0, 10);
+}
+
+function zeigeArtikelSuche(treffer) {
+  const box = document.getElementById('search-results');
+  if (!treffer.length) {
+    box.style.display = 'none';
+    return;
+  }
+
+  setHTML(box, html`${treffer.map(a => html`
+    <div class="search-result-item" data-artikel-nr="${a.artikelNr}" data-artikel-name="${a.name}">
+      <span class="artikel-nr">${a.artikelNr}</span>${a.name}
+    </div>`)}`);
+
+  box.style.display = '';
+
+  box.querySelectorAll('.search-result-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const artikel = artikelKatalog.find(a => a.artikelNr === item.dataset.artikelNr);
+      if (artikel) waehleArtikel(artikel);
+    });
+  });
+}
+
+function waehleArtikel(artikel) {
+  gewaehltArtikel = artikel;
+  const input = document.getElementById('input-artikel-suche');
+  const box   = document.getElementById('search-results');
+  const hinweis = document.getElementById('artikel-ausgewaehlt');
+  const varianteSelect = document.getElementById('select-variante');
+
+  input.value = `${artikel.artikelNr} – ${artikel.name}`;
+  box.style.display = 'none';
+
+  setHTML(hinweis, html`Ausgewählt: <strong>${artikel.artikelNr}</strong> ${artikel.name}`);
+  hinweis.style.display = '';
+
+  // Varianten befüllen
+  const varianten = artikelKatalog
+    .filter(a => a.artikelNr === artikel.artikelNr && a.variante)
+    .map(a => a.variante);
+
+  if (varianten.length) {
+    setHTML(varianteSelect, html`
+      <option value="">— Variante wählen —</option>
+      ${varianten.map(v => html`<option value="${v}">${v}</option>`)}`);
+    varianteSelect.disabled = false;
+  } else {
+    setHTML(varianteSelect, raw('<option value="">— keine Variante —</option>'));
+    varianteSelect.disabled = true;
+  }
+}
+
+/* ── Wunsch eintragen ──────────────────────────────────────────── */
+async function wunschHinzufuegen() {
+  const fehlerDiv = document.getElementById('wunsch-fehler');
+  fehlerDiv.style.display = 'none';
+
+  if (!gewaehltArtikel) {
+    setHTML(fehlerDiv, raw('Bitte einen Artikel aus der Suche auswählen.'));
+    fehlerDiv.style.display = '';
+    return;
+  }
+
+  const varianteSelect = document.getElementById('select-variante');
+  const variante = varianteSelect.disabled ? '' : varianteSelect.value;
+
+  // Wenn Varianten vorhanden sind, muss eine gewählt werden
+  if (!varianteSelect.disabled && !variante) {
+    setHTML(fehlerDiv, raw('Bitte eine Variante auswählen.'));
+    fehlerDiv.style.display = '';
+    return;
+  }
+
+  const mengeInput = document.getElementById('input-menge');
+  const menge = parseInt(mengeInput.value, 10);
+
+  // Passendes Artikel-Objekt mit Variante finden (für korrekte ID)
+  const artikelMitVariante = variante
+    ? artikelKatalog.find(a => a.artikelNr === gewaehltArtikel.artikelNr && a.variante === variante)
+    : gewaehltArtikel;
+
+  const neuerWunsch = erstelleWunsch({
+    mitgliedId: mitgliedId(),
+    artikelNr:  gewaehltArtikel.artikelNr,
+    variante:   variante,
+    name:       gewaehltArtikel.name,
+    menge,
+  });
+
+  const validierung = validateWunschEintrag(neuerWunsch);
+  if (!validierung.ok) {
+    setHTML(fehlerDiv, html`${validierung.fehler}`);
+    fehlerDiv.style.display = '';
+    return;
+  }
+
+  const vorher = [...wuensche];
+  wuensche = [...wuensche, neuerWunsch];
+
+  const gespeichert = await persistJsonWithSync({
+    scope: SYNC_SCOPE_W,
+    storageKey: STORAGE_KEY_W,
+    data: wuensche,
+    client,
+    remotePath: NC_PFAD_W,
+  });
+
+  if (!gespeichert.ok) {
+    wuensche = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Wünsche') || 'Speichern fehlgeschlagen.', 'error', 7000);
+    return;
+  }
+
+  await auditAktion({
+    client,
+    user: session,
+    action: 'WUNSCH_ERSTELLT',
+    scope: SYNC_SCOPE_W,
+    entityId: neuerWunsch.id,
+    summary: `Wunsch "${neuerWunsch.name}" eingetragen`,
+    changes: { wunschId: neuerWunsch.id, artikelNr: neuerWunsch.artikelNr, variante, menge, mitgliedId: mitgliedId() },
+  });
+
+  // Formular zurücksetzen
+  document.getElementById('input-artikel-suche').value = '';
+  document.getElementById('input-menge').value = '1';
+  document.getElementById('artikel-ausgewaehlt').style.display = 'none';
+  setHTML(document.getElementById('select-variante'), raw('<option value="">— keine Variante —</option>'));
+  document.getElementById('select-variante').disabled = true;
+  gewaehltArtikel = null;
+
+  updateSyncBanner();
+  toast('Wunsch eingetragen.', 'success');
+  renderWunschliste();
+}
+
+/* ── Init ─────────────────────────────────────────────────────── */
+async function init() {
+  const einstellungen = load(STORAGE_KEY_E);
+  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
+  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
+    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
+  }
+
+  artikelKatalog = load(STORAGE_KEY_A) || [];
+
+  const lokalWuensche = load(STORAGE_KEY_W);
+  if (Array.isArray(lokalWuensche)) wuensche = lokalWuensche;
+
+  if (client) {
+    setHTML(document.getElementById('wunschliste-container'),
+      raw('<p class="meta" style="padding:16px 0">Synchronisiere mit Nextcloud …</p>'));
+    const r = await hydrateJsonFromSync({
+      scope: SYNC_SCOPE_W,
+      storageKey: STORAGE_KEY_W,
+      client,
+      remotePath: NC_PFAD_W,
+      isValidRemote: data => isValidWuenscheListe(data),
+    });
+    if (Array.isArray(r.data)) {
+      wuensche = r.data.map(normalizeWunsch);
+    }
+  }
+
+  renderWunschliste();
+  updateSyncBanner();
+
+  // Suchfeld-Events
+  const suchInput = document.getElementById('input-artikel-suche');
+  const searchBox = document.getElementById('search-results');
+
+  suchInput.addEventListener('input', () => {
+    if (gewaehltArtikel && suchInput.value !== `${gewaehltArtikel.artikelNr} – ${gewaehltArtikel.name}`) {
+      gewaehltArtikel = null;
+      document.getElementById('artikel-ausgewaehlt').style.display = 'none';
+    }
+    zeigeArtikelSuche(sucheArtikel(suchInput.value));
+  });
+
+  suchInput.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      searchBox.style.display = 'none';
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.search-wrapper')) {
+      searchBox.style.display = 'none';
+    }
+  });
+
+  document.getElementById('btn-wunsch-hinzufuegen').addEventListener('click', wunschHinzufuegen);
+}
+
+init();
+</script>
+
+<script type="module" src="src/auth-guard.js"></script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>Tests – wunsch</title></head>
+<body><pre id="out"></pre>
+<script type="module">
+import {
+  erstelleWunsch,
+  validateWunschEintrag,
+  istTerminal,
+  kannMutieren,
+  kannStornieren,
+  setzeStatus,
+  erlaubteUebergaenge,
+  filterFuerMitglied,
+  filterAdminQueue,
+  normalizeWunsch,
+  isValidWuenscheListe,
+} from '../src/wunsch.js';
+
+let ok = 0, fail = 0;
+function assert(label, cond) {
+  document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
+  cond ? ok++ : fail++;
+}
+
+// ── erstelleWunsch ──────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── erstelleWunsch ──\n';
+
+const w1 = erstelleWunsch({ mitgliedId: 'max', artikelNr: 'A001', name: 'T-Shirt', menge: 2 });
+assert('erstelleWunsch: gibt Objekt zurück', typeof w1 === 'object' && w1 !== null);
+assert('erstelleWunsch: status ist offen', w1.status === 'offen');
+assert('erstelleWunsch: erstelltAm ist ISO-String', typeof w1.erstelltAm === 'string' && w1.erstelltAm.includes('T'));
+assert('erstelleWunsch: id ist nicht leer', typeof w1.id === 'string' && w1.id.length > 0);
+const w2 = erstelleWunsch({ mitgliedId: 'max', artikelNr: 'A001', name: 'T-Shirt', menge: 1 });
+assert('erstelleWunsch: variante defaults auf leeren String', w2.variante === '');
+assert('erstelleWunsch: mengeUebernommen ist 0', w1.mengeUebernommen === 0);
+assert('erstelleWunsch: kommentar ist leerer String', w1.kommentar === '');
+assert('erstelleWunsch: bestellungId ist leerer String', w1.bestellungId === '');
+assert('erstelleWunsch: geaendertVon ist leerer String', w1.geaendertVon === '');
+
+// ── validateWunschEintrag ───────────────────────────────────────────
+document.getElementById('out').textContent += '\n── validateWunschEintrag ──\n';
+
+const basisWunsch = erstelleWunsch({ mitgliedId: 'max', artikelNr: 'A001', name: 'T-Shirt', menge: 1 });
+assert('validateWunschEintrag: leere mitgliedId → nicht ok', validateWunschEintrag({ ...basisWunsch, mitgliedId: '' }).ok === false);
+assert('validateWunschEintrag: leere artikelNr → nicht ok', validateWunschEintrag({ ...basisWunsch, artikelNr: '' }).ok === false);
+assert('validateWunschEintrag: leere name → nicht ok', validateWunschEintrag({ ...basisWunsch, name: '' }).ok === false);
+assert('validateWunschEintrag: menge 0 → nicht ok', validateWunschEintrag({ ...basisWunsch, menge: 0 }).ok === false);
+assert('validateWunschEintrag: menge -1 → nicht ok', validateWunschEintrag({ ...basisWunsch, menge: -1 }).ok === false);
+assert('validateWunschEintrag: menge 1.5 → nicht ok', validateWunschEintrag({ ...basisWunsch, menge: 1.5 }).ok === false);
+assert('validateWunschEintrag: menge 1 → ok', validateWunschEintrag({ ...basisWunsch, menge: 1 }).ok === true);
+assert('validateWunschEintrag: gültiger vollständiger Wunsch → ok', validateWunschEintrag(basisWunsch).ok === true);
+assert('validateWunschEintrag: mengeUebernommen > menge → nicht ok', validateWunschEintrag({ ...basisWunsch, menge: 2, mengeUebernommen: 3 }).ok === false);
+assert('validateWunschEintrag: ungültiger status → nicht ok', validateWunschEintrag({ ...basisWunsch, status: 'xyz' }).ok === false);
+assert('validateWunschEintrag: mengeUebernommen negativ → nicht ok', validateWunschEintrag({ ...basisWunsch, mengeUebernommen: -1 }).ok === false);
+assert('validateWunschEintrag: mengeUebernommen Dezimalzahl → nicht ok', validateWunschEintrag({ ...basisWunsch, mengeUebernommen: 0.5 }).ok === false);
+
+// ── istTerminal ─────────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── istTerminal ──\n';
+
+assert("istTerminal: 'uebernommen' → true", istTerminal('uebernommen') === true);
+assert("istTerminal: 'storniert' → true", istTerminal('storniert') === true);
+assert("istTerminal: 'offen' → false", istTerminal('offen') === false);
+assert("istTerminal: 'abgelehnt' → false", istTerminal('abgelehnt') === false);
+assert("istTerminal: 'teilweise_uebernommen' → false", istTerminal('teilweise_uebernommen') === false);
+
+// ── erlaubteUebergaenge ─────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── erlaubteUebergaenge ──\n';
+
+const ueberOffen = erlaubteUebergaenge('offen');
+assert("erlaubteUebergaenge: 'offen' enthält 'abgelehnt'", ueberOffen.includes('abgelehnt'));
+assert("erlaubteUebergaenge: 'offen' enthält 'storniert'", ueberOffen.includes('storniert'));
+assert("erlaubteUebergaenge: 'offen' enthält 'uebernommen'", ueberOffen.includes('uebernommen'));
+assert("erlaubteUebergaenge: 'offen' enthält 'teilweise_uebernommen'", ueberOffen.includes('teilweise_uebernommen'));
+const ueberTeil = erlaubteUebergaenge('teilweise_uebernommen');
+assert("erlaubteUebergaenge: 'teilweise_uebernommen' enthält 'uebernommen'", ueberTeil.includes('uebernommen'));
+assert("erlaubteUebergaenge: 'teilweise_uebernommen' enthält 'storniert'", ueberTeil.includes('storniert'));
+assert("erlaubteUebergaenge: 'teilweise_uebernommen' enthält 'abgelehnt'", ueberTeil.includes('abgelehnt'));
+const ueberAbg = erlaubteUebergaenge('abgelehnt');
+assert("erlaubteUebergaenge: 'abgelehnt' enthält 'offen'", ueberAbg.includes('offen'));
+assert("erlaubteUebergaenge: 'uebernommen' → leeres Array", erlaubteUebergaenge('uebernommen').length === 0);
+assert("erlaubteUebergaenge: 'storniert' → leeres Array", erlaubteUebergaenge('storniert').length === 0);
+
+// ── kannMutieren ────────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── kannMutieren ──\n';
+
+const wOffen      = { ...basisWunsch, status: 'offen',                mitgliedId: 'max' };
+const wAbgelehnt  = { ...basisWunsch, status: 'abgelehnt',            mitgliedId: 'max' };
+const wTeil       = { ...basisWunsch, status: 'teilweise_uebernommen', mitgliedId: 'max' };
+const wStorniert  = { ...basisWunsch, status: 'storniert',             mitgliedId: 'max' };
+const wUebernomm  = { ...basisWunsch, status: 'uebernommen',           mitgliedId: 'max' };
+const sessionAdmin = { rolle: 'admin', authType: 'lokal', id: 'adminUser' };
+const sessionUser  = { rolle: 'user',  authType: 'stempeluhr', id: 'max', mitgliedId: 'max' };
+const sessionUserOhneMatch = { rolle: 'user', authType: 'stempeluhr', id: 'other', mitgliedId: 'other' };
+
+assert('kannMutieren: admin kann offenen Wunsch mutieren', kannMutieren(wOffen, sessionAdmin) === true);
+assert('kannMutieren: admin kann abgelehnten Wunsch mutieren', kannMutieren(wAbgelehnt, sessionAdmin) === true);
+assert('kannMutieren: admin kann teilweise_uebernommenen Wunsch mutieren', kannMutieren(wTeil, sessionAdmin) === true);
+assert('kannMutieren: admin kann NICHT stornierten Wunsch mutieren', kannMutieren(wStorniert, sessionAdmin) === false);
+assert('kannMutieren: admin kann NICHT übernommenen Wunsch mutieren', kannMutieren(wUebernomm, sessionAdmin) === false);
+assert('kannMutieren: user kann eigenen offenen Wunsch mutieren (session.mitgliedId)', kannMutieren(wOffen, sessionUser) === true);
+const sessionUserIdFallback = { rolle: 'user', authType: 'stempeluhr', id: 'max' };
+assert('kannMutieren: user kann eigenen offenen Wunsch mutieren (session.id als Fallback)', kannMutieren(wOffen, sessionUserIdFallback) === true);
+assert('kannMutieren: user kann NICHT fremden offenen Wunsch mutieren', kannMutieren(wOffen, sessionUserOhneMatch) === false);
+assert('kannMutieren: user kann NICHT eigenen abgelehnten Wunsch mutieren', kannMutieren(wAbgelehnt, sessionUser) === false);
+assert('kannMutieren: null session → false', kannMutieren(wOffen, null) === false);
+
+// ── kannStornieren ──────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── kannStornieren ──\n';
+
+assert('kannStornieren: admin kann nicht-terminalen (offen) Wunsch stornieren', kannStornieren(wOffen, sessionAdmin) === true);
+assert('kannStornieren: admin kann nicht-terminalen (abgelehnt) Wunsch stornieren', kannStornieren(wAbgelehnt, sessionAdmin) === true);
+assert('kannStornieren: admin kann NICHT terminalen (storniert) Wunsch stornieren', kannStornieren(wStorniert, sessionAdmin) === false);
+assert('kannStornieren: admin kann NICHT terminalen (uebernommen) Wunsch stornieren', kannStornieren(wUebernomm, sessionAdmin) === false);
+assert('kannStornieren: user kann eigenen offenen Wunsch stornieren', kannStornieren(wOffen, sessionUser) === true);
+assert('kannStornieren: user kann NICHT eigenen abgelehnten Wunsch stornieren', kannStornieren(wAbgelehnt, sessionUser) === false);
+assert('kannStornieren: user kann NICHT fremden Wunsch stornieren', kannStornieren(wOffen, sessionUserOhneMatch) === false);
+
+// ── setzeStatus ─────────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── setzeStatus ──\n';
+
+const w3 = erstelleWunsch({ mitgliedId: 'max', artikelNr: 'A001', name: 'T-Shirt', menge: 2 });
+
+const w3abg = setzeStatus(w3, 'abgelehnt');
+assert('setzeStatus: offen → abgelehnt funktioniert', w3abg.status === 'abgelehnt');
+
+const w3offen = setzeStatus(w3abg, 'offen');
+assert('setzeStatus: abgelehnt → offen funktioniert', w3offen.status === 'offen');
+
+const w3ueb = setzeStatus(w3, 'uebernommen', { bestellungId: 'B001', geaendertVon: 'admin1' });
+assert('setzeStatus: offen → uebernommen setzt bestellungId', w3ueb.bestellungId === 'B001');
+assert('setzeStatus: offen → uebernommen setzt geaendertVon', w3ueb.geaendertVon === 'admin1');
+
+const w3stor = setzeStatus(w3, 'storniert');
+assert('setzeStatus: offen → storniert funktioniert', w3stor.status === 'storniert');
+
+let threwTerminal = false;
+try { setzeStatus(w3ueb, 'storniert'); } catch { threwTerminal = true; }
+assert('setzeStatus: uebernommen → storniert wirft Error (terminal)', threwTerminal === true);
+
+const vorher = w3.geaendertAm;
+// leichte Verzögerung simulieren – gleiche Millisekunde ist okay, prüfe nur dass Feld gesetzt ist
+const w3neu = setzeStatus(w3, 'abgelehnt');
+assert('setzeStatus: setzt geaendertAm (ISO-String)', typeof w3neu.geaendertAm === 'string' && w3neu.geaendertAm.includes('T'));
+
+const w3mitKomm = setzeStatus(w3, 'abgelehnt', { kommentar: 'Nicht im Budget' });
+assert('setzeStatus: kommentar landet im Objekt', w3mitKomm.kommentar === 'Nicht im Budget');
+
+let threwUngueltig = false;
+try { setzeStatus(w3stor, 'offen'); } catch { threwUngueltig = true; }
+assert('setzeStatus: ungültiger Übergang wirft Error', threwUngueltig === true);
+
+assert('setzeStatus: ursprüngliches Objekt unverändert (immutable)', w3.status === 'offen');
+
+// ── filterFuerMitglied ──────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── filterFuerMitglied ──\n';
+
+const wA1 = erstelleWunsch({ mitgliedId: 'anna', artikelNr: 'A001', name: 'Shirt', menge: 1 });
+const wA2 = erstelleWunsch({ mitgliedId: 'anna', artikelNr: 'A002', name: 'Hose',  menge: 2 });
+const wB1 = erstelleWunsch({ mitgliedId: 'bert', artikelNr: 'A003', name: 'Mütze', menge: 1 });
+
+// Manuelle Timestamps für sortierbarkeit
+const liste = [
+  { ...wA2, erstelltAm: '2025-01-02T10:00:00.000Z' },
+  { ...wA1, erstelltAm: '2025-01-01T10:00:00.000Z' },
+  wB1,
+];
+
+const annaListe = filterFuerMitglied(liste, 'anna');
+assert('filterFuerMitglied: filtert korrekt auf mitgliedId', annaListe.every(w => w.mitgliedId === 'anna') && annaListe.length === 2);
+assert('filterFuerMitglied: sortiert neueste zuerst', annaListe[0].erstelltAm > annaListe[1].erstelltAm);
+assert('filterFuerMitglied: bert nicht enthalten', filterFuerMitglied(liste, 'bert').length === 1);
+
+// ── filterAdminQueue ────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── filterAdminQueue ──\n';
+
+const qOffen = { ...erstelleWunsch({ mitgliedId: 'x', artikelNr: 'A1', name: 'A', menge: 1 }), status: 'offen',                erstelltAm: '2025-03-01T10:00:00.000Z' };
+const qTeil  = { ...erstelleWunsch({ mitgliedId: 'x', artikelNr: 'A2', name: 'B', menge: 1 }), status: 'teilweise_uebernommen', erstelltAm: '2025-01-01T10:00:00.000Z' };
+const qAbg   = { ...erstelleWunsch({ mitgliedId: 'x', artikelNr: 'A3', name: 'C', menge: 1 }), status: 'abgelehnt',             erstelltAm: '2025-02-01T10:00:00.000Z' };
+const qStor  = { ...erstelleWunsch({ mitgliedId: 'x', artikelNr: 'A4', name: 'D', menge: 1 }), status: 'storniert',             erstelltAm: '2025-02-15T10:00:00.000Z' };
+
+const adminQ = filterAdminQueue([qOffen, qTeil, qAbg, qStor]);
+assert('filterAdminQueue: enthält nur offen + teilweise_uebernommen', adminQ.length === 2 && adminQ.every(w => w.status === 'offen' || w.status === 'teilweise_uebernommen'));
+assert('filterAdminQueue: sortiert älteste zuerst', adminQ[0].erstelltAm < adminQ[1].erstelltAm);
+
+// ── normalizeWunsch ─────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── normalizeWunsch ──\n';
+
+const roh = { id: 'w-001', mitgliedId: 'max', artikelNr: 'A001', name: 'T-Shirt', menge: 3 };
+const norm = normalizeWunsch(roh);
+assert('normalizeWunsch: fehlende Felder werden auf Defaults gesetzt', typeof norm.id === 'string' && norm.variante === '' && norm.status === 'offen' && norm.kommentar === '' && norm.mengeUebernommen === 0 && norm.bestellungId === '' && norm.geaendertVon === '');
+assert('normalizeWunsch: vorhandene Felder bleiben erhalten', norm.mitgliedId === 'max' && norm.artikelNr === 'A001' && norm.name === 'T-Shirt' && norm.menge === 3);
+
+const vollstaendig = { id: 'uuid-123', mitgliedId: 'anna', artikelNr: 'B002', variante: 'rot', name: 'Pullover', menge: 2, status: 'abgelehnt', erstelltAm: '2025-01-01T00:00:00.000Z', geaendertAm: '2025-01-02T00:00:00.000Z', geaendertVon: 'admin', kommentar: 'Kein Bedarf', mengeUebernommen: 0, bestellungId: '' };
+const normVoll = normalizeWunsch(vollstaendig);
+assert('normalizeWunsch: vollständiges Objekt bleibt erhalten', normVoll.id === 'uuid-123' && normVoll.status === 'abgelehnt' && normVoll.variante === 'rot');
+
+// ── isValidWuenscheListe ────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── isValidWuenscheListe ──\n';
+
+assert('isValidWuenscheListe: leeres Array → true', isValidWuenscheListe([]) === true);
+assert('isValidWuenscheListe: Array mit gültigem Eintrag → true', isValidWuenscheListe([roh]) === true);
+assert('isValidWuenscheListe: kein Array → false', isValidWuenscheListe(null) === false);
+assert('isValidWuenscheListe: String → false', isValidWuenscheListe('foo') === false);
+assert('isValidWuenscheListe: Objekt ohne id/mitgliedId → false', isValidWuenscheListe([{ foo: 'bar' }]) === false);
+assert('isValidWuenscheListe: Eintrag mit id aber ohne mitgliedId → false', isValidWuenscheListe([{ id: 'x' }]) === false);
+
+// ── Zusammenfassung ─────────────────────────────────────────────────
+document.getElementById('out').textContent += `\n${ok}/${ok + fail} Tests bestanden — ${fail} fehlgeschlagen`;
+</script></body></html>

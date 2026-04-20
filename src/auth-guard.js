@@ -13,6 +13,7 @@ import {
 import { requireSeite } from './authz.js';
 
 const MEMBER_HOME = 'mitglied.html';
+const MEMBER_ALLOWED_PAGES = new Set(['mitglied.html', 'wuensche.html']);
 
 function currentPage() {
   return window.location.pathname.split('/').pop() || 'index.html';
@@ -64,7 +65,7 @@ if (!session || !hasNcPasswort() || !einstellungen?.nc?.url || !einstellungen?.n
   clearSession();
   redirectToLogin();
 } else {
-  if (isMemberSession(session) && page !== MEMBER_HOME) {
+  if (isMemberSession(session) && !MEMBER_ALLOWED_PAGES.has(page)) {
     redirectTo(MEMBER_HOME);
   } else if (isFunctionSession(session) && page === MEMBER_HOME) {
     redirectTo('index.html');
