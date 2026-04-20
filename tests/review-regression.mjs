@@ -45,6 +45,7 @@ import {
   getScopeSyncStatus,
   isConflictSync,
 } from '../src/sync.js';
+import { parseVerkaufsrechnung } from '../src/parse-verkaufsrechnung.js';
 
 const tests = [];
 
@@ -1045,6 +1046,68 @@ test('normalizeZugriff und findeMitgliedsSperre normalisieren globale und indivi
   const individuell = findeMitgliedsSperre(zugriff, 'max');
   assertEqual(individuell.blocked, true, 'Individuelle Sperre muss erkannt werden');
   assertEqual(individuell.reason, 'Offene Rechnung', 'Individueller Grund muss globalen Grund uebersteuern');
+});
+
+test('parseVerkaufsrechnung parst Artikel mit Preis, Variante und BV-Foerderung korrekt', () => {
+  const text = `
+Art.-Nr. Beschreibung Menge Einheit Brutto Rabatt % Betrag
+18507180 Poloshirt rot JAKO (M) 2 21,50 43,00 A
+MITTELVERW. BV Mittelverwendung Bundesverband 2 STÜCK -6,60 -13,20 C
+18504118 DLRG Wetterjacke 4.0 leicht 1 149,90 149,90 A
+MARINEPOOL (M)
+MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -44,90 -44,90 C
+MITTELVERW. LV Mittelverwendung Landesverbände 1 STÜCK -52,50 -52,50 C
+EILAUFTRAG Kosten für Eilauftrag 1 5,95 5,95 A
+`;
+  const result = parseVerkaufsrechnung(text);
+  assertEqual(result.artikel.length, 2, 'Zwei Artikel müssen erkannt werden');
+  assertEqual(result.ogKosten.length, 1, 'EILAUFTRAG muss als OG-Kosten erkannt werden');
+
+  const polo = result.artikel[0];
+  assertEqual(polo.artikelNr, '18507180', 'ArtNr korrekt');
+  assertEqual(polo.variante, 'M', 'Variante aus Beschreibungsende');
+  assertEqual(polo.menge, 2, 'Menge 2');
+  assertEqual(polo.einzelpreis, 21.5, 'Einzelpreis 21,50');
+  assertEqual(polo.bvFoerderung, 6.6, 'BV-Förderung');
+  assertEqual(polo.lvFoerderung, 0, 'Keine LV-Förderung');
+
+  const jacke = result.artikel[1];
+  assertEqual(jacke.artikelNr, '18504118', 'Wetterjacke ArtNr');
+  assertEqual(jacke.variante, 'M', 'Variante aus Fortsetzungszeile');
+  assertEqual(jacke.bvFoerderung, 44.9, 'BV-Förderung Wetterjacke');
+  assertEqual(jacke.lvFoerderung, 52.5, 'LV-Förderung Wetterjacke');
+});
+
+test('parseVerkaufsrechnung erkennt Bundlekomponenten ohne Preis und Größe in Beschreibungsmitte', () => {
+  const text = `
+18508500 DLRG-NIVEA Bekleidungspaket 2.0 1 134,90 134,90 A
+MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -104,90 -104,90 C
+17406785 DLRG Sporttasche JAKO rot/gelb 1 A
+18504111 Inzip-Fleece Jacke schwer (M)- rot - 1 57,90 57,90 A
+`;
+  const result = parseVerkaufsrechnung(text);
+  assertEqual(result.artikel.length, 3, 'Bundle + Komponente + weiterer Artikel');
+
+  const bundle = result.artikel[0];
+  assertEqual(bundle.artikelNr, '18508500', 'Bundle ArtNr');
+  assertEqual(bundle.einzelpreis, 134.9, 'Bundle-Preis');
+  assertEqual(bundle.bvFoerderung, 104.9, 'Bundle BV-Förderung');
+
+  const komp = result.artikel[1];
+  assertEqual(komp.einzelpreis, 0, 'Bundlekomponente hat keinen Preis');
+  assertEqual(komp.menge, 1, 'Bundlekomponente: Menge 1');
+
+  const fleece = result.artikel[2];
+  assertEqual(fleece.variante, 'M', 'Größe in Beschreibungsmitte per Fallback erkannt');
+  assertEqual(fleece.einzelpreis, 57.9, 'Fleece-Preis korrekt');
+});
+
+test('parseVerkaufsrechnung ignoriert VPE-Zahlen in Beschreibung (kein false-positive menge)', () => {
+  const text = `57406909 DLRG Kugelschreiber gelb/rot VPE 50 1 29,90 29,90 A\nStück\n`;
+  const result = parseVerkaufsrechnung(text);
+  assertEqual(result.artikel[0]?.menge, 1, 'Menge ist 1, nicht 50');
+  assertEqual(result.artikel[0]?.einzelpreis, 29.9, 'Preis korrekt');
+  assert(!result.artikel[0]?.name?.includes('Stück'), '"Stück"-Einheit darf nicht in Beschreibung landen');
 });
 
 test('auditAktion schreibt append-only auf Remote und cached lokal', async () => {

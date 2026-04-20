@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de">
+<head><meta charset="UTF-8"><title>Tests – parse-verkaufsrechnung</title></head>
+<body><pre id="out"></pre>
+<script type="module">
+import { parseVerkaufsrechnung } from '../src/parse-verkaufsrechnung.js';
+
+let ok = 0, fail = 0;
+function assert(label, cond) {
+  document.getElementById('out').textContent += (cond ? '✅' : '❌') + ' ' + label + '\n';
+  cond ? ok++ : fail++;
+}
+
+// ── Grundfälle ───────────────────────────────────────────────────────────────
+document.getElementById('out').textContent += '── Grundfälle ──\n';
+
+const leer = parseVerkaufsrechnung('');
+assert('leer: keine Artikel', leer.artikel.length === 0);
+assert('leer: Fehler gesetzt', leer.fehler.length > 0);
+
+// ── Artikel mit Preis ────────────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── Artikel mit Preis ──\n';
+
+const textEinfach = `
+Art.-Nr. Beschreibung Menge Einheit Brutto Rabatt % Betrag
+18507180 Poloshirt rot JAKO (M) 2 21,50 43,00 A
+MITTELVERW. BV Mittelverwendung Bundesverband 2 STÜCK -6,60 -13,20 C
+`;
+const r1 = parseVerkaufsrechnung(textEinfach);
+assert('Artikel mit Preis: 1 Artikel', r1.artikel.length === 1);
+const a1 = r1.artikel[0];
+assert('artikelNr korrekt', a1?.artikelNr === '18507180');
+assert('variante M erkannt', a1?.variante === 'M');
+assert('menge 2', a1?.menge === 2);
+assert('einzelpreis 21.50', a1?.einzelpreis === 21.5);
+assert('bvFoerderung 6.60', a1?.bvFoerderung === 6.6);
+assert('lvFoerderung 0', a1?.lvFoerderung === 0);
+
+// ── Artikel ohne Preis (Bundlekomponente) ────────────────────────────────────
+document.getElementById('out').textContent += '\n── Bundlekomponente ──\n';
+
+const textBundle = `
+18508500 DLRG-NIVEA Bekleidungspaket 2.0 1 134,90 134,90 A
+MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -104,90 -104,90 C
+17406785 DLRG Sporttasche JAKO rot/gelb 1 A
+18505840 DLRG Sonnenhut ( XL ) 1 A
+`;
+const r2 = parseVerkaufsrechnung(textBundle);
+assert('Bundle: 3 Artikel', r2.artikel.length === 3);
+const bundle = r2.artikel[0];
+assert('Bundle: artikelNr 18508500', bundle?.artikelNr === '18508500');
+assert('Bundle: preis 134.90', bundle?.einzelpreis === 134.9);
+assert('Bundle: bvFoerderung 104.90', bundle?.bvFoerderung === 104.9);
+const sporttasche = r2.artikel[1];
+assert('Bundlekomponente: kein Preis', sporttasche?.einzelpreis === 0);
+assert('Bundlekomponente: menge 1', sporttasche?.menge === 1);
+const sonnenhut = r2.artikel[2];
+assert('Sonnenhut: variante XL', sonnenhut?.variante === 'XL');
+
+// ── Mehrzeilige Beschreibung ─────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── Mehrzeilige Beschreibung ──\n';
+
+const textMehrzeilig = `
+18504118 DLRG Wetterjacke 4.0 leicht 1 149,90 149,90 A
+MARINEPOOL (M)
+MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -44,90 -44,90 C
+MITTELVERW. LV Mittelverwendung Landesverbände 1 STÜCK -52,50 -52,50 C
+`;
+const r3 = parseVerkaufsrechnung(textMehrzeilig);
+assert('Mehrzeilig: 1 Artikel', r3.artikel.length === 1);
+const a3 = r3.artikel[0];
+assert('Mehrzeilig: variante M', a3?.variante === 'M');
+assert('Mehrzeilig: bvFoerderung 44.90', a3?.bvFoerderung === 44.9);
+assert('Mehrzeilig: lvFoerderung 52.50', a3?.lvFoerderung === 52.5);
+assert('Mehrzeilig: name enthält MARINEPOOL', a3?.name?.includes('MARINEPOOL'));
+
+// ── Größe in Mitte der Beschreibung (Fallback-Extraktion) ─────────────────────
+document.getElementById('out').textContent += '\n── Größe in Beschreibungsmitte ──\n';
+
+const textGroesseMitte = `
+18504111 Inzip-Fleece Jacke schwer (M)- rot - 1 57,90 57,90 A
+MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -13,00 -13,00 C
+`;
+const r4 = parseVerkaufsrechnung(textGroesseMitte);
+assert('Größe Mitte: 1 Artikel', r4.artikel.length === 1);
+assert('Größe Mitte: variante M', r4.artikel[0]?.variante === 'M');
+assert('Größe Mitte: einzelpreis 57.90', r4.artikel[0]?.einzelpreis === 57.9);
+
+// ── EILAUFTRAG als OG-Kosten ─────────────────────────────────────────────────
+document.getElementById('out').textContent += '\n── EILAUFTRAG ──\n';
+
+const textEil = `
+57406933 DLRG Schreibset, rot 2 3,70 7,40 A
+EILAUFTRAG Kosten für Eilauftrag 1 5,95 5,95 A
+`;
+const r5 = parseVerkaufsrechnung(textEil);
+assert('EILAUFTRAG: 1 Artikel', r5.artikel.length === 1);
+assert('EILAUFTRAG: 1 OG-Kosten', r5.ogKosten.length === 1);
+assert('EILAUFTRAG: artikelNr', r5.ogKosten[0]?.artikelNr === 'EILAUFTRAG');
+assert('EILAUFTRAG: preis 5.95', r5.ogKosten[0]?.einzelpreis === 5.95);
+
+// ── VPE-Beschreibung (Zahl am Ende, kein false-positive menge) ───────────────
+document.getElementById('out').textContent += '\n── VPE-Beschreibung ──\n';
+
+const textVpe = `
+57406909 DLRG Kugelschreiber gelb/rot VPE 50 1 29,90 29,90 A
+Stück
+`;
+const r6 = parseVerkaufsrechnung(textVpe);
+assert('VPE: menge ist 1 (nicht 50)', r6.artikel[0]?.menge === 1);
+assert('VPE: preis 29.90', r6.artikel[0]?.einzelpreis === 29.9);
+assert('VPE: "Stück" nicht in Name', !r6.artikel[0]?.name?.includes('Stück'));
+
+// ── Header/Footer werden ignoriert ───────────────────────────────────────────
+document.getElementById('out').textContent += '\n── Header/Footer ignoriert ──\n';
+
+const textMitFooter = `
+E-Preis
+Art.-Nr. Beschreibung Menge Einheit Brutto Rabatt % Betrag
+57409919 DLRG Schlüsselanhänger 3 x 9 cm 2 1,40 2,80 A
+Summe Netto EUR 358,01
+USt.-Betrag 222,49
+Summe Brutto EUR 580,50
+Seite 3 / 3
+`;
+const r7 = parseVerkaufsrechnung(textMitFooter);
+assert('Footer: nur 1 Artikel', r7.artikel.length === 1);
+assert('Footer: menge 2', r7.artikel[0]?.menge === 2);
+assert('Footer: preis 1.40', r7.artikel[0]?.einzelpreis === 1.4);
+
+// ── Mehrere Artikel mit LV-Förderung ─────────────────────────────────────────
+document.getElementById('out').textContent += '\n── LV-Förderung ──\n';
+
+const textLv = `
+29510022 Einsatzhose Herren mit Reflex 2.0 ( 54 ) 1 69,90 69,90 A
+MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -34,90 -34,90 C
+MITTELVERW. LV Mittelverwendung Landesverbände 1 STÜCK -17,50 -17,50 C
+29510022 Einsatzhose Herren mit Reflex 2.0 ( 56 ) 2 69,90 139,80 A
+MITTELVERW. BV Mittelverwendung Bundesverband 2 STÜCK -34,90 -69,80 C
+MITTELVERW. LV Mittelverwendung Landesverbände 2 STÜCK -17,50 -35,00 C
+`;
+const r8 = parseVerkaufsrechnung(textLv);
+assert('LV: 2 Artikel', r8.artikel.length === 2);
+const e54 = r8.artikel[0];
+const e56 = r8.artikel[1];
+assert('Größe 54: variante', e54?.variante === '54');
+assert('Größe 54: lvFoerderung 17.50', e54?.lvFoerderung === 17.5);
+assert('Größe 56: variante', e56?.variante === '56');
+assert('Größe 56: menge 2', e56?.menge === 2);
+assert('Größe 56: BV nicht aus Größe 54', e56?.bvFoerderung === 34.9);
+
+document.getElementById('out').textContent += `\n${ok}/${ok + fail} Tests bestanden — ${fail} fehlgeschlagen`;
+</script></body></html>

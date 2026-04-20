@@ -210,8 +210,24 @@
   <!-- Card: Rechnungsimport -->
   <div class="card card-hidden" id="card-import">
     <p class="section-label">Rechnung / Bestätigung importieren</p>
+
+    <!-- PDF-Upload -->
+    <p class="text-sm" style="color:var(--text-2);margin-bottom:8px">
+      DLRG-Verkaufsrechnung als PDF importieren:
+    </p>
+    <div class="flex gap-8" style="align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+        <input type="file" id="inp-pdf" accept=".pdf" style="display:none">
+        PDF auswählen…
+      </label>
+      <span id="pdf-lade-status" style="display:none;font-size:.85rem;color:var(--text-2)">Wird gelesen…</span>
+    </div>
+
+    <div style="color:var(--text-2);font-size:.82rem;text-align:center;margin-bottom:14px">— oder —</div>
+
+    <!-- Textformat-Import -->
     <p class="text-sm" style="color:var(--text-2);margin-bottom:10px">
-      Auftragsbestätigung der DLRG-Materialstelle einfügen (Tab-Format oder mehrzeiliges Format).
+      Auftragsbestätigung der DLRG-Materialstelle einfügen (Tab-Format oder mehrzeiliges Format):
     </p>
     <div class="rechnung-import">
       <textarea id="inp-rechnung" placeholder="Rechnungstext hier einfügen…"></textarea>
@@ -302,6 +318,7 @@
 import { EXTERN_ID, OG_ID }                 from './src/konstanten.js';
 import { load }                              from './src/storage.js';
 import { parseBestellung }                  from './src/parser.js';
+import { parseVerkaufsrechnung }            from './src/parse-verkaufsrechnung.js';
 import { aggregiereWuensche }               from './src/sammlung.js';
 import {
   gleiche_ab,
@@ -1318,6 +1335,76 @@ document.getElementById('btn-parsen').addEventListener('click', () => {
   document.getElementById('div-aktionen').classList.remove('card-hidden');
 
   renderAbgleich();
+});
+
+/* ── PDF-Upload: Verkaufsrechnung ───────────────────────────── */
+async function extrahierePdfText(datei) {
+  const { getDocument, GlobalWorkerOptions } = await import('./lib/pdf.min.mjs');
+  GlobalWorkerOptions.workerSrc = new URL('./lib/pdf.worker.min.mjs', location.href).href;
+  const buffer = await datei.arrayBuffer();
+  const doc    = await getDocument({ data: new Uint8Array(buffer) }).promise;
+  const zeilen = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page    = await doc.getPage(p);
+    const content = await page.getTextContent();
+    const items   = content.items.filter(i => i.str && i.str.trim());
+    const byY = {};
+    for (const item of items) {
+      const y = Math.round(item.transform[5]);
+      if (!byY[y]) byY[y] = [];
+      byY[y].push({ x: Math.round(item.transform[4]), str: item.str });
+    }
+    for (const y of Object.keys(byY).map(Number).sort((a, b) => b - a)) {
+      const line = byY[y].sort((a, b) => a.x - b.x).map(i => i.str).join(' ');
+      if (line.trim()) zeilen.push(line);
+    }
+  }
+  return zeilen.join('\n');
+}
+
+document.getElementById('inp-pdf').addEventListener('change', async (e) => {
+  const datei = e.target.files?.[0];
+  e.target.value = '';
+  if (!datei) return;
+  if (!darfBestellungSchreiben()) {
+    toast('Du darfst diese Bestellung nicht bearbeiten.', 'error');
+    return;
+  }
+
+  const ladeStatus = document.getElementById('pdf-lade-status');
+  const fehlerEl   = document.getElementById('parse-fehler');
+  ladeStatus.style.display = 'inline';
+  ladeStatus.textContent   = 'PDF wird gelesen…';
+  fehlerEl.style.display   = 'none';
+  aufgeloest.clear();
+
+  try {
+    const text   = await extrahierePdfText(datei);
+    const parsed = parseVerkaufsrechnung(text);
+    ladeStatus.style.display = 'none';
+
+    if (!parsed.artikel.length && !parsed.ogKosten.length) {
+      fehlerEl.textContent   = 'Keine Artikel in der PDF gefunden. Bitte Format prüfen.';
+      fehlerEl.style.display = 'inline';
+      return;
+    }
+
+    const allePositionen = [
+      ...parsed.artikel,
+      ...parsed.ogKosten.map(k => ({ ...k, typ: 'og-kosten' })),
+    ];
+
+    const aggregiert = aggregiereWuensche(bestellung.wuensche || []);
+    abgleichResult   = gleiche_ab(aggregiert, allePositionen);
+
+    document.getElementById('card-ergebnis').classList.remove('card-hidden');
+    document.getElementById('div-aktionen').classList.remove('card-hidden');
+    renderAbgleich();
+  } catch (err) {
+    ladeStatus.style.display = 'none';
+    fehlerEl.textContent   = 'PDF konnte nicht gelesen werden: ' + (err.message || String(err));
+    fehlerEl.style.display = 'inline';
+  }
 });
 
 /* ── Wünsche direkt übernehmen (ohne externe Rechnung) ──────── */

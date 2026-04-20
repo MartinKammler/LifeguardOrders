@@ -18,6 +18,8 @@ lib64/
 lib/
 !lib/jspdf.umd.min.js
 !lib/pdf-lib.esm.min.js
+!lib/pdf.min.mjs
+!lib/pdf.worker.min.mjs
 parts/
 sdist/
 var/
