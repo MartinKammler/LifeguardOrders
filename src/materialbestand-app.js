@@ -6,7 +6,7 @@ import { druckePDF } from './pdf.js';
 import { auditAktion } from './audit.js';
 import { EXTERN_ID, OG_ID } from './konstanten.js';
 import { getSession } from './session.js';
-import { darfAktion } from './authz.js';
+import { canRead, darfAktion } from './authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './ui-feedback.js';
 import {
   bucheMaterialBewegung,
@@ -63,6 +63,10 @@ function darfLagerverkaufFinalisieren() {
 
 function darfLageranfrageFreigeben() {
   return darfAktion('lageranfrage-freigeben', getSession());
+}
+
+function darfRechnungenSehen() {
+  return canRead('rechnungen', getSession());
 }
 
 function cloneData(value) {
@@ -393,7 +397,7 @@ function renderAnfragen() {
                     <button class="btn btn-danger btn-sm" data-anfrage-action="freigabe-ablehnen" data-id="${anfrage.id}">Ablehnen</button>
                   `
                 : ''}
-              ${anfrage.status === 'abgerechnet' && anfrage.rechnungId
+              ${anfrage.status === 'abgerechnet' && anfrage.rechnungId && darfRechnungenSehen()
                 ? html`<button class="btn btn-ghost btn-sm" data-anfrage-action="pdf" data-id="${anfrage.id}">PDF</button>`
                 : ''}
             </td>
@@ -1305,6 +1309,10 @@ async function init() {
       await lehneLageranfrageAb(id);
     }
     if (button.dataset.anfrageAction === 'pdf') {
+      if (!darfRechnungenSehen()) {
+        toast('Du darfst Rechnungs-PDFs nicht öffnen.', 'error');
+        return;
+      }
       const anfrage = materialanfragen.find(item => item.id === id);
       if (!anfrage?.rechnungId || !anfrage?.bestellungId) return;
       const bestellung = bestellungen.find(item => item.id === anfrage.bestellungId);

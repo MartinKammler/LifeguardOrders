@@ -33,8 +33,16 @@ import {
 import {
   authentifiziereMitglied,
   hashClockPin,
+  leseMitgliedsPinCooldown,
+  MEMBER_PIN_COOLDOWN_MS,
+  MEMBER_PIN_MAX_FAILED,
   verifyClockPin,
 } from '../src/stempeluhr-auth.js';
+import {
+  clearLocalAppCache,
+  isSessionExpired,
+  SESSION_TIMEOUT_MEMBER_MS,
+} from '../src/session.js';
 import {
   findeMitgliedsSperre,
   normalizeZugriff,
@@ -609,6 +617,15 @@ test('gleiche_ab matched bei gleicher artikelNr auch wenn Variante-Encoding abwe
   assertEqual(result.abweichungen.length, 0, 'Keine nicht_geliefert / nicht_bestellt');
 });
 
+test('gleiche_ab matched nicht blind bei gleicher artikelNr und anderer Variante', () => {
+  const wuensche = [{ artikelNr: '18507110', variante: 'L', name: 'T-Shirt JAKO', menge: 1 }];
+  const positionen = [{ artikelNr: '18507110', variante: 'S', name: 'T-Shirt JAKO', menge: 1 }];
+  const result = gleiche_ab(wuensche, positionen);
+  assertEqual(result.gematch.length, 0, 'Kein Fuzzy-Match bei echter Variantenabweichung');
+  assertEqual(result.abweichungen.filter(a => a.typ === 'nicht_geliefert').length, 1, 'Wunsch bleibt offen');
+  assertEqual(result.abweichungen.filter(a => a.typ === 'nicht_bestellt').length, 1, 'Position bleibt extra');
+});
+
 test('gleiche_ab haelt Fuzzy-Pass zurueck wenn Anzahl auf beiden Seiten unterschiedlich', () => {
   // 2 Wuensche (M und L), 1 Invoice-Item ohne Variante → kein eindeutiger Match
   const wuensche  = [
@@ -1092,6 +1109,59 @@ test('authentifiziereMitglied uebernimmt globale oder individuelle Sperren aus z
   assertEqual(result.lock.reason, 'Offene Forderung', 'Sperrgrund muss sichtbar bleiben');
 });
 
+test('authentifiziereMitglied aktiviert Cooldown nach mehreren Fehlversuchen', async () => {
+  const sessionStore = createMemoryWebStorage();
+  const client = {
+    async readJson(path) {
+      if (path === '/LifeguardClock/lgc_users.json') {
+        return {
+          ok: true,
+          data: [
+            { id: 'max', name: 'Max Muster', pin: await hashClockPin('123456', 'salt1'), salt: 'salt1', aktiv: true },
+          ],
+        };
+      }
+      if (path === '/LifeguardOrders/zugriff.json') {
+        return { ok: false, error: 'Datei nicht gefunden.' };
+      }
+      return { ok: false, error: 'Datei nicht gefunden.' };
+    },
+  };
+
+  for (let i = 0; i < MEMBER_PIN_MAX_FAILED; i += 1) {
+    const result = await authentifiziereMitglied({
+      client,
+      pin: '000000',
+      storage: createMemoryStorage(),
+      sessionStore,
+      now: 1_000 + i,
+    });
+    assertEqual(result.ok, false, 'Falsche PIN muss abgewiesen werden');
+  }
+
+  const cooldown = leseMitgliedsPinCooldown(sessionStore, 1_000 + MEMBER_PIN_MAX_FAILED);
+  assertEqual(cooldown.blocked, true, 'Cooldown muss nach zu vielen Fehlversuchen aktiv sein');
+
+  const blocked = await authentifiziereMitglied({
+    client,
+    pin: '123456',
+    storage: createMemoryStorage(),
+    sessionStore,
+    now: 1_000 + MEMBER_PIN_MAX_FAILED + 1,
+  });
+  assertEqual(blocked.ok, false, 'Korrekte PIN muss waehrend Cooldown gesperrt bleiben');
+  assertEqual(blocked.cooldown, true, 'Cooldown muss kenntlich gemacht werden');
+
+  const allowed = await authentifiziereMitglied({
+    client,
+    pin: '123456',
+    storage: createMemoryStorage(),
+    sessionStore,
+    now: 1_000 + MEMBER_PIN_MAX_FAILED + MEMBER_PIN_COOLDOWN_MS + 10,
+  });
+  assertEqual(allowed.ok, true, 'Nach Cooldown muss Login wieder funktionieren');
+});
+
 test('normalizeZugriff und findeMitgliedsSperre normalisieren globale und individuelle Sperren', () => {
   const zugriff = normalizeZugriff({
     global: {
@@ -1111,6 +1181,56 @@ test('normalizeZugriff und findeMitgliedsSperre normalisieren globale und indivi
   const individuell = findeMitgliedsSperre(zugriff, 'max');
   assertEqual(individuell.blocked, true, 'Individuelle Sperre muss erkannt werden');
   assertEqual(individuell.reason, 'Offene Rechnung', 'Individueller Grund muss globalen Grund uebersteuern');
+});
+
+test('isSessionExpired laesst Mitgliedersession nach eigenem Timeout ablaufen', () => {
+  const memberSession = {
+    authType: 'stempeluhr',
+    loginAt: '2026-04-20T08:00:00.000Z',
+    lastActivityAt: '2026-04-20T08:00:00.000Z',
+  };
+
+  assertEqual(
+    isSessionExpired(memberSession, Date.parse('2026-04-20T08:00:00.000Z') + SESSION_TIMEOUT_MEMBER_MS - 1),
+    false,
+    'Vor Timeout darf Mitgliedersession nicht ablaufen'
+  );
+  assertEqual(
+    isSessionExpired(memberSession, Date.parse('2026-04-20T08:00:00.000Z') + SESSION_TIMEOUT_MEMBER_MS + 1),
+    true,
+    'Nach Timeout muss Mitgliedersession ablaufen'
+  );
+});
+
+test('clearLocalAppCache entfernt sensible lokale Caches und behaelt nur NC-Loginhilfe', () => {
+  const originalLocalStorage = globalThis.localStorage;
+  const local = createMemoryWebStorage({
+    lo_bestellungen: JSON.stringify([{ id: 'b1' }]),
+    lo_benutzer: JSON.stringify([{ id: 'admin' }]),
+    lo_audit_log: JSON.stringify([{ id: 'a1' }]),
+    lo_zugriff: JSON.stringify({ global: { userBestellungGesperrt: true } }),
+    lo_einstellungen: JSON.stringify({
+      nc: { url: 'https://nc.example', user: 'martin', pass: 'secret' },
+      mitglieder: [{ id: 'max', name: 'Max Muster' }],
+      og: { name: 'DLRG' },
+    }),
+  });
+  globalThis.localStorage = local;
+
+  try {
+    clearLocalAppCache();
+    assertEqual(local.getItem('lo_bestellungen'), null, 'Bestellungen muessen geloescht werden');
+    assertEqual(local.getItem('lo_benutzer'), null, 'Benutzercache muss geloescht werden');
+    assertEqual(local.getItem('lo_audit_log'), null, 'Audit-Cache muss geloescht werden');
+    assertEqual(local.getItem('lo_zugriff'), null, 'Zugriffsoverlay muss geloescht werden');
+    assertEqual(
+      local.getItem('lo_einstellungen'),
+      JSON.stringify({ nc: { url: 'https://nc.example', user: 'martin', pass: '' } }),
+      'Einstellungen duerfen nur die NC-Loginhilfe behalten'
+    );
+  } finally {
+    globalThis.localStorage = originalLocalStorage;
+  }
 });
 
 test('parseVerkaufsrechnung parst Artikel mit Preis, Variante und BV-Foerderung korrekt', () => {
@@ -1250,6 +1370,21 @@ function createMemoryStorage(seed = {}) {
     },
     save(key, value) {
       map.set(key, JSON.parse(JSON.stringify(value)));
+    },
+  };
+}
+
+function createMemoryWebStorage(seed = {}) {
+  const map = new Map(Object.entries(seed));
+  return {
+    getItem(key) {
+      return map.has(key) ? map.get(key) : null;
+    },
+    setItem(key, value) {
+      map.set(key, String(value));
+    },
+    removeItem(key) {
+      map.delete(key);
     },
   };
 }

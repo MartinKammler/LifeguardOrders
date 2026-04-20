@@ -1,6 +1,9 @@
 import { findeMitgliedsSperre, ladeZugriff } from './zugriff.js';
 
 export const NC_PFAD_LGC_USERS = '/LifeguardClock/lgc_users.json';
+export const MEMBER_PIN_STATE_KEY = 'lo_member_pin_state';
+export const MEMBER_PIN_MAX_FAILED = 5;
+export const MEMBER_PIN_COOLDOWN_MS = 5 * 60 * 1000;
 
 function encoder() {
   return new TextEncoder();
@@ -71,10 +74,78 @@ export async function ladeAktiveStempeluhrBenutzer(client) {
   };
 }
 
-export async function authentifiziereMitglied({ client, pin, storage }) {
+function defaultSessionStorage() {
+  return typeof sessionStorage !== 'undefined'
+    ? sessionStorage
+    : { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+}
+
+function lesePinState(storage = defaultSessionStorage()) {
+  try {
+    return JSON.parse(storage.getItem(MEMBER_PIN_STATE_KEY) || 'null') || {
+      failedAttempts: 0,
+      blockedUntil: 0,
+    };
+  } catch {
+    return { failedAttempts: 0, blockedUntil: 0 };
+  }
+}
+
+function schreibePinState(state, storage = defaultSessionStorage()) {
+  storage.setItem(MEMBER_PIN_STATE_KEY, JSON.stringify(state));
+}
+
+export function leseMitgliedsPinCooldown(storage = defaultSessionStorage(), now = Date.now()) {
+  const state = lesePinState(storage);
+  const blockedUntil = Number(state.blockedUntil || 0);
+  const failedAttempts = Number.isInteger(state.failedAttempts) ? state.failedAttempts : 0;
+  if (!blockedUntil || blockedUntil <= now) {
+    if (blockedUntil && blockedUntil <= now) {
+      storage.removeItem(MEMBER_PIN_STATE_KEY);
+    }
+    return { blocked: false, remainingMs: 0, failedAttempts };
+  }
+  return {
+    blocked: true,
+    remainingMs: blockedUntil - now,
+    failedAttempts: failedAttempts || MEMBER_PIN_MAX_FAILED,
+  };
+}
+
+export function merkeFehlversuchMitgliedsPin(storage = defaultSessionStorage(), now = Date.now()) {
+  const current = lesePinState(storage);
+  const failedAttempts = Math.max(0, Number(current.failedAttempts || 0)) + 1;
+  const next = {
+    failedAttempts,
+    blockedUntil: failedAttempts >= MEMBER_PIN_MAX_FAILED ? now + MEMBER_PIN_COOLDOWN_MS : 0,
+  };
+  schreibePinState(next, storage);
+  return leseMitgliedsPinCooldown(storage, now);
+}
+
+export function resetMitgliedsPinCooldown(storage = defaultSessionStorage()) {
+  storage.removeItem(MEMBER_PIN_STATE_KEY);
+}
+
+function formatCooldown(remainingMs) {
+  const minuten = Math.max(1, Math.ceil(remainingMs / 60000));
+  return `Zu viele Fehlversuche. Bitte in ${minuten} Minute${minuten === 1 ? '' : 'n'} erneut versuchen.`;
+}
+
+export async function authentifiziereMitglied({ client, pin, storage, sessionStore = defaultSessionStorage(), now = Date.now() }) {
   const eingabe = String(pin || '').trim();
   if (!eingabe) {
     return { ok: false, error: 'PIN fehlt.' };
+  }
+
+  const cooldown = leseMitgliedsPinCooldown(sessionStore, now);
+  if (cooldown.blocked) {
+    return {
+      ok: false,
+      cooldown: true,
+      remainingMs: cooldown.remainingMs,
+      error: formatCooldown(cooldown.remainingMs),
+    };
   }
 
   const geladen = await ladeAktiveStempeluhrBenutzer(client);
@@ -88,6 +159,7 @@ export async function authentifiziereMitglied({ client, pin, storage }) {
   }
 
   if (!matches.length) {
+    merkeFehlversuchMitgliedsPin(sessionStore, now);
     return { ok: false, error: 'PIN ist ungültig oder kein aktives Mitglied.' };
   }
   if (matches.length > 1) {
@@ -96,6 +168,7 @@ export async function authentifiziereMitglied({ client, pin, storage }) {
 
   const user = matches[0];
   if (user.mustChangePIN) {
+    resetMitgliedsPinCooldown(sessionStore);
     return {
       ok: false,
       mustChangePIN: true,
@@ -103,6 +176,8 @@ export async function authentifiziereMitglied({ client, pin, storage }) {
       user,
     };
   }
+
+  resetMitgliedsPinCooldown(sessionStore);
 
   const zugriff = await ladeZugriff(client, storage);
   const sperre = zugriff.ok

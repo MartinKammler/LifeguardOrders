@@ -1,6 +1,17 @@
 export const SESSION_KEY_AUTH = 'lo_auth_session';
 export const SESSION_KEY_NC_PASS = 'lo_nc_pass';
 export const SESSION_TIMEOUT_LOCAL_MS = 30 * 60 * 1000;
+export const SESSION_TIMEOUT_MEMBER_MS = 12 * 60 * 60 * 1000;
+
+const LOCAL_CACHE_KEYS = [
+  'lo_benutzer',
+  'lo_bestellungen',
+  'lo_materialbestand',
+  'lo_artikel',
+  'lo_materialanfragen',
+  'lo_audit_log',
+  'lo_zugriff',
+];
 
 function parseJson(raw) {
   if (!raw) return null;
@@ -60,6 +71,7 @@ export function setSession(user, opts = {}) {
 export function clearSession() {
   sessionStorage.removeItem(SESSION_KEY_AUTH);
   sessionStorage.removeItem(SESSION_KEY_NC_PASS);
+  clearLocalAppCache();
 }
 
 export function isFunctionSession(session) {
@@ -71,17 +83,47 @@ export function isMemberSession(session) {
 }
 
 export function isSessionExpired(session, now = Date.now()) {
-  if (!isFunctionSession(session)) return false;
+  const timeout = isFunctionSession(session)
+    ? SESSION_TIMEOUT_LOCAL_MS
+    : isMemberSession(session)
+      ? SESSION_TIMEOUT_MEMBER_MS
+      : 0;
+  if (!timeout) return false;
   const lastActivity = Date.parse(session?.lastActivityAt || session?.loginAt || '');
   if (!Number.isFinite(lastActivity)) return true;
-  return (now - lastActivity) > SESSION_TIMEOUT_LOCAL_MS;
+  return (now - lastActivity) > timeout;
 }
 
 export function touchSessionActivity(now = new Date().toISOString()) {
   const session = getSession();
-  if (!isFunctionSession(session)) return session;
+  if (!session || (!isFunctionSession(session) && !isMemberSession(session))) return session;
   const next = { ...session, lastActivityAt: now };
   return writeSession(next);
+}
+
+export function clearLocalAppCache() {
+  try {
+    for (const key of LOCAL_CACHE_KEYS) {
+      localStorage.removeItem(key);
+    }
+    const raw = localStorage.getItem('lo_einstellungen');
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    const nc = parsed?.nc && typeof parsed.nc === 'object'
+      ? {
+          url: String(parsed.nc.url || '').trim(),
+          user: String(parsed.nc.user || '').trim(),
+          pass: '',
+        }
+      : null;
+    if (nc?.url || nc?.user) {
+      localStorage.setItem('lo_einstellungen', JSON.stringify({ nc }));
+    } else {
+      localStorage.removeItem('lo_einstellungen');
+    }
+  } catch {
+    // Logout darf nie an lokaler Bereinigung scheitern.
+  }
 }
 
 export function getNextPath(defaultPath = 'index.html') {

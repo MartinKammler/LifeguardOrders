@@ -84,6 +84,11 @@ if (!session || !hasNcPasswort() || !einstellungen?.nc?.url || !einstellungen?.n
         window.addEventListener(eventName, () => touchSessionActivity(), { passive: true });
       }
     }
+  } else {
+    const events = ['pointerdown', 'keydown', 'touchstart'];
+    for (const eventName of events) {
+      window.addEventListener(eventName, () => touchSessionActivity(), { passive: true });
+    }
   }
   navSessionUI(document.querySelector('nav'), session);
 }

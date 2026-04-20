@@ -211,6 +211,27 @@ await test('parst DAV-XML auch mit anderem Namespace-Prefix', async () => {
   assert(r.files.some(f => f.includes('lgc_2026-03-23.json')), 'Datei mit alternativem Prefix fehlt');
 });
 
+await test('ungültiges XML führt zu hartem Fehler statt stiller Leer-Liste', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(207, '<d:multistatus><d:response>', 'application/xml'));
+  const r = await client.listFiles('/LifeguardClock/');
+  assert(!r.ok, 'Ungültiges XML darf nicht als Erfolg behandelt werden');
+  assert(r.error.toLowerCase().includes('gültiges xml'), `Fehlermeldung passt nicht: "${r.error}"`);
+});
+
+await test('XML ohne href-Einträge wird als ungültige WebDAV-Antwort behandelt', async () => {
+  const xmlOhneHref = `<d:multistatus xmlns:d="DAV:">
+    <d:response>
+      <d:propstat>
+        <d:prop></d:prop>
+      </d:propstat>
+    </d:response>
+  </d:multistatus>`;
+  const client = createWebDavClient(CREDS, mockFetch(207, xmlOhneHref, 'application/xml'));
+  const r = await client.listFiles('/LifeguardClock/');
+  assert(!r.ok, 'Antwort ohne href darf nicht still erfolgreich sein');
+  assert(r.error.length > 0, `Fehlermeldung fehlt: "${r.error}"`);
+});
+
 /* ── Tests: head ───────────────────────────────────────────── */
 
 suite('head');

@@ -120,7 +120,6 @@ export async function ladeBenutzer(client, storage = defaultStorage()) {
   }
 
   const users = remote.data.map(normalizeBenutzer);
-  storage.save(STORAGE_KEY_U, users);
   return { ok: true, users, missing: false, remote };
 }
 
@@ -153,7 +152,6 @@ export async function initialisiereErstenBenutzer({ client, login, name, passwor
   if (!write.ok) {
     return { ok: false, error: write.error || 'Erster Benutzer konnte nicht gespeichert werden.' };
   }
-  storage.save(STORAGE_KEY_U, [user]);
   return { ok: true, user, users: [user] };
 }
 

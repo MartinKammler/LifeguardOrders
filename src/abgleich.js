@@ -67,9 +67,11 @@ export function gleiche_ab(wuensche, positionen) {
 
   // ── Pass 2: Fallback-Match nur nach artikelNr ─────────────────
   // Wird angewendet wenn beide Seiten nach dem exakten Pass dieselbe
-  // Anzahl ungematchter Einträge für eine artikelNr haben (1:1 eindeutig).
-  // Deckt z. B. Varianten-Encoding-Unterschiede zwischen Bestellsystem
-  // und Rechnung ab (»Sailor« 21CM vs. SAILOR - 21 cm).
+  // Anzahl ungematchter Einträge für eine artikelNr haben (1:1 eindeutig)
+  // und sich die Varianten noch sinnvoll als dieselbe Ausprägung erkennen
+  // lassen. Deckt z. B. Varianten-Encoding-Unterschiede zwischen
+  // Bestellsystem und Rechnung ab (»Sailor« 21CM vs. SAILOR - 21 cm),
+  // aber kein beliebiges Umhängen zwischen verschiedenen Größen.
   const offeneWuensche = wuensche.filter(w => !gematchteWKeys.has(`${w.artikelNr}\x00${w.variante}`));
   const offenePos      = artikelPositionen.filter(p => !gematchtePoKeys.has(`${p.artikelNr}\x00${p.variante}`));
 
@@ -90,13 +92,14 @@ export function gleiche_ab(wuensche, positionen) {
   for (const [artNr, ws] of offeneWByNr) {
     const ps = offenePByNr.get(artNr);
     if (!ps || ws.length !== ps.length) continue;
-    // Sortiert nach Variante für deterministisches Pairing
-    ws.sort((a, b) => (a.variante || '').localeCompare(b.variante || '', 'de'));
-    ps.sort((a, b) => (a.variante || '').localeCompare(b.variante || '', 'de'));
-    for (let i = 0; i < ws.length; i++) {
-      fuzzyWKeys.add(`${ws[i].artikelNr}\x00${ws[i].variante}`);
-      fuzzyPKeys.add(`${ps[i].artikelNr}\x00${ps[i].variante}`);
-      verarbeiteMatch(ws[i], ps[i]);
+
+    const fuzzyPaare = ermittleFuzzyPaare(ws, ps);
+    if (!fuzzyPaare) continue;
+
+    for (const { wunsch, position } of fuzzyPaare) {
+      fuzzyWKeys.add(`${wunsch.artikelNr}\x00${wunsch.variante}`);
+      fuzzyPKeys.add(`${position.artikelNr}\x00${position.variante}`);
+      verarbeiteMatch(wunsch, position);
     }
   }
 
@@ -113,6 +116,53 @@ export function gleiche_ab(wuensche, positionen) {
   }
 
   return { gematch, abweichungen, og_kosten };
+}
+
+function ermittleFuzzyPaare(wuensche, positionen) {
+  const paare = [];
+  const belegtePositionen = new Set();
+
+  const sortierteWuensche = [...wuensche].sort((a, b) =>
+    (a.variante || '').localeCompare(b.variante || '', 'de')
+  );
+  const sortiertePositionen = [...positionen].sort((a, b) =>
+    (a.variante || '').localeCompare(b.variante || '', 'de')
+  );
+
+  for (const wunsch of sortierteWuensche) {
+    const kandidaten = sortiertePositionen.filter(position =>
+      !belegtePositionen.has(position) && variantenSindFuzzyKompatibel(wunsch, position)
+    );
+    if (kandidaten.length !== 1) return null;
+    const position = kandidaten[0];
+    belegtePositionen.add(position);
+    paare.push({ wunsch, position });
+  }
+
+  return paare.length === sortiertePositionen.length ? paare : null;
+}
+
+function variantenSindFuzzyKompatibel(wunsch, position) {
+  const wVar = normalizeVarianteFuerVergleich(wunsch?.variante);
+  const pVar = normalizeVarianteFuerVergleich(position?.variante);
+
+  if (!wVar && !pVar) return false;
+  if (wVar && pVar) return wVar === pVar;
+  if (wVar) return textEnthaeltVariante(position, wVar);
+  return textEnthaeltVariante(wunsch, pVar);
+}
+
+function textEnthaeltVariante(eintrag, varianteToken) {
+  const text = normalizeVarianteFuerVergleich(`${eintrag?.variante || ''} ${eintrag?.name || ''}`);
+  return !!varianteToken && !!text && text.includes(varianteToken);
+}
+
+function normalizeVarianteFuerVergleich(text) {
+  return String(text || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '');
 }
 
 export function abweichKey(abweichung) {

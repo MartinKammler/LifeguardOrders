@@ -46,33 +46,37 @@ function liesMeta(resp) {
 
 function parseXml(xmlText) {
   if (typeof DOMParser !== 'undefined') {
-    return new DOMParser().parseFromString(xmlText, 'application/xml');
+    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+    const parserError = doc.getElementsByTagName('parsererror')[0];
+    if (parserError) {
+      throw new Error('Antwort ist kein gültiges XML.');
+    }
+    return doc;
   }
   throw new Error('XML-Parsing wird in dieser Umgebung nicht unterstützt.');
 }
 
 function parseDavHrefDateien(xmlText) {
-  try {
+  if (typeof DOMParser !== 'undefined') {
     const doc = parseXml(xmlText);
-    const parserError = doc.getElementsByTagName('parsererror')[0];
-    if (!parserError) {
-      const hrefNodes = Array.from(doc.getElementsByTagName('*'))
-        .filter(node => String(node.localName || node.nodeName || '').toLowerCase() === 'href');
-      if (hrefNodes.length) {
-        return hrefNodes
-          .map(node => (node.textContent || '').trim())
-          .filter(Boolean)
-          .filter(href => !href.endsWith('/'));
-      }
+    const hrefNodes = Array.from(doc.getElementsByTagName('*'))
+      .filter(node => String(node.localName || node.nodeName || '').toLowerCase() === 'href');
+    if (!hrefNodes.length) {
+      throw new Error('WebDAV-Antwort enthält keine Dateieinträge.');
     }
-  } catch {
-    // Fallback weiter unten.
+    return hrefNodes
+      .map(node => (node.textContent || '').trim())
+      .filter(Boolean)
+      .filter(href => !href.endsWith('/'));
   }
 
-  return [...xmlText.matchAll(/<(?:[\w-]+:)?href>([^<]+)<\/(?:[\w-]+:)?href>/g)]
+  const matches = [...xmlText.matchAll(/<(?:[\w-]+:)?href>([^<]+)<\/(?:[\w-]+:)?href>/g)]
     .map(match => match[1].trim())
-    .filter(Boolean)
-    .filter(href => !href.endsWith('/'));
+    .filter(Boolean);
+  if (!matches.length) {
+    throw new Error('Antwort ist kein gültiges XML.');
+  }
+  return matches.filter(href => !href.endsWith('/'));
 }
 
 /**

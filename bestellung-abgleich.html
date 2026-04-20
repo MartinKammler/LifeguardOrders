@@ -1487,6 +1487,7 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
   }
   const idx = bestellungen.findIndex(b => b.id === bestellung.id);
   if (idx < 0) return;
+  const vorherBestellungen = cloneData(bestellungen);
 
   bestellungen[idx] = {
     ...bestellung,
@@ -1504,6 +1505,9 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     remotePath: NC_PFAD_B,
   });
   if (!gespeichert.ok) {
+    bestellungen = vorherBestellungen;
+    bestellung = bestellungen.find(b => b.id === bestellung.id) || bestellung;
+    aktualisiereStatusAnzeige();
     updateSyncBanner();
     toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'error', 7000);
     return;
