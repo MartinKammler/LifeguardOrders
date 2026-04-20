@@ -44,7 +44,15 @@ function mockFetch(status, body, contentType = 'application/json') {
     status,
     text:   async () => (typeof body === 'string' ? body : JSON.stringify(body)),
     json:   async () => (typeof body === 'string' ? JSON.parse(body) : body),
-    headers: { get: (h) => h === 'content-type' ? contentType : null },
+    headers: {
+      get: (h) => {
+        const key = String(h || '').toLowerCase();
+        if (key === 'content-type') return contentType;
+        if (key === 'etag') return '"etag-1"';
+        if (key === 'last-modified') return 'Sat, 19 Apr 2026 10:00:00 GMT';
+        return null;
+      },
+    },
   });
 }
 
@@ -65,6 +73,12 @@ await test('data enthält geparsten JSON-Inhalt', async () => {
   const client = createWebDavClient(CREDS, mockFetch(200, [1, 2, 3]));
   const r = await client.readJson('/test.json');
   assertEqual(r.data.length, 3);
+});
+
+await test('liefert ETag-Metadaten beim Lesen mit', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(200, { hallo: 'welt' }));
+  const r = await client.readJson('/test.json');
+  assertEqual(r.etag, '"etag-1"');
 });
 
 suite('readJson — Fehler');
@@ -137,6 +151,17 @@ await test('verwendet PUT-Methode', async () => {
   assertEqual(method, 'PUT');
 });
 
+await test('sendet If-Match wenn angegeben', async () => {
+  let capturedIfMatch;
+  const captureFetch = async (url, opts) => {
+    capturedIfMatch = opts.headers['If-Match'];
+    return { ok: true, status: 204, text: async () => '', headers: { get: () => null } };
+  };
+  const client = createWebDavClient(CREDS, captureFetch);
+  await client.writeJson('/test.json', {}, { ifMatch: '"abc"' });
+  assertEqual(capturedIfMatch, '"abc"');
+});
+
 suite('writeJson — Fehler');
 
 await test('503 → { ok: false, error }', async () => {
@@ -157,6 +182,12 @@ const PROPFIND_RESPONSE = `<?xml version="1.0"?>
   <d:response><d:href>/remote.php/dav/files/martin/LifeguardClock/lgc_2026-03-22.json</d:href></d:response>
 </d:multistatus>`;
 
+const PROPFIND_RESPONSE_ALT_PREFIX = `<?xml version="1.0"?>
+<x:multistatus xmlns:x="DAV:">
+  <x:response><x:href>/remote.php/dav/files/martin/LifeguardClock/</x:href></x:response>
+  <x:response><x:href>/remote.php/dav/files/martin/LifeguardClock/lgc_2026-03-23.json</x:href></x:response>
+</x:multistatus>`;
+
 await test('liefert Dateinamen ohne Verzeichnis-Eintrag', async () => {
   const client = createWebDavClient(CREDS, mockFetch(207, PROPFIND_RESPONSE, 'application/xml'));
   const r = await client.listFiles('/LifeguardClock/');
@@ -171,6 +202,30 @@ await test('Verzeichnis-Eintrag selbst ist nicht in files[]', async () => {
   const r = await client.listFiles('/LifeguardClock/');
   const nurVerzeichnis = r.files.filter(f => f.endsWith('/'));
   assertEqual(nurVerzeichnis.length, 0, 'keine Verzeichnis-Einträge in files[]');
+});
+
+await test('parst DAV-XML auch mit anderem Namespace-Prefix', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(207, PROPFIND_RESPONSE_ALT_PREFIX, 'application/xml'));
+  const r = await client.listFiles('/LifeguardClock/');
+  assert(r.ok, 'XML mit anderem Prefix muss parsebar bleiben');
+  assert(r.files.some(f => f.includes('lgc_2026-03-23.json')), 'Datei mit alternativem Prefix fehlt');
+});
+
+/* ── Tests: head ───────────────────────────────────────────── */
+
+suite('head');
+
+await test('liefert Metadaten für vorhandene Dateien', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(200, ''));
+  const r = await client.head('/test.json');
+  assert(r.ok, 'HEAD muss ok sein');
+  assertEqual(r.etag, '"etag-1"');
+});
+
+await test('meldet 404 als missing', async () => {
+  const client = createWebDavClient(CREDS, mockFetch(404, ''));
+  const r = await client.head('/test.json');
+  assertEqual(r.missing, true);
 });
 
 suite('listFiles — Fehler');

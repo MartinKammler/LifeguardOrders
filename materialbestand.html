@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Materialbestand – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .stat-grid {
       display: grid;
@@ -155,6 +156,7 @@
   <div class="hinweis hinweis-info">
     Bestandsposten können manuell gepflegt werden. Lagerbestand aus abgeschlossenen Bestellungen wird automatisch über Nummer, Variante und Bezeichnung zusammengeführt. Weitere Zu- und Abgänge werden als Bewegungen protokolliert. Verkäufe aus dem Lager erzeugen direkt eine Rechnung.
   </div>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
 
   <div class="stat-grid">
     <div class="stat-card">

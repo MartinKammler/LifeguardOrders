@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Rechnungen – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .betrag-offen   { color: var(--amber); font-weight: 600; }
     .betrag-bezahlt { color: var(--green); }
@@ -46,6 +47,7 @@
 
 <div class="container">
   <h1>Rechnungen</h1>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
 
   <!-- Statistik -->
   <div class="stat-grid" id="stat-grid">
@@ -107,7 +109,12 @@ import { createWebDavClient } from './src/webdav.js';
 import { druckePDF }           from './src/pdf.js';
 import { html, raw, setHTML }  from './src/dom.js';
 import { EXTERN_ID, OG_ID }    from './src/konstanten.js';
+import { auditAktion }         from './src/audit.js';
+import { getSession }          from './src/session.js';
+import { renderSyncBanner, toast, confirmDialog } from './src/ui-feedback.js';
 import {
+  getScopeSyncStatus,
+  getSyncState,
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
@@ -126,8 +133,23 @@ let mitglieder    = [];
 let client        = null;
 
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 function eur(v) {
   return Number(v || 0).toFixed(2).replace('.', ',') + ' €';
+}
+
+function updateSyncBanner() {
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status: getScopeSyncStatus(getSyncState(), SYNC_SCOPE_B),
+    label: 'Bestellungen',
+    onReload: () => window.location.reload(),
+    exportData: () => bestellungen,
+    exportFilename: 'rechnungen-konfliktkopie.json',
+  });
 }
 
 function mitgliedName(id) {
@@ -230,7 +252,7 @@ function renderTabelle() {
       const rechnung = findeRechnung(btn.dataset.pdf, btn.dataset.bestell);
       if (rechnung) {
         druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen)
-          .catch(error => alert(error.message || 'PDF konnte nicht erzeugt werden.'));
+          .catch(error => toast(error.message || 'PDF konnte nicht erzeugt werden.', 'error'));
       }
     });
   });
@@ -238,14 +260,16 @@ function renderTabelle() {
   // Als bezahlt markieren
   tbody.querySelectorAll('[data-bezahlt]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await setzeZahlungsstatus(btn.dataset.bezahlt, btn.dataset.bestell, true);
+      const ok = await confirmDialog({ title: 'Rechnung als bezahlt markieren?', confirmText: 'Als bezahlt', confirmTone: 'success' });
+      if (ok) await setzeZahlungsstatus(btn.dataset.bezahlt, btn.dataset.bestell, true);
     });
   });
 
   // Bezahlt rückgängig
   tbody.querySelectorAll('[data-unbezahlt]').forEach(btn => {
     btn.addEventListener('click', async () => {
-      await setzeZahlungsstatus(btn.dataset.unbezahlt, btn.dataset.bestell, false);
+      const ok = await confirmDialog({ title: 'Zahlung zurücksetzen?', body: 'Die Rechnung wird wieder auf "Offen" gesetzt.', confirmText: 'Zurücksetzen', confirmTone: 'primary' });
+      if (ok) await setzeZahlungsstatus(btn.dataset.unbezahlt, btn.dataset.bestell, false);
     });
   });
 }
@@ -264,10 +288,39 @@ async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
   const rIdx = (bestellungen[bIdx].rechnungen || []).findIndex(r => r.id === rechnungId);
   if (rIdx < 0) return;
 
+  const rechnungVorher = cloneData(bestellungen[bIdx].rechnungen[rIdx]);
+  const bezahltDatum = bezahlt ? new Date().toISOString().slice(0, 10) : null;
+
+  // Audit zuerst schreiben – Fehler blockiert die Buchung
+  const audit = await auditAktion({
+    client,
+    user: getSession(),
+    action: bezahlt ? 'ZAHLUNG_GESETZT' : 'ZAHLUNG_ZURUECKGESETZT',
+    scope: 'rechnungen',
+    entityId: rechnungVorher.id,
+    summary: `${rechnungVorher.nummer} wurde ${bezahlt ? 'als bezahlt markiert' : 'wieder auf offen gesetzt'}`,
+    changes: {
+      bestellungId,
+      rechnungId,
+      nummer: rechnungVorher.nummer,
+      bezahlt,
+      vorherBezahlt: !!rechnungVorher.bezahlt,
+      vorherBezahltDatum: rechnungVorher.bezahltDatum || null,
+      bezahltDatum,
+      gesamtbetrag: rechnungVorher.gesamtbetrag || 0,
+      mitgliedId: rechnungVorher.mitgliedId,
+    },
+  });
+  if (!audit.ok) {
+    toast(`Aktion abgebrochen: Audit-Log konnte nicht geschrieben werden.\n${audit.remote?.error || 'Unbekannter Fehler.'}`, 'error', 9000);
+    return;
+  }
+
+  const vorher = cloneData(bestellungen);
   bestellungen[bIdx].rechnungen[rIdx] = {
     ...bestellungen[bIdx].rechnungen[rIdx],
     bezahlt,
-    bezahltDatum: bezahlt ? new Date().toISOString().slice(0, 10) : null,
+    bezahltDatum,
   };
 
   const gespeichert = await persistJsonWithSync({
@@ -277,10 +330,14 @@ async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
     client,
     remotePath: NC_PFAD_B,
   });
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  if (!gespeichert.ok) {
+    bestellungen = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'error', 7000);
+    renderTabelle();
+    return;
   }
-
+  updateSyncBanner();
   renderTabelle();
 }
 
@@ -312,6 +369,7 @@ async function init() {
 
   befuelleFilterBestellung(alleRechnungen());
   renderTabelle();
+  updateSyncBanner();
 
   document.getElementById('filter-bestellung').addEventListener('change', renderTabelle);
   document.getElementById('filter-status').addEventListener('change', renderTabelle);

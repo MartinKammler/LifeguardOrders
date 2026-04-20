@@ -4,16 +4,18 @@
  * Alle anderen Module sprechen ausschließlich über dieses Modul mit der Nextcloud.
  *
  * Öffentliche API (via createWebDavClient):
- *   readJson(path)        → { ok, data, error }
- *   writeJson(path, data) → { ok, error }
- *   listFiles(path)       → { ok, files[], error }
- *   testConnection()      → { ok, error }
+ *   readJson(path)                    → { ok, data, etag?, lastModified?, error }
+ *   head(path)                        → { ok, etag?, lastModified?, missing?, error }
+ *   writeJson(path, data, opts?)      → { ok, etag?, lastModified?, conflict?, error }
+ *   listFiles(path)                   → { ok, files[], error }
+ *   testConnection()                  → { ok, error }
  */
 
 const FEHLERTEXTE = {
   401: 'Authentifizierung fehlgeschlagen — Benutzername oder Passwort prüfen.',
   403: 'Zugriff verweigert.',
   404: 'Datei nicht gefunden.',
+  412: 'Datei wurde zwischenzeitlich geändert.',
   503: 'Nextcloud nicht erreichbar — Server antwortet nicht.',
 };
 
@@ -33,6 +35,44 @@ function davUrl(baseUrl, user, path) {
   const base = baseUrl.replace(/\/$/, '');
   const p    = path.startsWith('/') ? path : '/' + path;
   return `${base}/remote.php/dav/files/${user}${p}`;
+}
+
+function liesMeta(resp) {
+  return {
+    etag: resp?.headers?.get?.('etag') || '',
+    lastModified: resp?.headers?.get?.('last-modified') || '',
+  };
+}
+
+function parseXml(xmlText) {
+  if (typeof DOMParser !== 'undefined') {
+    return new DOMParser().parseFromString(xmlText, 'application/xml');
+  }
+  throw new Error('XML-Parsing wird in dieser Umgebung nicht unterstützt.');
+}
+
+function parseDavHrefDateien(xmlText) {
+  try {
+    const doc = parseXml(xmlText);
+    const parserError = doc.getElementsByTagName('parsererror')[0];
+    if (!parserError) {
+      const hrefNodes = Array.from(doc.getElementsByTagName('*'))
+        .filter(node => String(node.localName || node.nodeName || '').toLowerCase() === 'href');
+      if (hrefNodes.length) {
+        return hrefNodes
+          .map(node => (node.textContent || '').trim())
+          .filter(Boolean)
+          .filter(href => !href.endsWith('/'));
+      }
+    }
+  } catch {
+    // Fallback weiter unten.
+  }
+
+  return [...xmlText.matchAll(/<(?:[\w-]+:)?href>([^<]+)<\/(?:[\w-]+:)?href>/g)]
+    .map(match => match[1].trim())
+    .filter(Boolean)
+    .filter(href => !href.endsWith('/'));
 }
 
 /**
@@ -66,19 +106,32 @@ export function createWebDavClient(creds, fetchFn = globalThis.fetch) {
     if (!resp.ok) return { ok: false, error: fehlerText(resp.status) };
     try {
       const text = await resp.text();
-      return { ok: true, data: JSON.parse(text) };
+      return { ok: true, data: JSON.parse(text), ...liesMeta(resp) };
     } catch {
       return { ok: false, error: 'Antwort ist kein gültiges JSON.' };
     }
   }
 
-  async function writeJson(path, data) {
-    const resp = await request('PUT', path, JSON.stringify(data), {
-      'Content-Type': 'application/json',
-    });
+  async function head(path) {
+    const resp = await request('HEAD', path);
     if (!resp) return { ok: false, error: 'Nextcloud nicht erreichbar.' };
+    if (resp.status === 404) return { ok: false, missing: true, error: fehlerText(resp.status) };
     if (!resp.ok) return { ok: false, error: fehlerText(resp.status) };
-    return { ok: true };
+    return { ok: true, ...liesMeta(resp) };
+  }
+
+  async function writeJson(path, data, opts = {}) {
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    if (opts.ifMatch != null) headers['If-Match'] = opts.ifMatch;
+    if (opts.ifNoneMatch != null) headers['If-None-Match'] = opts.ifNoneMatch;
+
+    const resp = await request('PUT', path, JSON.stringify(data), headers);
+    if (!resp) return { ok: false, error: 'Nextcloud nicht erreichbar.' };
+    if (resp.status === 412) return { ok: false, conflict: true, error: fehlerText(resp.status) };
+    if (!resp.ok) return { ok: false, error: fehlerText(resp.status) };
+    return { ok: true, ...liesMeta(resp) };
   }
 
   async function listFiles(path) {
@@ -86,12 +139,12 @@ export function createWebDavClient(creds, fetchFn = globalThis.fetch) {
     if (!resp) return { ok: false, error: 'Nextcloud nicht erreichbar.', files: [] };
     if (!resp.ok) return { ok: false, error: fehlerText(resp.status), files: [] };
 
-    const xml   = await resp.text();
-    const hrefs = [...xml.matchAll(/<d:href>([^<]+)<\/d:href>/g)]
-      .map(m => m[1].trim())
-      .filter(href => !href.endsWith('/'));  // Verzeichnis-Eintrag entfernen
-
-    return { ok: true, files: hrefs };
+    try {
+      const xml = await resp.text();
+      return { ok: true, files: parseDavHrefDateien(xml) };
+    } catch (error) {
+      return { ok: false, error: error.message || 'Antwort ist kein gültiges XML.', files: [] };
+    }
   }
 
   async function testConnection() {
@@ -101,5 +154,5 @@ export function createWebDavClient(creds, fetchFn = globalThis.fetch) {
     return { ok: true };
   }
 
-  return { readJson, writeJson, listFiles, testConnection };
+  return { readJson, head, writeJson, listFiles, testConnection };
 }

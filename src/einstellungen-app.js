@@ -7,7 +7,10 @@ import { createWebDavClient }                        from './webdav.js';
 import { parseMitglieder }                           from './mitglieder.js';
 import { downloadAlsJson } from './defaults.js';
 import { load, save }                                from './storage.js';
+import { renderSyncBanner, toast }                   from './ui-feedback.js';
 import {
+  getScopeSyncStatus,
+  getSyncState,
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
@@ -46,6 +49,8 @@ const DEFAULTS = {
   mitglieder: [],
 };
 
+let importierteMitglieder = null;
+
 /* ── Hilfsfunktionen ────────────────────────────────────────── */
 
 function zeigeStatus(elId, text, art = 'info') {
@@ -65,6 +70,17 @@ function ladeClient(einstellungen) {
   const nc = einstellungen.nc || {};
   if (!nc.url || !nc.user) return null;
   return createWebDavClient(nc);
+}
+
+function updateSyncBanner(exportData = null) {
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status: getScopeSyncStatus(getSyncState(), SYNC_SCOPE_E),
+    label: 'Einstellungen',
+    onReload: () => window.location.reload(),
+    exportData,
+    exportFilename: 'einstellungen-konfliktkopie.json',
+  });
 }
 
 /* ── Einstellungen lesen / schreiben ────────────────────────── */
@@ -106,6 +122,7 @@ function formularFuellen(e) {
   document.getElementById('einsatztypen').value =
     (e.einsatztypen || DEFAULTS.einsatztypen).join(', ');
 
+  importierteMitglieder = e.mitglieder || [];
   if (e.mitglieder?.length) zeigeNcMitglieder(e.mitglieder);
 }
 
@@ -178,8 +195,10 @@ document.getElementById('btn-test').addEventListener('click', async () => {
   const r = await client.testConnection();
   if (r.ok) {
     zeigeStatus('verbindung-status', '✓ Verbindung OK', 'ok');
+    toast('Nextcloud-Verbindung erfolgreich getestet.', 'success');
   } else {
     zeigeStatus('verbindung-status', '✗ ' + r.error, 'error');
+    toast(`Nextcloud-Verbindung fehlgeschlagen: ${r.error}`, 'error', 7000);
   }
 });
 
@@ -187,29 +206,33 @@ document.getElementById('btn-mitglieder-import').addEventListener('click', () =>
   const text = document.getElementById('mitglieder-input').value;
   if (!text.trim()) {
     zeigeStatus('mitglieder-status', 'Kein Text eingegeben', 'warn');
+    toast('Kein Mitglieder-Text eingegeben.', 'warn');
     return;
   }
   const { mitglieder, fehler } = parseMitglieder(text);
   if (!mitglieder.length) {
     zeigeStatus('mitglieder-status', 'Keine Mitglieder erkannt', 'error');
+    toast('Keine Mitglieder erkannt.', 'error');
     return;
   }
 
-  // In aktuelle Einstellungen einmergen
-  const lokal = leseLokal() || { ...DEFAULTS };
-  lokal.mitglieder = mitglieder;
-  schreibeLokal(lokal);
+  importierteMitglieder = mitglieder;
 
   zeigeNcMitglieder(mitglieder);
   zeigeStatus('mitglieder-status',
-    `✓ ${mitglieder.length} Mitglieder gespeichert${fehler.length ? ` (${fehler.length} Zeilen ignoriert)` : ''} – kein weiteres Speichern nötig`,
+    `✓ ${mitglieder.length} Mitglieder übernommen${fehler.length ? ` (${fehler.length} Zeilen ignoriert)` : ''} – bitte noch speichern`,
     fehler.length ? 'warn' : 'ok');
+  toast(
+    `${mitglieder.length} Mitglieder übernommen${fehler.length ? `, ${fehler.length} Zeilen ignoriert` : ''}.`,
+    fehler.length ? 'warn' : 'success',
+    5000
+  );
 });
 
 document.getElementById('btn-speichern').addEventListener('click', async () => {
   const daten  = formularLesen();
   const lokal  = leseLokal() || {};
-  const gesamt = { ...lokal, ...daten, mitglieder: lokal.mitglieder || [] };
+  const gesamt = { ...lokal, ...daten, mitglieder: importierteMitglieder || lokal.mitglieder || [] };
 
   // Passwort nicht persistent speichern
   const pass = gesamt.nc?.pass || '';
@@ -228,12 +251,18 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     client,
     remotePath: NC_PFAD,
   });
-  if (gespeichert.sync?.pending) {
-    zeigeStatus('speichern-status', syncHinweisText(gespeichert.sync, 'Einstellungen'), 'warn');
+  if (!gespeichert.ok) {
+    zeigeStatus('speichern-status', syncHinweisText(gespeichert.sync, 'Einstellungen'), 'error');
+    updateSyncBanner(() => gesamtOhnePass);
+    toast(syncHinweisText(gespeichert.sync, 'Einstellungen'), 'error', 7000);
   } else if (gespeichert.remote?.skipped) {
     zeigeStatus('speichern-status', '✓ Lokal gespeichert', 'ok');
+    updateSyncBanner();
+    toast('Einstellungen lokal gespeichert.', 'success');
   } else {
     zeigeStatus('speichern-status', '✓ Gespeichert', 'ok');
+    updateSyncBanner();
+    toast('Einstellungen gespeichert.', 'success');
   }
 });
 
@@ -241,8 +270,9 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
 
 document.getElementById('btn-download-einstellungen')?.addEventListener('click', () => {
   const lokal = leseLokal();
-  if (!lokal) { alert('Keine Einstellungen zum Exportieren.'); return; }
+  if (!lokal) { toast('Keine Einstellungen zum Exportieren.', 'warn'); return; }
   downloadAlsJson(lokal, 'einstellungen.json');
+  toast('Einstellungen exportiert.', 'info');
 });
 
 /* ── Init ───────────────────────────────────────────────────── */
@@ -285,6 +315,7 @@ async function init() {
     // Keine Daten nirgends — Defaults aus Code laden
     formularFuellen(DEFAULTS);
   }
+  updateSyncBanner();
 }
 
 init();

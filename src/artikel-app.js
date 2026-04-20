@@ -8,6 +8,7 @@ import { parseBestellung }                     from './parser.js';
 import { ladeDefaultArtikel, downloadAlsJson } from './defaults.js';
 import { load, save }                          from './storage.js';
 import { html, raw, setHTML }                  from './dom.js';
+import { confirmDialog, renderSyncBanner, toast } from './ui-feedback.js';
 import { validateArtikel }                     from './validation.js';
 import {
   fuegeArtikelHinzu,
@@ -15,6 +16,8 @@ import {
   aktualisiereArtikel,
 } from './artikel-katalog.js';
 import {
+  getScopeSyncStatus,
+  getSyncState,
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
@@ -40,6 +43,10 @@ function uuid() {
   return crypto.randomUUID();
 }
 
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 function leseEinstellungen() { return load(STORAGE_KEY_E); }
 
 function zeigeStatus(elId, text, art = 'info') {
@@ -49,6 +56,17 @@ function zeigeStatus(elId, text, art = 'info') {
                     info: 'badge badge-blue', warn: 'badge badge-amber' };
   el.className = klassen[art] || klassen.info;
   el.textContent = text;
+}
+
+function updateSyncBanner() {
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status: getScopeSyncStatus(getSyncState(), SYNC_SCOPE_A),
+    label: 'Artikelkatalog',
+    onReload: () => window.location.reload(),
+    exportData: () => artikel,
+    exportFilename: 'artikel-konfliktkopie.json',
+  });
 }
 
 /* ── Persistenz ─────────────────────────────────────────────── */
@@ -77,6 +95,7 @@ async function ladeArtikel() {
       artikel = geladen.data;
     }
   }
+  updateSyncBanner();
   renderKatalog();
 }
 
@@ -206,10 +225,25 @@ window.oeffneModal = function(id) {
 };
 
 window.loescheArtikelUI = async function(id) {
-  if (!confirm('Artikel wirklich löschen?')) return;
+  const bestaetigt = await confirmDialog({
+    title: 'Artikel löschen?',
+    body: 'Der Artikel wird aus dem Katalog entfernt.',
+    confirmText: 'Löschen',
+    confirmTone: 'danger',
+  });
+  if (!bestaetigt) return;
+  const vorher = cloneData(artikel);
   artikel = loescheArtikel(artikel, id);
-  await speichereArtikel();
+  const gespeichert = await speichereArtikel();
+  if (!gespeichert.ok) {
+    artikel = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Artikelkatalog'), 'error', 7000);
+    return;
+  }
+  updateSyncBanner();
   renderKatalog();
+  toast('Artikel gelöscht.', 'success');
 };
 
 document.getElementById('modal-abbrechen').addEventListener('click', () => {
@@ -237,20 +271,26 @@ document.getElementById('modal-speichern').addEventListener('click', async () =>
 
   const validierung = validateArtikel(geaendert);
   if (!validierung.ok) {
-    alert(validierung.fehler);
+    toast(validierung.fehler, 'error');
     return;
   }
 
+  const vorher = cloneData(artikel);
   artikel = id
     ? aktualisiereArtikel(artikel, geaendert)
     : [...artikel, geaendert];
 
   const gespeichert = await speichereArtikel();
+  if (!gespeichert.ok) {
+    artikel = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Artikelkatalog'), 'error', 7000);
+    return;
+  }
+  updateSyncBanner();
   renderKatalog();
   document.getElementById('modal-backdrop').classList.remove('open');
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Artikelkatalog'));
-  }
+  toast(id ? 'Artikel aktualisiert.' : 'Artikel angelegt.', 'success');
 });
 
 /* ── Import ─────────────────────────────────────────────────── */
@@ -288,8 +328,16 @@ document.getElementById('btn-parsen').addEventListener('click', () => {
 
 document.getElementById('btn-uebernehmen').addEventListener('click', async () => {
   const { katalog: neu, hinzugefuegt, aktualisiert, duplikate, ungueltig } = fuegeArtikelHinzu(artikel, importiert);
+  const vorher = cloneData(artikel);
   artikel = neu;
   const gespeichert = await speichereArtikel();
+  if (!gespeichert.ok) {
+    artikel = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Artikelkatalog'), 'error', 7000);
+    return;
+  }
+  updateSyncBanner();
   renderKatalog();
 
   document.getElementById('import-bereich').classList.remove('open');
@@ -310,10 +358,7 @@ document.getElementById('btn-uebernehmen').addEventListener('click', async () =>
   if (ungueltig.length) {
     meldungen.push(`${ungueltig.length} ungültige Artikel verworfen.`);
   }
-  if (gespeichert.sync?.pending) {
-    meldungen.push(syncHinweisText(gespeichert.sync, 'Artikelkatalog'));
-  }
-  if (meldungen.length) alert(meldungen.join('\n\n'));
+  if (meldungen.length) toast(meldungen.join('\n'), 'info', 9000);
 });
 
 document.getElementById('btn-neu').addEventListener('click', () => oeffneModal(null));
@@ -321,7 +366,7 @@ document.getElementById('btn-neu').addEventListener('click', () => oeffneModal(n
 /* ── Init ───────────────────────────────────────────────────── */
 
 document.getElementById('btn-download-artikel')?.addEventListener('click', () => {
-  if (!artikel.length) { alert('Kein Katalog zum Exportieren.'); return; }
+  if (!artikel.length) { toast('Kein Katalog zum Exportieren.', 'warn'); return; }
   downloadAlsJson(artikel, 'artikel.json');
 });
 

@@ -302,6 +302,16 @@ mitglieder[]   — [{ id, name }] — importiert aus Stempeluhr config.js
 nc{}           — { url, user } — pass wird nur in sessionStorage gehalten, nie gespeichert
 ```
 
+**`benutzer.json`** *(geplante Mehrnutzer-Vorbereitung)*:
+```
+id             string
+name           string
+rolle          enum     — "admin" | "kassenwart" | "verwaltung" | "lesen"
+aktiv          boolean
+salt           string
+passwordHash   string
+```
+
 **Virtuelle Mitglieder (konstanten.js):**
 ```
 EXTERN_ID = '__EXTERN__'   — externe Käufer; keine OG-Stundenpflicht in PDF/Dashboard
@@ -446,9 +456,13 @@ Alle Seitenmodule verwenden ausschließlich:
 
 ### Sync-Architektur (sync.js)
 
-- `persistJsonWithSync` — schreibt lokal + versucht NC-Upload; bei Fehler → `pending`
-- `hydrateJsonFromSync` — liest NC beim Start; lokale Daten verlieren nie gegen leeres NC
-- `pendingSyncScopes` — persistente Liste aller ausstehenden Scopes (wird auf Startseite angezeigt)
+- Fachliche Daten arbeiten künftig **remote-first**: Schreiben nur wenn Nextcloud erreichbar ist
+- Kein stilles `pending`-Weiterschreiben mehr für Bestellungen, Artikel, Materialbestand, Einstellungen
+- Vor jedem Upload wird der aktuelle Remote-Stand geprüft (`ETag` / Remote-Version)
+- Bei Remote-Abweichung: **harte Konfliktsperre**, kein automatisches Überschreiben
+- Offline oder ohne Remote-Verbindung: App bleibt lesbar, aber fachliche Schreibvorgänge sind gesperrt
+- Pro Scope speichert `sync.js` zusätzlich Remote-Metadaten und Konfliktstatus
+- Konflikt-UX bietet zunächst nur: `Remote neu laden`, `lokale Kopie exportieren`, `Konflikt später lösen`
 - NC-Passwort wird nur in `sessionStorage` gehalten, nie in `localStorage` gespeichert
 
 ### Sicherheit
@@ -456,6 +470,9 @@ Alle Seitenmodule verwenden ausschließlich:
 - Keine CDN-Abhängigkeiten: `pdf-lib` und alle anderen Bibliotheken liegen lokal in `lib/`
 - `einstellungen.json` wird nicht als Default vom Webserver geladen (würde Zugangsdaten exponieren)
 - NC-Credentials-Validierung: `client` ist nur dann ungleich `null`, wenn URL + User + Pass vollständig
+- App-Login wird vorbereitet, ist im Frontend-Only-Betrieb aber **keine harte Sicherheitsgrenze** gegen technisch versierte lokale Nutzer
+- Vereinsdaten im Browser-Cache gelten weiterhin als Geräte-Risiko und sind nur auf freigegebenen Geräten akzeptabel
+- Audit-Log wird künftig append-only auf Nextcloud geführt; lokale Kopie ist nur Cache/Fallback
 
 ---
 
@@ -473,6 +490,9 @@ Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Re
 6. **Kassenwart-Snapshots** — gespeicherte Förderwerte vor Live-Katalog
 7. **Rechnungsnummerierung** — Monatsreset, fortlaufend
 8. **Materialbestand** — Normalisierung, Statuswechsel und Bestands-Summen
+9. **Remote-Konflikte** — ETag-/Versionsprüfung, harte Sperre statt stilles Überschreiben
+10. **WebDAV-Robustheit** — XML-Parsing ohne Regex, auch bei anderen Namespaces/PREFIXEN
+11. **Login & Rollen** — Session-Guard, Rollenauflösung und Audit-Zuordnung
 
 ---
 
@@ -482,9 +502,9 @@ Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Re
 - Direktanbindung DLRG-Bundesshop / Materialstelle API
 - DATEV- oder Buchhaltungsexport
 - E-Mail-Versand von Rechnungen *(geplante spätere Erweiterung)*
-- Multi-User-Login / Rollenverwaltung *(geplante spätere Erweiterung)*
 - Native Mobile App
 - Automatischer Kontoabgleich
+- Serverseitige Autorisierung / eigenes Backend für harte Zugriffskontrolle *(weiterhin spätere Erweiterung)*
 
 ---
 
@@ -496,6 +516,12 @@ Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Re
 - **Stempeluhr-Referenz:** `C:\GitHub\Stempeluhr\stempeluhr\` — Code-Stil und WebDAV-Pattern.
 - **Parser-Robustheit:** Format der Materialstelle-Seite kann variieren — Parser wird
   laufend mit neuen Beispielen trainiert.
-- **NC-Sync-Strategie:** localStorage ist primärer Cache. NC wird beim Laden gelesen
-  (nur wenn nicht leer) und beim Speichern geschrieben. Lokale Daten verlieren nie gegen
-  ein leeres NC-Ergebnis.
+- **NC-Sync-Strategie:** Nextcloud ist künftig die maßgebliche Schreibquelle.
+  Lokaler Cache dient dem schnelleren Laden und als lesbarer Fallback, aber nicht mehr
+  als stiller Offline-Schreibpuffer für fachliche Daten.
+- **Konfliktstrategie:** Bei Remote-Änderungen zwischen Lesen und Schreiben wird nicht
+  automatisch gemerged, sondern hart gesperrt und dem Nutzer eine Konfliktentscheidung
+  aufgezwungen.
+- **Login-Vorbereitung:** Mehrnutzerbetrieb wird zunächst als App-Login mit Session-Guard
+  vorbereitet; echte technische Zugriffskontrolle erfordert später ein Backend oder eine
+  Desktop-App mit sicherem Credential-Store.

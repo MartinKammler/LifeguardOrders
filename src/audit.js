@@ -5,10 +5,35 @@
  * Öffentliche API:
  *   logAktion(action, user, changes) → AuditEintrag
  *   ladeLog()                        → AuditEintrag[]
+ *   schreibeAuditEintragRemote(opts) → { ok, entry?, error? }
+ *   auditAktion(opts)                → { ok, entry, remote }
  *   istRechnungUnveraendert(a, b)    → boolean
  */
 
 const AUDIT_KEY = 'lo_audit_log';
+export const NC_PFAD_AUDIT = '/LifeguardOrders/audit.log.json';
+const MAX_LOCAL_AUDIT_EINTRAEGE = 500;
+
+function randomId() {
+  return typeof crypto?.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `audit_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+}
+
+function defaultStorage() {
+  return {
+    load: key => {
+      try {
+        return JSON.parse(localStorage.getItem(key) || 'null');
+      } catch {
+        return null;
+      }
+    },
+    save: (key, value) => {
+      localStorage.setItem(key, JSON.stringify(value));
+    },
+  };
+}
 
 /**
  * Schreibt einen Audit-Eintrag in localStorage.
@@ -17,18 +42,21 @@ const AUDIT_KEY = 'lo_audit_log';
  * @param {object} changes   Freitextdaten zur Aktion
  * @returns {object}         Der gespeicherte Eintrag
  */
-export function logAktion(action, user, changes = {}) {
+export function logAktion(action, user, changes = {}, meta = {}) {
   const eintrag = {
+    id: randomId(),
     action,
     user,
     timestamp: new Date().toISOString(),
     changes,
+    scope: meta.scope || '',
+    entityId: meta.entityId || '',
+    summary: meta.summary || '',
   };
   try {
     const log = ladeLog();
     log.push(eintrag);
-    // Maximal 500 Einträge behalten (FIFO)
-    if (log.length > 500) log.splice(0, log.length - 500);
+    if (log.length > MAX_LOCAL_AUDIT_EINTRAEGE) log.splice(0, log.length - MAX_LOCAL_AUDIT_EINTRAEGE);
     localStorage.setItem(AUDIT_KEY, JSON.stringify(log));
   } catch {
     // Logging darf niemals die App blockieren
@@ -46,6 +74,75 @@ export function ladeLog() {
   } catch {
     return [];
   }
+}
+
+export async function schreibeAuditEintragRemote({
+  client,
+  entry,
+  remotePath = NC_PFAD_AUDIT,
+  storage = defaultStorage(),
+}) {
+  if (!client) {
+    return { ok: false, error: 'Nextcloud nicht konfiguriert.' };
+  }
+
+  const meta = await client.head(remotePath);
+  let log = [];
+  let writeOptions = {};
+
+  if (!meta.ok) {
+    if (!meta.missing) {
+      return { ok: false, error: meta.error || 'Audit-Log konnte nicht geprüft werden.' };
+    }
+    writeOptions = { ifNoneMatch: '*' };
+  } else {
+    const remote = await client.readJson(remotePath);
+    if (!remote.ok) {
+      return { ok: false, error: remote.error || 'Audit-Log konnte nicht geladen werden.' };
+    }
+    if (!Array.isArray(remote.data)) {
+      return { ok: false, error: 'Audit-Log ist ungültig.' };
+    }
+    log = remote.data;
+    if (meta.etag) {
+      writeOptions = { ifMatch: meta.etag };
+    }
+  }
+
+  const nextLog = [...log, entry];
+  const write = await client.writeJson(remotePath, nextLog, writeOptions);
+  if (!write.ok) {
+    return { ok: false, error: write.error || 'Audit-Log konnte nicht geschrieben werden.' };
+  }
+
+  try {
+    storage.save(AUDIT_KEY, nextLog.slice(-MAX_LOCAL_AUDIT_EINTRAEGE));
+  } catch {
+    // Cache darf das Remote-Logging nicht blockieren.
+  }
+  return { ok: true, entry };
+}
+
+export async function auditAktion({
+  client,
+  user,
+  action,
+  changes = {},
+  scope = '',
+  entityId = '',
+  summary = '',
+  storage = defaultStorage(),
+  remotePath = NC_PFAD_AUDIT,
+}) {
+  const userId = typeof user === 'string' ? user : user?.id || '';
+  const entry = logAktion(action, userId, changes, { scope, entityId, summary });
+  const remote = await schreibeAuditEintragRemote({
+    client,
+    entry,
+    storage,
+    remotePath,
+  });
+  return { ok: remote.ok, entry, remote };
 }
 
 /**

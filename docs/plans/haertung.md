@@ -9,6 +9,22 @@ Fokus: Sicherheit · Datenintegrität · Wartbarkeit · klare Architektur
 
 ---
 
+## Revision 2026-04-19 — Remote-First, Konflikte, Login
+
+Die ursprüngliche Pending-Sync-Richtung reicht für den gewünschten Betrieb nicht mehr aus.
+Ab jetzt gelten diese Produktentscheidungen:
+
+- Fachliche Schreibvorgänge nur bei erreichbarer Nextcloud
+- Vor jedem Upload Remote-Prüfung (`ETag` / Version)
+- Bei Remote-Abweichung: harte Konfliktsperre statt stilles Überschreiben
+- App-Login als Vorbereitung auf Mehrnutzerbetrieb
+- Audit-Log append-only auf Remote; lokale Kopie nur Cache
+
+Die folgenden Sprintblöcke ersetzen damit die frühere Annahme `local_only | synced | pending`
+als Standard-Schreibpfad für fachliche Daten.
+
+---
+
 ## Sprint 6 — Sicherheits- & Datenfundament
 
 **Priorität: kritisch**
@@ -118,13 +134,15 @@ src/
 
 ---
 
-### 9. Sync-Strategie definieren (Nextcloud)
+### 9. Sync-Strategie auf Remote-First umstellen (Nextcloud)
 
-**Problem:** Inkonsistente Zustände möglich
+**Problem:** Inkonsistente Zustände und stille Überschreibungen
 
-- [ ] Zustände definieren: `local_only` | `synced` | `pending`
-- [ ] Retry-Mechanismus
-- [ ] Sync-Status im UI anzeigen
+- [ ] `src/webdav.js` um `ETag`/Remote-Metadaten erweitern
+- [ ] `src/sync.js` auf Zustände umstellen: `synced` | `conflict` | `offline-readonly` | `auth-required`
+- [ ] Vor jedem Upload Remote-Version prüfen
+- [ ] Schreiben bei Konflikt oder Remote-Ausfall sperren
+- [ ] Startseite und Fachseiten zeigen Konflikt-/Remote-Status sichtbar an
 
 ---
 
@@ -143,32 +161,38 @@ src/
 
 **Priorität: mittel**
 
-### 11. Rechnungen auditierbar machen
+### 11. Rechnungen und Änderungen remote auditierbar machen
 
 - [ ] Snapshot speichern (keine nachträgliche Änderung der Positionsdaten)
 - [ ] Eindeutige Rechnungsnummer sicherstellen (Race-Condition-Schutz)
-- [ ] Storno-/Korrekturprozess vorbereiten
+- [ ] Remote-Audit-Log append-only führen
+- [ ] Audit-Einträge immer mit aktuellem App-Nutzer anreichern
+- [ ] Kritische Aktionen bei Audit-Write-Fehler abbrechen
 
 ---
 
-### 12. Rollenmodell vorbereiten *(optional)*
+### 12. App-Login und Rollenmodell vorbereiten
 
-> **Hinweis:** Ohne Backend nur eingeschränkt sinnvoll. Erst umsetzen bei Option B
-> (kleines Backend). UI-seitige Vorbereitung kann trotzdem vorab erfolgen.
+> **Hinweis:** Im Frontend-Only-Betrieb dient das App-Login der Nutzerzuordnung,
+> Rollensteuerung und Auditierung, nicht einer harten technischen Zugriffskontrolle.
 
 Minimalmodell: Admin · Kassenwart · Verwaltung · Leser
 
+- [ ] `benutzer.json` einführen
+- [ ] Login-Seite + Session-Guard bauen
 - [ ] Rollenstruktur definieren
-- [ ] UI vorbereiten (auch ohne Backend)
+- [ ] UI- und Aktionsrechte vorbereiten
 
 ---
 
-### 13. Logging & Nachvollziehbarkeit
+### 13. Konflikt-UX und Nachvollziehbarkeit
 
-- [ ] Änderungsprotokoll einführen:
+- [ ] Konfliktdialoge statt `alert()`/`confirm()` für kritische Speicherpfade
+- [ ] Aktionen bei Konflikt:
   ```js
-  { action: "UPDATE_ORDER", user: "Martin", timestamp: "...", changes: {...} }
+  { action: "REMOTE_RELOAD" | "EXPORT_LOCAL_COPY" | "ABORT_SAVE", user: "Martin", timestamp: "...", scope: "bestellungen" }
   ```
+- [ ] Kein Auto-Merge für fachliche Kerndaten in Phase 1
 
 ---
 
@@ -198,7 +222,10 @@ Minimalmodell: Admin · Kassenwart · Verwaltung · Leser
 - ✅ Keine sensiblen Daten persistent im Frontend
 - ✅ Stabile Datenvalidierung
 - ✅ Deutlich reduzierte XSS-Angriffsfläche
-- ✅ Nachvollziehbares Sync-Verhalten
+- ✅ Remote-first Sync ohne stille Überschreibungen
+- ✅ Harte Konfliktsperre bei parallelen Änderungen
+- ✅ App-Login als Vorbereitung für Mehrnutzerbetrieb
+- ✅ Remote-Audit für abrechnungsrelevante Aktionen
 - ✅ Saubere Architektur-Basis
 - ✅ Testbare Kernlogik
 - ✅ Bereit für Backend-Erweiterung
@@ -208,7 +235,7 @@ Minimalmodell: Admin · Kassenwart · Verwaltung · Leser
 ## Empfehlung zum weiteren Ausbau
 
 **Option A – Lightweight** (empfohlen für kleinen Verein):
-Frontend + Nextcloud, stabile Sync-Logik, kein eigener Server
+Frontend + Nextcloud, Remote-first Schreiblogik, App-Login, kein eigener Server
 
 **Option B – Professionell**:
 Kleines Backend (FastAPI / Node.js), Auth + API + zentrale Persistenz

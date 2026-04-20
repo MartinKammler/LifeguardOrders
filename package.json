@@ -1,4 +1,11 @@
 {
+  "name": "dlrg-bestellsystem",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "test": "node tests/review-regression.mjs"
+  },
   "dependencies": {
     "pdf-lib": "^1.17.1"
   }

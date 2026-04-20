@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bestellung – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .schritt-titel { font-size:.75rem; font-weight:700; letter-spacing:.08em;
                      text-transform:uppercase; color:var(--text-2); margin-bottom:12px; }
@@ -50,6 +51,7 @@
     <h1 style="margin:0;flex:1" id="seiten-titel">Neue Bestellung</h1>
     <a class="btn btn-ghost btn-sm" href="bestellungen.html">← Zurück</a>
   </div>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
 
   <!-- Schritt 1: Kopfdaten -->
   <div class="card">
@@ -105,8 +107,11 @@ import { createWebDavClient } from './src/webdav.js';
 import { parseBestellung }    from './src/parser.js';
 import { berechneFoerderung } from './src/berechnung.js';
 import { html, raw, setHTML } from './src/dom.js';
+import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import { validateListe, validatePosition } from './src/validation.js';
 import {
+  getScopeSyncStatus,
+  getSyncState,
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
@@ -133,6 +138,7 @@ let importPuffer   = null;   // geparste Vorschau
 
 function uuid() { return crypto.randomUUID(); }
 function eur(v) { return Number(v).toFixed(2).replace('.', ',') + ' €'; }
+function cloneData(value) { return JSON.parse(JSON.stringify(value)); }
 
 function heute() {
   return new Date().toISOString().slice(0, 10);
@@ -147,6 +153,21 @@ function foerderungFuerArtikel(artikelNr, name) {
   const treffer = artikel.find(a => a.artikelNr === artikelNr && a.name === name)
                 || artikel.find(a => a.artikelNr === artikelNr);
   return treffer ?? null;
+}
+
+function updateSyncBanner() {
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status: getScopeSyncStatus(getSyncState(), SYNC_SCOPE_B),
+    label: 'Bestellungen',
+    onReload: () => window.location.reload(),
+    exportData: () => ({
+      bestellungId,
+      positionen,
+      ogKosten,
+    }),
+    exportFilename: bestellungId ? `bestellung-${bestellungId}-positionen-konfliktkopie.json` : 'bestellung-positionen-konfliktkopie.json',
+  });
 }
 
 /* ── Positions-Logik ─────────────────────────────────────────── */
@@ -393,7 +414,7 @@ async function speichern() {
   const bezeichnung = document.getElementById('bezeichnung').value.trim();
 
   if (!datum || !bezeichnung) {
-    alert('Bitte Datum und Bezeichnung angeben.');
+    toast('Bitte Datum und Bezeichnung angeben.', 'error');
     return;
   }
 
@@ -404,7 +425,13 @@ async function speichern() {
     if (!v.ok) fehler.push(`${p.name}: ${v.fehler}`);
   });
   if (fehler.length) {
-    if (!confirm('Nicht alle Positionen vollständig zugewiesen:\n' + fehler.join('\n') + '\n\nTrotzdem speichern?')) return;
+    const bestaetigt = await confirmDialog({
+      title: 'Unvollständige Zuweisung',
+      body: `Nicht alle Positionen sind vollständig zugewiesen:\n${fehler.join('\n')}\n\nTrotzdem speichern?`,
+      confirmText: 'Trotzdem speichern',
+      confirmTone: 'primary',
+    });
+    if (!bestaetigt) return;
   }
 
   // OG-Kosten als Positionen anhängen
@@ -422,10 +449,11 @@ async function speichern() {
     validatePosition
   );
   if (!validierung.ok) {
-    alert(`Ungültige Position in Zeile ${validierung.index + 1}: ${validierung.fehler}`);
+    toast(`Ungültige Position in Zeile ${validierung.index + 1}: ${validierung.fehler}`, 'error', 7000);
     return;
   }
 
+  const vorher = cloneData(bestellungen);
   if (bestellungId) {
     // bestehende aktualisieren
     const idx = bestellungen.findIndex(b => b.id === bestellungId);
@@ -447,10 +475,17 @@ async function speichern() {
     client,
     remotePath: NC_PFAD_B,
   });
-  statusEl.textContent = gespeichert.sync?.pending
-    ? syncHinweisText(gespeichert.sync, 'Bestellungen')
-    : (gespeichert.remote?.skipped ? 'Lokal gespeichert' : 'Gespeichert');
-  statusEl.style.color = gespeichert.sync?.pending ? 'var(--amber)' : 'var(--green)';
+  if (!gespeichert.ok) {
+    bestellungen = vorher;
+    updateSyncBanner();
+    statusEl.textContent = syncHinweisText(gespeichert.sync, 'Bestellungen');
+    statusEl.style.color = 'var(--red)';
+    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'error', 7000);
+    return;
+  }
+  updateSyncBanner();
+  statusEl.textContent = gespeichert.remote?.skipped ? 'Lokal gespeichert' : 'Gespeichert';
+  statusEl.style.color = 'var(--green)';
 
   setTimeout(() => { window.location.href = 'bestellungen.html'; }, 800);
 }
@@ -488,6 +523,7 @@ async function init() {
       bestellungen = r.data;
     }
   }
+  updateSyncBanner();
 
   // Bestehende Bestellung laden?
   const params = new URLSearchParams(location.search);

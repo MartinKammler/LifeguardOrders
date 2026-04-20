@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login – LifeguardOrders</title>
+  <link rel="stylesheet" href="src/style.css">
+  <style>
+    .login-shell {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .login-wrap {
+      width: min(760px, 100%);
+      display: grid;
+      gap: 16px;
+    }
+    .login-head {
+      text-align: center;
+      margin-bottom: 8px;
+    }
+    .login-head p {
+      color: var(--text-2);
+      font-size: .92rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-shell">
+    <div class="login-wrap">
+      <div class="login-head">
+        <h1 style="margin-bottom:8px">LifeguardOrders</h1>
+        <p>App-Login auf Basis der Nextcloud-Verbindung</p>
+      </div>
+
+      <div class="card">
+        <h2>Nextcloud-Verbindung</h2>
+        <div class="form-grid">
+          <div class="field span2">
+            <label for="nc-url">Nextcloud-URL</label>
+            <input type="url" id="nc-url" placeholder="https://cloud.example.org">
+          </div>
+          <div class="field">
+            <label for="nc-user">Nextcloud-Benutzer</label>
+            <input type="text" id="nc-user" placeholder="verein">
+          </div>
+          <div class="field">
+            <label for="nc-pass">Nextcloud-App-Passwort</label>
+            <input type="password" id="nc-pass" placeholder="••••••••••••">
+          </div>
+        </div>
+        <div class="flex gap-8 mt-16" style="align-items:center">
+          <button class="btn btn-ghost" id="btn-test-nc">Verbindung testen</button>
+          <span id="nc-status" class="badge badge-blue">Vor dem App-Login kann die Nextcloud-Verbindung separat geprüft werden.</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>App-Login</h2>
+        <div class="form-grid">
+          <div class="field">
+            <label for="app-login">Login-ID</label>
+            <input type="text" id="app-login" placeholder="martin">
+          </div>
+          <div class="field">
+            <label for="app-pass">App-Passwort</label>
+            <input type="password" id="app-pass" placeholder="••••••••••••">
+          </div>
+        </div>
+        <div class="flex gap-8 mt-16" style="align-items:center">
+          <button class="btn btn-primary" id="btn-login">Anmelden</button>
+          <span id="login-status" class="badge badge-blue">Bitte mit Nextcloud- und App-Zugang anmelden.</span>
+        </div>
+      </div>
+
+      <div class="card" id="bootstrap-card" style="display:none">
+        <h2>Ersten Admin anlegen</h2>
+        <p class="text-sm" style="color:var(--text-2);margin-bottom:14px">
+          Es wurde noch keine `benutzer.json` gefunden. Der erste Benutzer wird als Admin angelegt.
+        </p>
+        <div class="form-grid">
+          <div class="field">
+            <label for="bootstrap-login">Login-ID</label>
+            <input type="text" id="bootstrap-login" placeholder="admin">
+          </div>
+          <div class="field">
+            <label for="bootstrap-name">Anzeigename</label>
+            <input type="text" id="bootstrap-name" placeholder="Martin Beispiel">
+          </div>
+          <div class="field">
+            <label for="bootstrap-pass">App-Passwort</label>
+            <input type="password" id="bootstrap-pass" placeholder="••••••••••••">
+          </div>
+          <div class="field">
+            <label for="bootstrap-pass-repeat">App-Passwort wiederholen</label>
+            <input type="password" id="bootstrap-pass-repeat" placeholder="••••••••••••">
+          </div>
+        </div>
+        <div class="flex gap-8 mt-16">
+          <button class="btn btn-success" id="btn-bootstrap">Ersten Admin speichern</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/login-app.js"></script>
+</body>
+</html>

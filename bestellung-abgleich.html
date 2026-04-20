@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Abgleich – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .zurueck-link {
       display: inline-flex;
@@ -180,6 +181,7 @@
   <a class="zurueck-link" href="bestellungen.html">&#8592; Zurück zur Übersicht</a>
 
   <h1 id="seiten-titel">Bestellung abgleichen</h1>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
 
   <!-- Fehler: keine Bestellung -->
   <div id="hinweis-keine-bestellung" class="hinweis hinweis-warn" style="display:none">
@@ -321,8 +323,13 @@ import {
 import { createWebDavClient }               from './src/webdav.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
 import { html, raw, setHTML }               from './src/dom.js';
+import { auditAktion }                      from './src/audit.js';
+import { getSession }                       from './src/session.js';
+import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import { validateListe, validatePosition, validateWunsch } from './src/validation.js';
 import {
+  getScopeSyncStatus,
+  getSyncState,
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
@@ -357,6 +364,46 @@ const aufgeloest = new Map();
 /* ── Hilfsfunktionen ──────────────────────────────────────────── */
 function eur(v) {
   return Number(v || 0).toFixed(2).replace('.', ',') + ' €';
+}
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+async function schreibeAuditStatus({ action, scope = 'bestellungen', entityId, summary, changes }) {
+  const audit = await auditAktion({
+    client,
+    user: getSession(),
+    action,
+    scope,
+    entityId,
+    summary,
+    changes,
+  });
+  if (!audit.ok) {
+    toast(`Änderung gespeichert, aber Audit-Log konnte nicht geschrieben werden: ${audit.remote?.error || 'Unbekannter Fehler.'}`, 'warn', 7000);
+  }
+  return audit;
+}
+
+function updateSyncBanner() {
+  const state = getSyncState();
+  const bestellStatus = getScopeSyncStatus(state, SYNC_SCOPE_B);
+  const materialStatus = getScopeSyncStatus(state, SYNC_SCOPE_M);
+  const status = [bestellStatus, materialStatus].find(item => item && item.mode !== 'synced') || null;
+  const label = status === materialStatus ? 'Materialbestand' : 'Bestellungen';
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status,
+    label,
+    onReload: () => window.location.reload(),
+    exportData: () => ({
+      bestellung,
+      bestellungen,
+      materialbestand,
+    }),
+    exportFilename: bestellung?.id ? `konflikt-${bestellung.id}.json` : 'konflikt-bestellung.json',
+  });
 }
 
 function mitgliedName(id) {
@@ -509,6 +556,7 @@ function aktualisierePosition(positionId, mutator) {
 function persistiereBestellung(bestellungNeu, statusText) {
   const idx = bestellungen.findIndex(b => b.id === bestellungNeu.id);
   if (idx < 0) return null;
+  const vorherBestellungen = cloneData(bestellungen);
   bestellungen[idx] = bestellungNeu;
   bestellung = bestellungen[idx];
   aktualisiereStatusAnzeige();
@@ -520,11 +568,18 @@ function persistiereBestellung(bestellungNeu, statusText) {
     client,
     remotePath: NC_PFAD_B,
   }).then(gespeichert => {
-    if (gespeichert.sync?.pending) {
+    if (!gespeichert.ok) {
+      bestellungen = vorherBestellungen;
+      bestellung = bestellungen.find(b => b.id === bestellungNeu.id) || bestellung;
+      aktualisiereStatusAnzeige();
+      zeigeStatus(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn');
+      updateSyncBanner();
+    } else if (gespeichert.sync?.pending) {
       zeigeStatus(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn');
     } else if (statusText) {
       zeigeStatus(statusText, 'ok');
     }
+    updateSyncBanner();
     return gespeichert;
   });
 }
@@ -532,35 +587,68 @@ function persistiereBestellung(bestellungNeu, statusText) {
 async function persistiereBestellungUndMaterial(bestellungNeu, materialNeu, statusText, warnungen = []) {
   const idx = bestellungen.findIndex(b => b.id === bestellungNeu.id);
   if (idx < 0) return null;
+  const vorherBestellungen = cloneData(bestellungen);
+  const vorherMaterial = cloneData(materialbestand);
 
   bestellungen[idx] = bestellungNeu;
   bestellung = bestellungen[idx];
   materialbestand = materialNeu;
   aktualisiereStatusAnzeige();
 
-  const [gespeicherteBestellung, gespeichertesMaterial] = await Promise.all([
-    persistJsonWithSync({
+  const gespeicherteBestellung = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+
+  if (!gespeicherteBestellung.ok) {
+    bestellungen = vorherBestellungen;
+    bestellung = bestellungen.find(b => b.id === bestellungNeu.id) || bestellung;
+    materialbestand = vorherMaterial;
+    aktualisiereStatusAnzeige();
+    zeigeStatus(syncHinweisText(gespeicherteBestellung.sync, 'Bestellungen'), 'warn');
+    updateSyncBanner();
+    return { gespeicherteBestellung, gespeichertesMaterial: null, rollback: null };
+  }
+
+  const gespeichertesMaterial = await persistJsonWithSync({
+    scope: SYNC_SCOPE_M,
+    storageKey: STORAGE_KEY_M,
+    data: materialbestand,
+    client,
+    remotePath: NC_PFAD_M,
+  });
+
+  let rollback = null;
+  if (!gespeichertesMaterial.ok) {
+    bestellungen = vorherBestellungen;
+    bestellung = bestellungen.find(b => b.id === bestellungNeu.id) || bestellung;
+    materialbestand = vorherMaterial;
+    rollback = await persistJsonWithSync({
       scope: SYNC_SCOPE_B,
       storageKey: STORAGE_KEY_B,
-      data: bestellungen,
+      data: vorherBestellungen,
       client,
       remotePath: NC_PFAD_B,
-    }),
-    persistJsonWithSync({
-      scope: SYNC_SCOPE_M,
-      storageKey: STORAGE_KEY_M,
-      data: materialbestand,
-      client,
-      remotePath: NC_PFAD_M,
-    }),
-  ]);
+    });
+    aktualisiereStatusAnzeige();
+  }
 
   const meldungen = [];
-  if (gespeicherteBestellung.sync?.pending) {
+  if (!gespeicherteBestellung.ok) {
+    meldungen.push(syncHinweisText(gespeicherteBestellung.sync, 'Bestellungen'));
+  } else if (gespeicherteBestellung.sync?.pending) {
     meldungen.push(syncHinweisText(gespeicherteBestellung.sync, 'Bestellungen'));
   }
-  if (gespeichertesMaterial.sync?.pending) {
+  if (!gespeichertesMaterial.ok) {
     meldungen.push(syncHinweisText(gespeichertesMaterial.sync, 'Materialbestand'));
+  } else if (gespeichertesMaterial.sync?.pending) {
+    meldungen.push(syncHinweisText(gespeichertesMaterial.sync, 'Materialbestand'));
+  }
+  if (rollback && !rollback.ok) {
+    meldungen.push('Rollback der Bestellungen ist fehlgeschlagen. Bitte Remote-Stand manuell prüfen.');
   }
   if (warnungen.length) {
     meldungen.push(`Lagerbestand konnte nicht vollständig zurückgebucht werden für: ${warnungen.join(', ')}`);
@@ -571,8 +659,9 @@ async function persistiereBestellungUndMaterial(bestellungNeu, materialNeu, stat
   } else if (statusText) {
     zeigeStatus(statusText, 'ok');
   }
+  updateSyncBanner();
 
-  return { gespeicherteBestellung, gespeichertesMaterial };
+  return { gespeicherteBestellung, gespeichertesMaterial, rollback };
 }
 
 /* ── Zuweisung berechnen ─────────────────────────────────────── */
@@ -918,7 +1007,7 @@ function renderPositionenCard() {
         aktualisierePosition(positionId, position => {
           const mitgliedId = findeFreiesMitgliedId(position);
           if (!mitgliedId) {
-            alert('Alle verfügbaren Mitglieder sind bereits in dieser Position vorhanden.');
+            toast('Alle verfügbaren Mitglieder sind bereits in dieser Position vorhanden.', 'warn');
             return;
           }
           position.zuweisung.push({
@@ -1067,7 +1156,7 @@ function renderRechnungenCard() {
       const rechnung = (bestellung.rechnungen || []).find(r => r.id === btn.dataset.pdfId);
       if (rechnung) {
         druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen)
-          .catch(error => alert(error.message || 'PDF konnte nicht erzeugt werden.'));
+          .catch(error => toast(error.message || 'PDF konnte nicht erzeugt werden.', 'error'));
       }
     });
   });
@@ -1081,7 +1170,7 @@ function renderRechnungenCard() {
       try {
         nummer = leseStartLaufnummer(1, datum).nummern[0];
       } catch (error) {
-        alert(error.message || 'Rechnungsnummer konnte nicht vorbereitet werden.');
+        toast(error.message || 'Rechnungsnummer konnte nicht vorbereitet werden.', 'error');
         return;
       }
       await erzeugeRechnungFuerMitglied(mid, { nummer, datum });
@@ -1104,6 +1193,7 @@ async function erzeugeRechnungFuerMitglied(mitgliedId, opts = {}) {
 
   const idx = bestellungen.findIndex(b => b.id === bestellung.id);
   if (idx < 0) return;
+  const vorherBestellungen = cloneData(bestellungen);
 
   bestellungen[idx].rechnungen = [...(bestellungen[idx].rechnungen || []), rechnung];
   bestellung = bestellungen[idx];
@@ -1115,14 +1205,36 @@ async function erzeugeRechnungFuerMitglied(mitgliedId, opts = {}) {
     client,
     remotePath: NC_PFAD_B,
   });
+  if (!gespeichert.ok) {
+    bestellungen = vorherBestellungen;
+    bestellung = bestellungen.find(b => b.id === bestellung.id) || bestellung;
+    zeigeStatus(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn');
+    return;
+  }
   if (gespeichert.sync?.pending) {
     zeigeStatus(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn');
   }
 
+  await schreibeAuditStatus({
+    action: 'RECHNUNG_ERSTELLT',
+    scope: 'rechnungen',
+    entityId: rechnung.id,
+    summary: `${rechnung.nummer} für ${mitgliedName(mitgliedId)} wurde erzeugt`,
+    changes: {
+      bestellungId: bestellung.id,
+      rechnungId: rechnung.id,
+      nummer: rechnung.nummer,
+      mitgliedId,
+      mitgliedName: mitgliedName(mitgliedId),
+      gesamtbetrag: rechnung.gesamtbetrag || 0,
+      erwartetEinsatzstunden: rechnung.erwartetEinsatzstunden || 0,
+    },
+  });
+
   try {
     await druckePDF(rechnung, mitgliedName(mitgliedId), einstellungen);
   } catch (error) {
-    alert(error.message || 'PDF konnte nicht erzeugt werden.');
+    toast(error.message || 'PDF konnte nicht erzeugt werden.', 'error');
   }
   aktualisiereRechnungsserienFeld();
 }
@@ -1216,11 +1328,17 @@ document.getElementById('btn-direkt-uebernehmen').addEventListener('click', () =
 
 /* ── Abschließen ─────────────────────────────────────────────── */
 document.getElementById('btn-abschliessen').addEventListener('click', async () => {
-  if (!confirm('Bestellung jetzt in die Anprobe übernehmen? Rechnungen werden erst im nächsten Schritt freigeschaltet.')) return;
+  const bestaetigt = await confirmDialog({
+    title: 'In Anprobe übernehmen?',
+    body: 'Rechnungen werden erst im nächsten Schritt freigeschaltet.',
+    confirmText: 'In Anprobe übernehmen',
+    confirmTone: 'primary',
+  });
+  if (!bestaetigt) return;
 
   const wunschValidierung = validateListe(bestellung.wuensche || [], validateWunsch);
   if (!wunschValidierung.ok) {
-    alert(`Ungültiger Wunsch in Zeile ${wunschValidierung.index + 1}: ${wunschValidierung.fehler}`);
+    toast(`Ungültiger Wunsch in Zeile ${wunschValidierung.index + 1}: ${wunschValidierung.fehler}`, 'error', 6000);
     return;
   }
 
@@ -1230,7 +1348,7 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     validatePosition
   );
   if (!positionsValidierung.ok) {
-    alert(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`);
+    toast(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`, 'error', 6000);
     return;
   }
   const idx = bestellungen.findIndex(b => b.id === bestellung.id);
@@ -1251,9 +1369,27 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     client,
     remotePath: NC_PFAD_B,
   });
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  if (!gespeichert.ok) {
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'error', 7000);
+    return;
   }
+  if (gespeichert.sync?.pending) {
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn', 7000);
+  }
+
+  await schreibeAuditStatus({
+    action: 'BESTELLUNG_IN_ANPROBE',
+    entityId: bestellung.id,
+    summary: `${bestellung.bezeichnung} wurde in die Anprobe übernommen`,
+    changes: {
+      bestellungId: bestellung.id,
+      status: 'anprobe',
+      positionen: positionen.length,
+      rechnungenGeloescht: true,
+    },
+  });
 
   // Zurück zur selben Seite → zeigt jetzt Positions-/Anprobe-Bereich
   location.href = `bestellung-abgleich.html?id=${bestellung.id}`;
@@ -1267,14 +1403,22 @@ document.getElementById('btn-alle-rechnungen').addEventListener('click', async (
 
   if (!fehlende.length) return;
 
-  if (fehlende.length > 1 && !confirm(`${fehlende.length} PDFs werden jetzt heruntergeladen. Fortfahren?`)) return;
+  if (fehlende.length > 1) {
+    const bestaetigt = await confirmDialog({
+      title: 'Mehrere PDFs herunterladen?',
+      body: `${fehlende.length} PDFs werden jetzt heruntergeladen.`,
+      confirmText: 'Herunterladen',
+      confirmTone: 'primary',
+    });
+    if (!bestaetigt) return;
+  }
 
   const datum = heutigesRechnungsDatum();
   let nummern = [];
   try {
     nummern = leseStartLaufnummer(fehlende.length, datum).nummern;
   } catch (error) {
-    alert(error.message || 'Rechnungsnummern konnten nicht vorbereitet werden.');
+    toast(error.message || 'Rechnungsnummern konnten nicht vorbereitet werden.', 'error');
     return;
   }
 
@@ -1298,11 +1442,21 @@ document.getElementById('btn-anprobe-speichern').addEventListener('click', async
     validatePosition
   );
   if (!positionsValidierung.ok) {
-    alert(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`);
+    toast(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`, 'error', 6000);
     return;
   }
 
-  await persistiereBestellung({ ...bestellung, positionen }, '✓ Anprobe gespeichert');
+  const gespeichert = await persistiereBestellung({ ...bestellung, positionen }, '✓ Anprobe gespeichert');
+  if (!gespeichert?.ok) return;
+  await schreibeAuditStatus({
+    action: 'ANPROBE_GESPEICHERT',
+    entityId: bestellung.id,
+    summary: `Anprobe für ${bestellung.bezeichnung} wurde gespeichert`,
+    changes: {
+      bestellungId: bestellung.id,
+      positionen: positionen.filter(p => p.typ === 'artikel').length,
+    },
+  });
   renderPositionenCard();
   renderRechnungenCard();
 });
@@ -1325,25 +1479,44 @@ document.getElementById('btn-anprobe-abschliessen').addEventListener('click', as
     validatePosition
   );
   if (!positionsValidierung.ok) {
-    alert(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`);
+    toast(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`, 'error', 6000);
     return;
   }
 
   const pruefung = pruefeAnprobePositionen(positionen);
   if (!pruefung.ok) {
     const meldung = pruefung.invalid[0]?.fehler || `Noch ${pruefung.offene.length} Position(en) mit offener Menge.`;
-    alert(meldung);
+    toast(meldung, 'error', 7000);
     return;
   }
 
-  if (!confirm('Anprobe jetzt abschließen? Danach können Rechnungen erzeugt werden.')) return;
+  const bestaetigt = await confirmDialog({
+    title: 'Anprobe abschließen?',
+    body: 'Danach können Rechnungen erzeugt werden.',
+    confirmText: 'Abschließen',
+    confirmTone: 'primary',
+  });
+  if (!bestaetigt) return;
   const abgeschlosseneBestellung = { ...bestellung, status: 'abgeschlossen', positionen };
   const neuerMaterialbestand = verbucheLagerbestandAusBestellung(materialbestand, abgeschlosseneBestellung);
-  await persistiereBestellungUndMaterial(
+  const gespeichert = await persistiereBestellungUndMaterial(
     abgeschlosseneBestellung,
     neuerMaterialbestand,
     '✓ Anprobe abgeschlossen und Lagerbestand zusammengeführt'
   );
+  if (!gespeichert?.gespeicherteBestellung?.ok || !gespeichert?.gespeichertesMaterial?.ok) return;
+  await schreibeAuditStatus({
+    action: 'ANPROBE_ABGESCHLOSSEN',
+    entityId: bestellung.id,
+    summary: `${bestellung.bezeichnung} wurde abgeschlossen`,
+    changes: {
+      bestellungId: bestellung.id,
+      status: 'abgeschlossen',
+      positionen: positionen.filter(p => p.typ === 'artikel').length,
+      lagerbestandZeilen: positionen.filter(p => p.typ === 'artikel' && (p.ogBestandMenge || 0) > 0).length,
+      retoureZeilen: positionen.filter(p => p.typ === 'artikel' && (p.retoureMenge || 0) > 0).length,
+    },
+  });
   renderPositionenCard();
   renderRechnungenCard();
 });
@@ -1356,7 +1529,13 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
   const lagerHinweis = bestellung.status === 'abgeschlossen' && hatLagerbestand
     ? '\nDer daraus gebuchte Lagerbestand wird dabei wieder abgezogen.'
     : '';
-  if (!confirm(`Bestellung wieder öffnen?\n\nPositionen und Rechnungen werden im System zurückgesetzt. Wünsche bleiben erhalten. Bereits gedruckte PDFs sind davon nicht betroffen.\nDer Abgleich kann danach erneut durchgeführt werden.${lagerHinweis}`)) return;
+  const bestaetigt = await confirmDialog({
+    title: 'Bestellung wieder öffnen?',
+    body: `Positionen und Rechnungen werden im System zurückgesetzt. Wünsche bleiben erhalten. Bereits gedruckte PDFs sind davon nicht betroffen.\nDer Abgleich kann danach erneut durchgeführt werden.${lagerHinweis}`,
+    confirmText: 'Wieder öffnen',
+    confirmTone: 'primary',
+  });
+  if (!bestaetigt) return;
 
   const idx = bestellungen.findIndex(b => b.id === bestellung.id);
   if (idx < 0) return;
@@ -1364,15 +1543,30 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
   const geoeffneteBestellung = { ...bestellung, status: 'bestellt', positionen: [], rechnungen: [] };
   if (bestellung.status === 'abgeschlossen' && hatLagerbestand) {
     const rueckbuchung = storniereLagerbestandAusBestellung(materialbestand, bestellung);
-    await persistiereBestellungUndMaterial(
+    const gespeichert = await persistiereBestellungUndMaterial(
       geoeffneteBestellung,
       rueckbuchung.materialbestand,
       '✓ Bestellung wieder geöffnet und Lagerbestand zurückgebucht',
       rueckbuchung.warnungen
     );
+    if (!gespeichert?.gespeicherteBestellung?.ok || !gespeichert?.gespeichertesMaterial?.ok) return;
   } else {
-    await persistiereBestellung(geoeffneteBestellung, '✓ Bestellung wieder geöffnet');
+    const gespeichert = await persistiereBestellung(geoeffneteBestellung, '✓ Bestellung wieder geöffnet');
+    if (!gespeichert?.ok) return;
   }
+
+  await schreibeAuditStatus({
+    action: 'BESTELLUNG_WIEDER_GEOEFFNET',
+    entityId: bestellung.id,
+    summary: `${bestellung.bezeichnung} wurde wieder geöffnet`,
+    changes: {
+      bestellungId: bestellung.id,
+      statusNeu: 'bestellt',
+      rechnungenGeloescht: true,
+      positionenGeloescht: true,
+      lagerRueckbuchung: hatLagerbestand,
+    },
+  });
 
   location.reload();
 });
@@ -1428,6 +1622,7 @@ async function init() {
       materialbestand = rM.data;
     }
   }
+  updateSyncBanner();
 
   if (!id) {
     document.getElementById('hinweis-keine-bestellung').style.display = '';

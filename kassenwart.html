@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kassenwart – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .filter-zeile {
       display: flex;
@@ -136,6 +137,7 @@ import { load }                from './src/storage.js';
 import { createWebDavClient }  from './src/webdav.js';
 import { berechneKassenwartZeilen, berechneSondermengenZeilen } from './src/kassenwart.js';
 import { html, setHTML }       from './src/dom.js';
+import { toast }              from './src/ui-feedback.js';
 import { hydrateJsonFromSync } from './src/sync.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
@@ -323,7 +325,7 @@ function renderTabelle() {
 /* ── CSV-Export ──────────────────────────────────────────────── */
 document.getElementById('btn-csv').addEventListener('click', () => {
   const zeilen = gefiltert();
-  if (!zeilen.length) { alert('Keine Daten zum Exportieren.'); return; }
+  if (!zeilen.length) { toast('Keine Daten zum Exportieren.', 'warn'); return; }
 
   const header = 'Mitglied;Bestellung;Artikel;Größe;Menge;Brutto;BV;LV;OG;Anteil;Status';
   const csvZeilen = zeilen.map(z =>
@@ -344,8 +346,8 @@ document.getElementById('btn-csv').addEventListener('click', () => {
 /* ── PDF-Export ──────────────────────────────────────────────── */
 document.getElementById('btn-pdf').addEventListener('click', () => {
   const zeilen = gefiltert();
-  if (!zeilen.length) { alert('Keine Daten zum Exportieren.'); return; }
-  if (!window.jspdf?.jsPDF) { alert('jsPDF nicht geladen.'); return; }
+  if (!zeilen.length) { toast('Keine Daten zum Exportieren.', 'warn'); return; }
+  if (!window.jspdf?.jsPDF) { toast('jsPDF nicht geladen.', 'error'); return; }
 
   const jsPDF = window.jspdf.jsPDF;
   const doc   = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });

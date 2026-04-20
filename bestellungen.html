@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bestellungen – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .meta { font-size:.78rem; color:var(--text-2); }
   </style>
@@ -21,9 +22,7 @@
 </nav>
 
 <div class="container">
-  <div id="sync-pending-banner" style="display:none;background:var(--amber-bg,#fffbeb);border:1px solid var(--amber,#f59e0b);border-radius:8px;padding:10px 16px;margin-bottom:16px;color:var(--text);font-size:.9rem">
-    ⚠ Änderungen konnten nicht mit Nextcloud synchronisiert werden und warten auf die nächste Verbindung.
-  </div>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
   <div class="flex gap-8" style="align-items:center;margin-bottom:20px">
     <h1 style="margin:0;flex:1">Bestellungen</h1>
     <a class="btn btn-primary btn-sm" href="bestellung-sammeln.html">+ Neue Bestellung</a>
@@ -43,12 +42,13 @@
 import { load }               from './src/storage.js';
 import { createWebDavClient } from './src/webdav.js';
 import { html, raw, setHTML } from './src/dom.js';
+import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import {
+  getScopeSyncStatus,
+  getSyncState,
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
-  pendingSyncScopes,
-  STORAGE_KEY_SYNC,
 } from './src/sync.js';
 
 const STORAGE_KEY_E = 'lo_einstellungen';
@@ -60,6 +60,18 @@ let bestellungen = [];
 let client = null;
 
 function eur(v) { return Number(v).toFixed(2).replace('.', ',') + ' €'; }
+
+function updateSyncBanner() {
+  const status = getScopeSyncStatus(getSyncState(), SYNC_SCOPE_B);
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status,
+    label: 'Bestellungen',
+    onReload: () => window.location.reload(),
+    exportData: () => bestellungen,
+    exportFilename: 'bestellungen-konfliktkopie.json',
+  });
+}
 
 function summePositionen(positionen) {
   return positionen
@@ -123,9 +135,16 @@ function aktionenHtml(b) {
 }
 
 window.oeffneWieder = async function(id) {
-  if (!confirm('Bestellung wieder öffnen?\n\nPositionen und Rechnungen werden gelöscht. Wünsche bleiben erhalten.\nDer Abgleich kann danach erneut durchgeführt werden.')) return;
+  const bestaetigt = await confirmDialog({
+    title: 'Bestellung wieder öffnen?',
+    body: 'Positionen und Rechnungen werden gelöscht. Wünsche bleiben erhalten.\nDer Abgleich kann danach erneut durchgeführt werden.',
+    confirmText: 'Wieder öffnen',
+    confirmTone: 'primary',
+  });
+  if (!bestaetigt) return;
   const idx = bestellungen.findIndex(b => b.id === id);
   if (idx < 0) return;
+  const vorher = JSON.parse(JSON.stringify(bestellungen));
   bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt', positionen: [], rechnungen: [] };
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
@@ -134,9 +153,15 @@ window.oeffneWieder = async function(id) {
     client,
     remotePath: NC_PFAD_B,
   });
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  if (!gespeichert.ok) {
+    bestellungen = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'error');
+    render();
+    return;
   }
+  updateSyncBanner();
+  toast('Bestellung wieder geöffnet.', 'success');
   render();
 };
 
@@ -217,19 +242,10 @@ async function init() {
   }
 
   render();
-
-  const syncState = load(STORAGE_KEY_SYNC) || {};
-  if (pendingSyncScopes(syncState).length > 0) {
-    document.getElementById('sync-pending-banner').style.display = '';
-  }
+  updateSyncBanner();
 
   if (new URLSearchParams(location.search).get('saved')) {
-    const banner = document.createElement('div');
-    banner.textContent = '✓ Wünsche gespeichert';
-    banner.className = 'badge badge-green';
-    banner.style.cssText = 'position:fixed;bottom:24px;right:24px;padding:10px 18px;font-size:.95rem;z-index:999';
-    document.body.appendChild(banner);
-    setTimeout(() => banner.remove(), 3000);
+    toast('Wünsche gespeichert.', 'success', 3000);
     history.replaceState(null, '', location.pathname);
   }
 }

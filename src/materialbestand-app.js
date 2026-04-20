@@ -3,7 +3,10 @@ import { downloadAlsJson } from './defaults.js';
 import { load } from './storage.js';
 import { html, raw, setHTML } from './dom.js';
 import { druckePDF } from './pdf.js';
+import { auditAktion } from './audit.js';
 import { EXTERN_ID, OG_ID } from './konstanten.js';
+import { getSession } from './session.js';
+import { confirmDialog, renderSyncBanner, toast } from './ui-feedback.js';
 import {
   bucheMaterialBewegung,
   normalisiereMaterialEintrag,
@@ -13,6 +16,8 @@ import {
 } from './materialbestand.js';
 import { erstelleLagerverkauf, findeArtikelFuerBestand } from './materialverkauf.js';
 import {
+  getScopeSyncStatus,
+  getSyncState,
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
@@ -37,6 +42,42 @@ let mitglieder = [];
 let client = null;
 const offeneHistorien = new Set();
 let _artikelBasenCache = null;
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+async function schreibeAuditWarnung({ action, scope = 'materialbestand', entityId, summary, changes }) {
+  const audit = await auditAktion({
+    client,
+    user: getSession(),
+    action,
+    scope,
+    entityId,
+    summary,
+    changes,
+  });
+  if (!audit.ok) {
+    toast(`Änderung gespeichert, aber Audit-Log konnte nicht geschrieben werden.\n${audit.remote?.error || 'Unbekannter Fehler.'}`, 'warn', 7000);
+  }
+  return audit;
+}
+
+function updateSyncBanner() {
+  const state = getSyncState();
+  const materialStatus = getScopeSyncStatus(state, SYNC_SCOPE_M);
+  const bestellStatus = getScopeSyncStatus(state, SYNC_SCOPE_B);
+  const status = [materialStatus, bestellStatus].find(item => item && item.mode !== 'synced') || null;
+  const label = status === bestellStatus ? 'Bestellungen' : 'Materialbestand';
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status,
+    label,
+    onReload: () => window.location.reload(),
+    exportData: () => ({ materialbestand, bestellungen }),
+    exportFilename: 'materialbestand-konfliktkopie.json',
+  });
+}
 
 function eur(v) {
   return Number(v || 0).toFixed(2).replace('.', ',') + ' €';
@@ -375,11 +416,11 @@ function oeffneVerkaufModal(id) {
   if (!eintrag) return;
   const artikel = findeArtikelFuerBestand(artikelListe, eintrag);
   if (!artikel) {
-    alert('Für diesen Bestandsposten gibt es keinen passenden Artikel im aktuellen Katalog. Bitte importiere oder aktualisiere den Artikel zuerst.');
+    toast('Für diesen Bestandsposten gibt es keinen passenden Artikel im aktuellen Katalog. Bitte importiere oder aktualisiere den Artikel zuerst.', 'error', 7000);
     return;
   }
   if ((eintrag.menge || 0) <= 0) {
-    alert('Dieser Bestandsposten hat keinen verfügbaren Bestand mehr.');
+    toast('Dieser Bestandsposten hat keinen verfügbaren Bestand mehr.', 'warn');
     return;
   }
 
@@ -415,31 +456,44 @@ async function speichereMaterialbestand() {
 }
 
 async function speichereMaterialbestandUndBestellungen(statusText = '') {
-  const [materialResult, bestellResult] = await Promise.all([
-    persistJsonWithSync({
-      scope: SYNC_SCOPE_M,
-      storageKey: STORAGE_KEY_M,
-      data: materialbestand,
-      client,
-      remotePath: NC_PFAD_M,
-    }),
-    persistJsonWithSync({
-      scope: SYNC_SCOPE_B,
-      storageKey: STORAGE_KEY_B,
-      data: bestellungen,
-      client,
-      remotePath: NC_PFAD_B,
-    }),
-  ]);
+  const vorherMaterial = cloneData(load(STORAGE_KEY_M) || []);
+  const vorherBestellungen = cloneData(load(STORAGE_KEY_B) || []);
 
-  const meldungen = [];
-  if (materialResult.sync?.pending) meldungen.push(syncHinweisText(materialResult.sync, 'Materialbestand'));
-  if (bestellResult.sync?.pending) meldungen.push(syncHinweisText(bestellResult.sync, 'Bestellungen'));
-  if (!meldungen.length && statusText) meldungen.push(statusText);
-  if (meldungen.length) {
-    alert(meldungen.join('\n\n'));
+  const materialResult = await persistJsonWithSync({
+    scope: SYNC_SCOPE_M,
+    storageKey: STORAGE_KEY_M,
+    data: materialbestand,
+    client,
+    remotePath: NC_PFAD_M,
+  });
+  if (!materialResult.ok) {
+    return { ok: false, materialResult, bestellResult: null, rollback: null };
   }
-  return { materialResult, bestellResult };
+
+  const bestellResult = await persistJsonWithSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    data: bestellungen,
+    client,
+    remotePath: NC_PFAD_B,
+  });
+  if (bestellResult.ok) {
+    if (statusText) toast(statusText, 'success');
+    updateSyncBanner();
+    return { ok: true, materialResult, bestellResult, rollback: null };
+  }
+
+  materialbestand = cloneData(vorherMaterial);
+  bestellungen = cloneData(vorherBestellungen);
+  const rollback = await persistJsonWithSync({
+    scope: SYNC_SCOPE_M,
+    storageKey: STORAGE_KEY_M,
+    data: vorherMaterial,
+    client,
+    remotePath: NC_PFAD_M,
+  });
+
+  return { ok: false, materialResult, bestellResult, rollback };
 }
 
 function leseFormular() {
@@ -457,13 +511,39 @@ function leseFormular() {
 }
 
 async function loescheEintrag(id) {
-  if (!confirm('Bestandsposten wirklich löschen?')) return;
+  const bestaetigt = await confirmDialog({
+    title: 'Bestandsposten löschen?',
+    body: 'Der Bestandsposten wird dauerhaft aus dem Materialbestand entfernt.',
+    confirmText: 'Löschen',
+    confirmTone: 'danger',
+  });
+  if (!bestaetigt) return;
+  const geloescht = materialbestand.find(eintrag => eintrag.id === id);
+  if (!geloescht) return;
+  const vorher = cloneData(materialbestand);
   materialbestand = materialbestand.filter(eintrag => eintrag.id !== id);
   const gespeichert = await speichereMaterialbestand();
-  render();
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Materialbestand'));
+  if (!gespeichert.ok) {
+    materialbestand = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Materialbestand'), 'error', 7000);
+    return;
   }
+  updateSyncBanner();
+  render();
+  await schreibeAuditWarnung({
+    action: 'MATERIAL_BESTAND_GELOESCHT',
+    entityId: geloescht.id,
+    summary: `${geloescht.bezeichnung} wurde aus dem Materialbestand gelöscht`,
+    changes: {
+      id: geloescht.id,
+      nummer: geloescht.nummer,
+      bezeichnung: geloescht.bezeichnung,
+      variante: geloescht.variante || '',
+      menge: geloescht.menge || 0,
+      status: geloescht.status || '',
+    },
+  });
 }
 
 async function speichereBewegung() {
@@ -482,17 +562,37 @@ async function speichereBewegung() {
     quelle: 'manuell',
   });
   if (!buchung.ok) {
-    alert(buchung.fehler);
+    toast(buchung.fehler, 'error');
     return;
   }
 
+  const vorher = cloneData(materialbestand);
   materialbestand[index] = buchung.eintrag;
   const gespeichert = await speichereMaterialbestand();
+  if (!gespeichert.ok) {
+    materialbestand = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Materialbestand'), 'error', 7000);
+    return;
+  }
+  updateSyncBanner();
   render();
   schliesseBewegungModal();
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Materialbestand'));
-  }
+  await schreibeAuditWarnung({
+    action: 'MATERIAL_BEWEGUNG_GEBUCHT',
+    entityId: buchung.eintrag.id,
+    summary: `${bewegungLabel(typ)} für ${buchung.eintrag.bezeichnung} gespeichert`,
+    changes: {
+      id: buchung.eintrag.id,
+      nummer: buchung.eintrag.nummer,
+      bezeichnung: buchung.eintrag.bezeichnung,
+      variante: buchung.eintrag.variante || '',
+      typ,
+      menge,
+      bestandNeu: buchung.eintrag.menge,
+      notiz,
+    },
+  });
 }
 
 async function speichereVerkauf() {
@@ -508,11 +608,11 @@ async function speichereVerkauf() {
   const eintrag = materialbestand[index];
   const artikel = findeArtikelFuerBestand(artikelListe, eintrag);
   if (!artikel) {
-    alert('Der passende Artikel wurde im Katalog nicht gefunden.');
+    toast('Der passende Artikel wurde im Katalog nicht gefunden.', 'error');
     return;
   }
   if (menge > eintrag.menge) {
-    alert(`Nicht genug Bestand: verfügbar ${eintrag.menge}, angefragt ${menge}.`);
+    toast(`Nicht genug Bestand: verfügbar ${eintrag.menge}, angefragt ${menge}.`, 'error');
     return;
   }
 
@@ -535,15 +635,56 @@ async function speichereVerkauf() {
     notiz: hinweis || `${ogKostenlos ? 'OG übernimmt · ' : ''}Verkauf an ${memberName}`,
   });
   if (!bewegung.ok) {
-    alert(bewegung.fehler);
+    toast(bewegung.fehler, 'error');
     return;
   }
 
+  const vorherMaterial = cloneData(materialbestand);
+  const vorherBestellungen = cloneData(bestellungen);
   materialbestand[index] = bewegung.eintrag;
   bestellungen = [...bestellungen, verkauf.bestellung];
-  await speichereMaterialbestandUndBestellungen('Lagerverkauf gespeichert und Rechnung erzeugt.');
+  const gespeichert = await speichereMaterialbestandUndBestellungen('Lagerverkauf gespeichert und Rechnung erzeugt.');
+  if (!gespeichert.ok) {
+    materialbestand = vorherMaterial;
+    bestellungen = vorherBestellungen;
+    const meldungen = [];
+    if (gespeichert.bestellResult && !gespeichert.bestellResult.ok) {
+      meldungen.push(syncHinweisText(gespeichert.bestellResult.sync, 'Bestellungen'));
+    } else if (gespeichert.materialResult && !gespeichert.materialResult.ok) {
+      meldungen.push(syncHinweisText(gespeichert.materialResult.sync, 'Materialbestand'));
+    }
+    if (gespeichert.rollback && !gespeichert.rollback.ok) {
+      meldungen.push('Rollback des Materialbestands ist fehlgeschlagen. Bitte Remote-Stand manuell prüfen.');
+    }
+    updateSyncBanner();
+    toast(meldungen.filter(Boolean).join('\n'), 'error', 9000);
+    render();
+    return;
+  }
+  updateSyncBanner();
   render();
   schliesseVerkaufModal();
+  await schreibeAuditWarnung({
+    action: 'LAGERVERKAUF_ERSTELLT',
+    scope: 'bestellungen',
+    entityId: verkauf.bestellung.id,
+    summary: `Lagerverkauf ${verkauf.bestellung.bezeichnung} wurde erzeugt`,
+    changes: {
+      bestellungId: verkauf.bestellung.id,
+      rechnungId: verkauf.rechnung?.id || '',
+      rechnungsnummer: verkauf.rechnung?.nummer || '',
+      materialId: eintrag.id,
+      nummer: eintrag.nummer,
+      bezeichnung: eintrag.bezeichnung,
+      variante: eintrag.variante || '',
+      mitgliedId,
+      mitgliedName: memberName,
+      menge,
+      ogKostenlos,
+      hinweis,
+      bestandNeu: materialbestand[index]?.menge ?? 0,
+    },
+  });
   if (verkauf.rechnung) {
     await druckePDF(verkauf.rechnung, memberName, einstellungen);
   }
@@ -600,11 +741,12 @@ async function init() {
   }
 
   render();
+  updateSyncBanner();
 
   document.getElementById('btn-neu').addEventListener('click', () => oeffneModal());
   document.getElementById('btn-download-material')?.addEventListener('click', () => {
     if (!materialbestand.length) {
-      alert('Kein Materialbestand zum Exportieren.');
+      toast('Kein Materialbestand zum Exportieren.', 'warn');
       return;
     }
     downloadAlsJson(materialbestand, 'materialbestand.json');
@@ -656,7 +798,7 @@ async function init() {
     const eintrag = leseFormular();
     const validierung = validateMaterialEintrag(eintrag);
     if (!validierung.ok) {
-      alert(validierung.fehler);
+      toast(validierung.fehler, 'error');
       return;
     }
 
@@ -664,10 +806,11 @@ async function init() {
       item.id !== eintrag.id && materialKey(normalisiereMaterialEintrag(item)) === materialKey(eintrag)
     );
     if (duplicate) {
-      alert('Nummer + Variante sind bereits im Materialbestand vorhanden.');
+      toast('Nummer + Variante sind bereits im Materialbestand vorhanden.', 'error');
       return;
     }
 
+    const vorher = cloneData(materialbestand);
     const index = materialbestand.findIndex(item => item.id === eintrag.id);
     if (index >= 0) {
       materialbestand[index] = {
@@ -680,11 +823,30 @@ async function init() {
     }
 
     const gespeichert = await speichereMaterialbestand();
+    if (!gespeichert.ok) {
+      materialbestand = vorher;
+      updateSyncBanner();
+      toast(syncHinweisText(gespeichert.sync, 'Materialbestand'), 'error', 7000);
+      return;
+    }
+    updateSyncBanner();
     render();
     schliesseModal();
-    if (gespeichert.sync?.pending) {
-      alert(syncHinweisText(gespeichert.sync, 'Materialbestand'));
-    }
+    await schreibeAuditWarnung({
+      action: index >= 0 ? 'MATERIAL_BESTAND_AKTUALISIERT' : 'MATERIAL_BESTAND_ANGELEGT',
+      entityId: eintrag.id,
+      summary: `${eintrag.bezeichnung} wurde ${index >= 0 ? 'aktualisiert' : 'angelegt'}`,
+      changes: {
+        id: eintrag.id,
+        nummer: eintrag.nummer,
+        bezeichnung: eintrag.bezeichnung,
+        variante: eintrag.variante || '',
+        menge: eintrag.menge || 0,
+        status: eintrag.status || '',
+        lagerort: eintrag.lagerort || '',
+        herkunftBestellungId: eintrag.herkunftBestellungId || '',
+      },
+    });
   });
   document.getElementById('bewegung-speichern').addEventListener('click', speichereBewegung);
   document.getElementById('verkauf-speichern').addEventListener('click', speichereVerkauf);

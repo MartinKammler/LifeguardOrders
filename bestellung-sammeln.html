@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bestellung sammeln – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .zurueck-link {
       display: inline-flex;
@@ -180,6 +181,7 @@
   <a class="zurueck-link" href="bestellungen.html">&#8592; Zurück zur Übersicht</a>
 
   <h1 id="seiten-titel">Neue Bestellung</h1>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
 
   <!-- Card: Kopfdaten -->
   <div class="card">
@@ -333,8 +335,11 @@ import { load }               from './src/storage.js';
 import { aggregiereWuensche, berechneBestellsummen, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
 import { createWebDavClient } from './src/webdav.js';
 import { html, raw, setHTML } from './src/dom.js';
+import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import { validateListe }      from './src/validation.js';
 import {
+  getScopeSyncStatus,
+  getSyncState,
   hydrateJsonFromSync,
   persistJsonWithSync,
   syncHinweisText,
@@ -370,6 +375,30 @@ function heute() {
 
 function eur(v) {
   return Number(v).toFixed(2).replace('.', ',') + ' €';
+}
+
+function cloneData(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function updateSyncBanner() {
+  const state = getSyncState();
+  const bestellStatus = getScopeSyncStatus(state, SYNC_SCOPE_B);
+  const artikelStatus = getScopeSyncStatus(state, SYNC_SCOPE_A);
+  const status = [bestellStatus, artikelStatus].find(item => item && item.mode !== 'synced') || null;
+  const label = status === artikelStatus ? 'Artikelkatalog' : 'Bestellungen';
+  renderSyncBanner({
+    target: document.getElementById('sync-status-banner'),
+    status,
+    label,
+    onReload: () => window.location.reload(),
+    exportData: () => ({
+      bestellungId,
+      wuensche,
+      bestellungen,
+    }),
+    exportFilename: bestellungId ? `bestellung-${bestellungId}-konfliktkopie.json` : 'bestellung-konfliktkopie.json',
+  });
 }
 
 function mitgliedName(id) {
@@ -746,12 +775,12 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
 
   const artikel = findeArtikelZuAuswahl(basisKey, variante);
   if (!artikel) {
-    alert('Bitte einen gültigen Artikel und eine Variante auswählen.');
+    toast('Bitte einen gültigen Artikel und eine Variante auswählen.', 'error');
     return;
   }
   // mitgliedId ist immer gesetzt (Select hat keine Leer-Option, wird mit OG_ID vorbelegt)
   if (isNaN(menge) || menge < 1) {
-    alert('Menge muss mindestens 1 sein.');
+    toast('Menge muss mindestens 1 sein.', 'error');
     return;
   }
 
@@ -770,7 +799,7 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
   const geaendert = neuerWunsch.find(w => w.id === bearbeitenId);
   const validierung = validiereWunsch(geaendert);
   if (!validierung.ok) {
-    alert(validierung.fehler);
+    toast(validierung.fehler, 'error');
     return;
   }
 
@@ -878,7 +907,7 @@ document.getElementById('btn-csv-kopieren').addEventListener('click', async () =
     bestaetigung.classList.add('sichtbar');
     setTimeout(() => bestaetigung.classList.remove('sichtbar'), 2500);
   } catch {
-    alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+    toast('Kopieren fehlgeschlagen. Bitte manuell kopieren.', 'error');
   }
 });
 
@@ -887,17 +916,18 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
   const datum       = document.getElementById('inp-datum').value;
   const bezeichnung = document.getElementById('inp-bezeichnung').value.trim();
 
-  if (!datum) { alert('Bitte ein Datum angeben.'); return; }
-  if (!bezeichnung) { alert('Bitte eine Bezeichnung angeben.'); return; }
+  if (!datum) { toast('Bitte ein Datum angeben.', 'error'); return; }
+  if (!bezeichnung) { toast('Bitte eine Bezeichnung angeben.', 'error'); return; }
 
   const validierung = validateListe(wuensche, validiereWunsch);
   if (!validierung.ok) {
-    alert(`Ungültiger Wunsch in Zeile ${validierung.index + 1}: ${validierung.fehler}`);
+    toast(`Ungültiger Wunsch in Zeile ${validierung.index + 1}: ${validierung.fehler}`, 'error', 7000);
     return;
   }
 
   const id = bestellungId || uuid();
   const bestehendeIdx = bestellungen.findIndex(b => b.id === id);
+  const vorher = cloneData(bestellungen);
 
   const bestellung = {
     id,
@@ -923,9 +953,13 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     remotePath: NC_PFAD_B,
   });
 
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  if (!gespeichert.ok) {
+    bestellungen = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'error', 7000);
+    return;
   }
+  updateSyncBanner();
 
   location.href = 'bestellungen.html?saved=1';
 });
@@ -935,8 +969,15 @@ document.getElementById('btn-bestellt').addEventListener('click', async () => {
   if (!bestellungId) return;
   const idx = bestellungen.findIndex(b => b.id === bestellungId);
   if (idx < 0) return;
-  if (!confirm('Bestellung als "Bestellt" markieren? Sie wird dann zum Abgleich weitergeleitet.')) return;
+  const bestaetigt = await confirmDialog({
+    title: 'Als bestellt markieren?',
+    body: 'Die Bestellung wird danach zum Abgleich weitergeleitet.',
+    confirmText: 'Als bestellt markieren',
+    confirmTone: 'primary',
+  });
+  if (!bestaetigt) return;
 
+  const vorher = cloneData(bestellungen);
   bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt' };
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
@@ -945,9 +986,13 @@ document.getElementById('btn-bestellt').addEventListener('click', async () => {
     client,
     remotePath: NC_PFAD_B,
   });
-  if (gespeichert.sync?.pending) {
-    alert(syncHinweisText(gespeichert.sync, 'Bestellungen'));
+  if (!gespeichert.ok) {
+    bestellungen = vorher;
+    updateSyncBanner();
+    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'error', 7000);
+    return;
   }
+  updateSyncBanner();
 
   location.href = `bestellung-abgleich.html?id=${bestellungId}`;
 });
@@ -990,6 +1035,7 @@ async function init() {
       artikelListe = rA.data;
     }
   }
+  updateSyncBanner();
 
   // Heute vorbelegen
   document.getElementById('inp-datum').value = heute();
@@ -1015,13 +1061,19 @@ async function init() {
   renderWunschliste();
 
   // Delegierter Event-Handler für Wunschliste (einmalig registrieren)
-  document.getElementById('wunsch-tbody').addEventListener('click', e => {
+  document.getElementById('wunsch-tbody').addEventListener('click', async e => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const id     = btn.dataset.id;
     const action = btn.dataset.action;
     if (action === 'loeschen') {
-      if (!confirm('Wunsch löschen?')) return;
+      const bestaetigt = await confirmDialog({
+        title: 'Wunsch löschen?',
+        body: 'Der Wunsch wird aus der aktuellen Sammlung entfernt.',
+        confirmText: 'Löschen',
+        confirmTone: 'danger',
+      });
+      if (!bestaetigt) return;
       wuensche = wuensche.filter(w => w.id !== id);
     } else if (action === 'plus') {
       wuensche = wuensche.map(w => w.id === id ? { ...w, menge: w.menge + 1 } : w);

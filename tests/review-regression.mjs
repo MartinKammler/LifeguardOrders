@@ -17,12 +17,20 @@ import {
   storniereLagerbestandAusBestellung,
 } from '../src/materialbestand.js';
 import { erstelleLagerverkauf, findeArtikelFuerBestand } from '../src/materialverkauf.js';
+import { auditAktion } from '../src/audit.js';
 import { erstelleRechnungsDaten } from '../src/pdf.js';
+import {
+  authentifiziereBenutzer,
+  hashPassword,
+  initialisiereErstenBenutzer,
+  normalizeLogin,
+  verifyPassword,
+} from '../src/auth.js';
 import {
   persistJsonWithSync,
   hydrateJsonFromSync,
-  hasPendingSync,
-  pendingSyncScopes,
+  getScopeSyncStatus,
+  isConflictSync,
 } from '../src/sync.js';
 
 const tests = [];
@@ -735,13 +743,16 @@ test('kritische UI-Dateien verwenden keine direkten HTML-Injection-APIs mehr', a
   }
 });
 
-test('persistJsonWithSync behaelt Pending-Status bei Remote-Fehler', async () => {
+test('persistJsonWithSync sperrt Schreiben bei Remote-Fehler als offline-readonly', async () => {
   const storage = createMemoryStorage();
   const result = await persistJsonWithSync({
     scope: 'bestellungen',
     storageKey: 'lo_bestellungen',
     data: [{ id: 'b1' }],
     client: {
+      async head() {
+        return { ok: false, error: 'Nextcloud nicht erreichbar.' };
+      },
       async writeJson() {
         return { ok: false, error: 'Nextcloud nicht erreichbar.' };
       },
@@ -750,38 +761,31 @@ test('persistJsonWithSync behaelt Pending-Status bei Remote-Fehler', async () =>
     storage,
   });
 
+  assertEqual(result.ok, false, 'Schreiben muss ohne Remote fehlschlagen');
   assertEqual(result.remote.ok, false, 'Remote-Fehler muss sichtbar bleiben');
-  assertEqual(storage.load('lo_bestellungen').length, 1, 'Lokale Daten muessen trotz Sync-Fehler gespeichert werden');
-  assert(hasPendingSync(storage.load('lo_sync_status'), 'bestellungen'), 'Sync-Status muss pending bleiben');
+  assertEqual(storage.load('lo_bestellungen'), null, 'Lokale Daten duerfen ohne Remote-Success nicht persistiert werden');
+  assertEqual(getScopeSyncStatus(storage.load('lo_sync_status'), 'bestellungen').mode, 'offline-readonly', 'Sync-Status muss auf offline-readonly wechseln');
 });
 
-test('hydrateJsonFromSync retryt lokale Pending-Daten vor Remote-Read', async () => {
+test('persistJsonWithSync erkennt Remote-Konflikte vor dem Upload', async () => {
   const storage = createMemoryStorage({
     lo_bestellungen: [{ id: 'lokal' }],
     lo_sync_status: {
       bestellungen: {
         scope: 'bestellungen',
-        pending: true,
-        mode: 'pending',
+        mode: 'synced',
         remotePath: '/LifeguardOrders/bestellungen.json',
+        etag: '"alt"',
       },
     },
   });
-  let writeCount = 0;
-  let readCount = 0;
+
   const result = await hydrateJsonFromSync({
     scope: 'bestellungen',
     storageKey: 'lo_bestellungen',
     client: {
-      async writeJson(path, data) {
-        writeCount += 1;
-        assertEqual(path, '/LifeguardOrders/bestellungen.json', 'Retry muss denselben Pfad verwenden');
-        assertEqual(data[0].id, 'lokal', 'Retry muss lokale Daten schreiben');
-        return { ok: true };
-      },
       async readJson() {
-        readCount += 1;
-        return { ok: true, data: [{ id: 'remote' }] };
+        return { ok: true, data: [{ id: 'lokal' }], etag: '"alt-neu"', lastModified: 'Sat, 19 Apr 2026 10:00:00 GMT' };
       },
     },
     remotePath: '/LifeguardOrders/bestellungen.json',
@@ -789,11 +793,156 @@ test('hydrateJsonFromSync retryt lokale Pending-Daten vor Remote-Read', async ()
     storage,
   });
 
-  assertEqual(result.source, 'local-retried', 'Bei Pending-Retry muss lokal autoritativ bleiben');
-  assertEqual(result.data[0].id, 'lokal', 'Remote-Daten duerfen Pending-Local nicht ueberschreiben');
-  assertEqual(writeCount, 1, 'Es muss genau ein Retry-Write passieren');
-  assertEqual(readCount, 0, 'Vor erfolgreichem Retry darf kein Remote-Read stattfinden');
-  assertEqual(pendingSyncScopes(storage.load('lo_sync_status')).length, 0, 'Erfolgreicher Retry muss Pending-Status aufloesen');
+  assertEqual(result.source, 'remote', 'Initiales Laden muss Remote-Daten mit ETag übernehmen');
+
+  const saveResult = await persistJsonWithSync({
+    scope: 'bestellungen',
+    storageKey: 'lo_bestellungen',
+    data: [{ id: 'lokal', changed: true }],
+    client: {
+      async head() {
+        return { ok: true, etag: '"fremd"', lastModified: 'Sat, 19 Apr 2026 11:00:00 GMT' };
+      },
+      async writeJson() {
+        throw new Error('writeJson darf bei Konflikt nicht aufgerufen werden');
+      },
+    },
+    remotePath: '/LifeguardOrders/bestellungen.json',
+    storage,
+  });
+
+  assertEqual(saveResult.ok, false, 'Konflikte muessen den Write blockieren');
+  assert(isConflictSync(storage.load('lo_sync_status'), 'bestellungen'), 'Konfliktstatus muss gesetzt werden');
+});
+
+test('hydrateJsonFromSync faellt bei Remote-Fehler auf lokalen Cache zurück und markiert read-only', async () => {
+  const storage = createMemoryStorage({
+    lo_bestellungen: [{ id: 'lokal' }],
+  });
+  const result = await hydrateJsonFromSync({
+    scope: 'bestellungen',
+    storageKey: 'lo_bestellungen',
+    client: {
+      async readJson() {
+        return { ok: false, error: 'Nextcloud nicht erreichbar.' };
+      },
+    },
+    remotePath: '/LifeguardOrders/bestellungen.json',
+    isValidRemote: data => Array.isArray(data),
+    storage,
+  });
+
+  assertEqual(result.source, 'local-fallback', 'Lokaler Cache muss bei Remote-Fehler lesbar bleiben');
+  assertEqual(result.data[0].id, 'lokal', 'Lokaler Cache darf nicht verloren gehen');
+  assertEqual(getScopeSyncStatus(storage.load('lo_sync_status'), 'bestellungen').mode, 'offline-readonly', 'Fallback muss als read-only markiert werden');
+});
+
+test('hashPassword und verifyPassword pruefen App-Logins stabil', async () => {
+  const salt = 'testsalt';
+  const passwordHash = await hashPassword('geheim123', salt);
+  assert(await verifyPassword('geheim123', {
+    id: 'martin',
+    name: 'Martin',
+    rolle: 'admin',
+    aktiv: true,
+    salt,
+    passwordHash,
+  }), 'Passwortpruefung muss fuer das korrekte Passwort erfolgreich sein');
+  assertEqual(await verifyPassword('falsch', {
+    id: 'martin',
+    name: 'Martin',
+    rolle: 'admin',
+    aktiv: true,
+    salt,
+    passwordHash,
+  }), false, 'Falsches Passwort darf nicht akzeptiert werden');
+});
+
+test('initialisiereErstenBenutzer legt einen Admin an und authentifiziereBenutzer meldet ihn an', async () => {
+  let savedUsers = null;
+  const client = {
+    async readJson() {
+      return savedUsers
+        ? { ok: true, data: savedUsers }
+        : { ok: false, error: 'Datei nicht gefunden.' };
+    },
+    async writeJson(path, data) {
+      assertEqual(path, '/LifeguardOrders/benutzer.json', 'Benutzerdatei muss unter benutzer.json liegen');
+      savedUsers = data;
+      return { ok: true, etag: '"users-1"' };
+    },
+  };
+
+  const bootstrap = await initialisiereErstenBenutzer({
+    client,
+    login: ' Martin ',
+    name: 'Martin Beispiel',
+    password: 'geheim123',
+    storage: createMemoryStorage(),
+  });
+  assert(bootstrap.ok, 'Bootstrap des ersten Admins muss funktionieren');
+  assertEqual(savedUsers[0].rolle, 'admin', 'Erster Benutzer muss Admin sein');
+  assertEqual(normalizeLogin(savedUsers[0].id), 'martin', 'Login-ID muss normalisiert gespeichert werden');
+
+  const login = await authentifiziereBenutzer({
+    client,
+    login: 'MARTIN',
+    password: 'geheim123',
+    storage: createMemoryStorage({ lo_benutzer: savedUsers }),
+  });
+  assert(login.ok, 'Anmeldung des frisch angelegten Benutzers muss funktionieren');
+  assertEqual(login.user.name, 'Martin Beispiel');
+});
+
+test('auditAktion schreibt append-only auf Remote und cached lokal', async () => {
+  const storage = createMemoryStorage();
+  let remoteLog = [];
+  const client = {
+    async head() {
+      return remoteLog.length
+        ? { ok: true, etag: '"audit-1"' }
+        : { ok: false, missing: true, error: 'Datei nicht gefunden.' };
+    },
+    async readJson() {
+      return { ok: true, data: remoteLog };
+    },
+    async writeJson(path, data, opts) {
+      assertEqual(path, '/LifeguardOrders/audit.log.json', 'Audit muss unter audit.log.json liegen');
+      if (!remoteLog.length) {
+        assertEqual(opts.ifNoneMatch, '*', 'Erster Audit-Write muss exklusiv anlegen');
+      } else {
+        assertEqual(opts.ifMatch, '"audit-1"', 'Folge-Write muss ETag absichern');
+      }
+      remoteLog = data;
+      return { ok: true, etag: '"audit-1"' };
+    },
+  };
+
+  const first = await auditAktion({
+    client,
+    user: { id: 'martin' },
+    action: 'TEST',
+    scope: 'bestellungen',
+    entityId: 'b1',
+    summary: 'Testeintrag',
+    changes: { status: 'neu' },
+    storage,
+  });
+  assert(first.ok, 'Erster Audit-Eintrag muss erfolgreich sein');
+
+  const second = await auditAktion({
+    client,
+    user: { id: 'martin' },
+    action: 'TEST_2',
+    scope: 'bestellungen',
+    entityId: 'b2',
+    summary: 'Folgeeintrag',
+    changes: { status: 'offen' },
+    storage,
+  });
+  assert(second.ok, 'Zweiter Audit-Eintrag muss erfolgreich sein');
+  assertEqual(remoteLog.length, 2, 'Remote-Log muss append-only wachsen');
+  assertEqual(storage.load('lo_audit_log').length, 2, 'Lokaler Cache muss mitgezogen werden');
 });
 
 function createMemoryStorage(seed = {}) {

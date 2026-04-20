@@ -64,6 +64,21 @@ nav a:hover, nav a.active {
   color: var(--text);
 }
 
+.nav-spacer {
+  flex: 1;
+}
+
+.nav-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.nav-logout {
+  padding: 4px 10px;
+}
+
 @media (max-width: 600px) {
   nav {
     padding: 0 12px;
@@ -81,6 +96,14 @@ nav a:hover, nav a.active {
   nav a {
     font-size: .8rem;
     padding: 4px 8px;
+  }
+  .nav-spacer {
+    display: none;
+  }
+  .nav-auth {
+    width: 100%;
+    justify-content: flex-end;
+    margin-top: 4px;
   }
 }
 
@@ -185,6 +208,13 @@ textarea { resize: vertical; min-height: 100px; }
 .hinweis-error  { background: #3a1a1a; border: 1px solid #6a2a2a; color: #f48; }
 .hinweis-warn   { background: #3a3010; border: 1px solid #6a5a20; color: var(--amber); }
 
+.app-sync-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
 /* ── Tabellen ──────────────────────────────────────────────── */
 table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 th {
@@ -220,3 +250,69 @@ tr:hover td { background: var(--surface2); }
 .text-sm { font-size: .82rem; color: var(--text-2); }
 .text-right { text-align: right; }
 .bold { font-weight: 700; }
+
+.app-toast-root {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: grid;
+  gap: 10px;
+  z-index: 1200;
+  max-width: min(420px, calc(100vw - 32px));
+}
+
+.app-toast {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.35);
+  cursor: pointer;
+}
+
+.app-toast-info { background: #1a2a4a; color: #8ab4f8; }
+.app-toast-success { background: #1a3a28; color: var(--green); }
+.app-toast-warn { background: #3a3010; color: var(--amber); }
+.app-toast-error { background: #3a1a1a; color: #ff9aa2; }
+
+.app-dialog-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .66);
+  z-index: 1300;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.app-dialog-backdrop.open {
+  display: flex;
+}
+
+.app-dialog {
+  width: min(520px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 22px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45);
+}
+
+.app-dialog-title {
+  font-size: 1rem;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.app-dialog-body {
+  white-space: pre-wrap;
+  color: var(--text-2);
+  font-size: .9rem;
+}
+
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}

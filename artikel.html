@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Artikelkatalog – LifeguardOrders</title>
   <link rel="stylesheet" href="src/style.css">
+  <script type="module" src="src/auth-guard.js"></script>
   <style>
     .artikel-nr { color: var(--text-2); font-size: .8rem; font-family: monospace; }
     .preis      { text-align: right; font-variant-numeric: tabular-nums; }
@@ -66,6 +67,7 @@
     <button class="btn btn-ghost btn-sm" id="btn-download-artikel" title="Katalog als data/artikel.json exportieren">&#8659; Als Datei sichern</button>
     <button class="btn btn-primary btn-sm" id="btn-neu">+ Artikel anlegen</button>
   </div>
+  <div id="sync-status-banner" class="hinweis hinweis-warn" style="display:none"></div>
 
   <!-- Import-Bereich -->
   <div class="card import-area" id="import-bereich">
