@@ -110,8 +110,8 @@ function shouldSkip(line) {
 
 // ── Regex-Patterns ────────────────────────────────────────────────────────────
 
-/** Preistoken: Ziffern mit optionalem Tausenderpunkt, Komma als Dezimaltrennzeichen */
-const PREIS_TOKEN = '[\\d.]+,\\d+';
+/** Preistoken: deutsches Format mit optionalen Tausendergruppen (1.234,56 oder 44,90) */
+const PREIS_TOKEN = '\\d{1,3}(?:\\.\\d{3})*,\\d+';
 
 /** Artikel mit Preis: ArtNr desc… menge E-Preis Betrag A|B */
 const ARTIKEL_PREIS_RE    = new RegExp(`^(.+?)\\s+(\\d+)\\s+(${PREIS_TOKEN})\\s+(${PREIS_TOKEN})\\s+([AB])$`);
