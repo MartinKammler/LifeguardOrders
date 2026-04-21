@@ -7,7 +7,7 @@
 | **Seitenstruktur** | Eine HTML-Datei pro Seite (kein SPA-Router), konsistent mit Stempeluhr |
 | **JS-Module** | Pro Seite eine `*-app.js`; geteilte Logik in: `webdav.js`, `parser.js`, `berechnung.js`, `mitglieder.js`, `pdf.js`, `sammlung.js`, `abgleich.js`, `stunden.js`, `defaults.js` |
 | **Datenhaltung** | JSON-Dateien auf Nextcloud: `artikel.json`, `bestellungen.json`, `einstellungen.json` |
-| **Offline-Cache** | `localStorage` als Lese-Fallback (lokale Daten verlieren nie gegen leeres NC-Ergebnis); Service Worker für statische Assets |
+| **Offline-Cache** | Kein fachlicher Lese-Fallback für JSON-Daten; `localStorage` nur für minimale Login-Hilfe, Session-nahe Zustände und technische Marker |
 | **WebDAV** | Alle NC-Zugriffe laufen durch `webdav.js`; Fehler als strukturierte Objekte, keine Exceptions; Factory-Pattern für Testbarkeit |
 | **PDF** | pdf-lib im Browser (lokal in `lib/`); Template-basiert (`Rechnung _Template.pdf`); kein CDN, kein NC-Upload |
 | **Rechnungsnummern** | Format `R_YYYY_MM_NNN`; Zähler live aus `bestellungen.json` berechnet |

@@ -152,60 +152,87 @@
 </div>
 
 <script type="module">
-import { load } from './src/storage.js';
 import { html, setHTML } from './src/dom.js';
-import { getSyncState, pendingSyncScopes } from './src/sync.js';
+import { getSyncState, pendingSyncScopes, hydrateJsonFromSync } from './src/sync.js';
+import { createClientFromLocalNc } from './src/app-context.js';
 
-const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_M = 'lo_materialbestand';
-const STORAGE_KEY_R = 'lo_rechnungen';
+const NC_PFAD_A = '/LifeguardOrders/artikel.json';
+const NC_PFAD_B = '/LifeguardOrders/bestellungen.json';
+const NC_PFAD_M = '/LifeguardOrders/materialbestand.json';
 
 function setStat(id, text) {
   const el = document.getElementById(id);
   if (el) setHTML(el, text);
 }
 
-// Kachel-Statistiken
-const artikel     = load(STORAGE_KEY_A) || [];
-const bestellungen = load(STORAGE_KEY_B) || [];
-const materialbestand = load(STORAGE_KEY_M) || [];
-const rechnungen  = load(STORAGE_KEY_R) || [];
+async function ladeStartStatistiken() {
+  const client = createClientFromLocalNc();
+  const [artikelResult, bestellResult, materialResult] = await Promise.all([
+    hydrateJsonFromSync({
+      scope: 'artikel',
+      storageKey: STORAGE_KEY_A,
+      client,
+      remotePath: NC_PFAD_A,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: 'bestellungen',
+      storageKey: STORAGE_KEY_B,
+      client,
+      remotePath: NC_PFAD_B,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: 'materialbestand',
+      storageKey: STORAGE_KEY_M,
+      client,
+      remotePath: NC_PFAD_M,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+  ]);
 
-setStat('stat-artikel',
-  artikel.length
-    ? html`<span>${artikel.length}</span> Artikel im Katalog`
-    : 'Noch keine Artikel');
+  const artikel = Array.isArray(artikelResult.data) ? artikelResult.data : [];
+  const bestellungen = Array.isArray(bestellResult.data) ? bestellResult.data : [];
+  const materialbestand = Array.isArray(materialResult.data) ? materialResult.data : [];
+  const rechnungen = bestellungen.flatMap(bestellung => bestellung.rechnungen || []);
 
-const offeneBestellungen = bestellungen.filter(b => b.status !== 'abgeschlossen').length;
-setStat('stat-bestellungen',
-  bestellungen.length
-    ? html`<span>${offeneBestellungen}</span> offen von ${bestellungen.length}`
-    : 'Noch keine Bestellungen');
+  setStat('stat-artikel',
+    artikel.length
+      ? html`<span>${artikel.length}</span> Artikel im Katalog`
+      : 'Keine Artikeldaten geladen');
 
-const offeneRechnungen = rechnungen.filter(r => r.status !== 'bezahlt').length;
-setStat('stat-rechnungen',
-  rechnungen.length
-    ? html`<span>${offeneRechnungen}</span> offen von ${rechnungen.length}`
-    : 'Noch keine Rechnungen');
+  const offeneBestellungen = bestellungen.filter(b => b.status !== 'abgeschlossen').length;
+  setStat('stat-bestellungen',
+    bestellungen.length
+      ? html`<span>${offeneBestellungen}</span> offen von ${bestellungen.length}`
+      : 'Keine Bestelldaten geladen');
 
-const aktivePosten = materialbestand.filter(e => e?.status !== 'aufgebraucht' && e?.status !== 'ausgesondert');
-const materialMenge = aktivePosten.reduce((summe, eintrag) => summe + (Number.isInteger(eintrag?.menge) ? eintrag.menge : 0), 0);
-setStat('stat-material',
-  materialbestand.length
-    ? html`<span>${materialMenge}</span> Stück in ${aktivePosten.length} aktiven Posten`
-    : 'Noch kein Bestand');
+  const offeneRechnungen = rechnungen.filter(r => r.status !== 'bezahlt').length;
+  setStat('stat-rechnungen',
+    rechnungen.length
+      ? html`<span>${offeneRechnungen}</span> offen von ${rechnungen.length}`
+      : 'Keine Rechnungsdaten geladen');
 
-// Setup-Hinweis wenn NC noch nicht konfiguriert
-const einstellungen = load(STORAGE_KEY_E);
-if (!einstellungen?.nc?.url) {
-  setHTML(document.getElementById('setup-hinweis'), html`
-    <div class="hinweis hinweis-info hinweis-setup">
-      Nextcloud noch nicht verbunden —
-      <a href="einstellungen.html" style="color:var(--blue)">Einstellungen öffnen</a>
-      um die Verbindung einzurichten.
-    </div>`);
+  const aktivePosten = materialbestand.filter(e => e?.status !== 'aufgebraucht' && e?.status !== 'ausgesondert');
+  const materialMenge = aktivePosten.reduce((summe, eintrag) => summe + (Number.isInteger(eintrag?.menge) ? eintrag.menge : 0), 0);
+  setStat('stat-material',
+    materialbestand.length
+      ? html`<span>${materialMenge}</span> Stück in ${aktivePosten.length} aktiven Posten`
+      : 'Keine Bestandsdaten geladen');
+
+  if (!client) {
+    setHTML(document.getElementById('setup-hinweis'), html`
+      <div class="hinweis hinweis-info hinweis-setup">
+        Nextcloud-Verbindung fehlt —
+        <a href="einstellungen.html" style="color:var(--blue)">Einstellungen öffnen</a>.
+      </div>`);
+  }
 }
 
 const scopeLabel = {
@@ -218,10 +245,11 @@ const pending = pendingSyncScopes(getSyncState());
 if (pending.length) {
   setHTML(document.getElementById('sync-hinweis'), html`
     <div class="hinweis hinweis-warn hinweis-setup">
-      Ausstehender Nextcloud-Sync für: ${pending.map(scope => scopeLabel[scope] || scope).join(', ')}.
-      Die Daten wurden lokal gespeichert und werden beim nächsten Schreibzugriff erneut synchronisiert.
+      Remote-Statushinweis für: ${pending.map(scope => scopeLabel[scope] || scope).join(', ')}.
     </div>`);
 }
+
+await ladeStartStatistiken();
 </script>
 </body>
 </html>

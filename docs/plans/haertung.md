@@ -14,11 +14,11 @@ Fokus: Sicherheit · Datenintegrität · Wartbarkeit · klare Architektur
 Die ursprüngliche Pending-Sync-Richtung reicht für den gewünschten Betrieb nicht mehr aus.
 Ab jetzt gelten diese Produktentscheidungen:
 
-- Fachliche Schreibvorgänge nur bei erreichbarer Nextcloud
+- Fachliche Lese- und Schreibvorgänge nur bei erreichbarer Nextcloud
 - Vor jedem Upload Remote-Prüfung (`ETag` / Version)
 - Bei Remote-Abweichung: harte Konfliktsperre statt stilles Überschreiben
 - App-Login als Vorbereitung auf Mehrnutzerbetrieb
-- Audit-Log append-only auf Remote; lokale Kopie nur Cache
+- Audit-Log append-only auf Remote; lokale Kopie nur technischer Kurzzeit-Cache
 
 Die folgenden Sprintblöcke ersetzen damit die frühere Annahme `local_only | synced | pending`
 als Standard-Schreibpfad für fachliche Daten.
@@ -134,7 +134,7 @@ src/
 
 ---
 
-### 9. Sync-Strategie auf Remote-First umstellen (Nextcloud)
+### 9. Sync-Strategie auf Remote-Required umstellen (Nextcloud)
 
 **Problem:** Inkonsistente Zustände und stille Überschreibungen
 
@@ -143,6 +143,7 @@ src/
 - [ ] Vor jedem Upload Remote-Version prüfen
 - [ ] Schreiben bei Konflikt oder Remote-Ausfall sperren
 - [ ] Startseite und Fachseiten zeigen Konflikt-/Remote-Status sichtbar an
+- [ ] Kein fachlicher Lese-Fallback mehr aus `localStorage`
 
 ---
 
@@ -222,7 +223,7 @@ Minimalmodell: Admin · Kassenwart · Verwaltung · Leser
 - ✅ Keine sensiblen Daten persistent im Frontend
 - ✅ Stabile Datenvalidierung
 - ✅ Deutlich reduzierte XSS-Angriffsfläche
-- ✅ Remote-first Sync ohne stille Überschreibungen
+- ✅ Remote-required Sync ohne stille Überschreibungen oder lokale Fachdaten-Fallbacks
 - ✅ Harte Konfliktsperre bei parallelen Änderungen
 - ✅ App-Login als Vorbereitung für Mehrnutzerbetrieb
 - ✅ Remote-Audit für abrechnungsrelevante Aktionen
@@ -250,7 +251,7 @@ Mehrnutzerbetrieb auf belastbarer Basis.
 ## Empfehlung zum weiteren Ausbau
 
 **Option A – Lightweight** (empfohlen für kleinen Verein):
-Frontend + Nextcloud, Remote-first Schreiblogik, App-Login, kein eigener Server
+Frontend + Nextcloud, Remote-required Datenzugriff, App-Login, kein eigener Server
 
 **Option B – Professionell**:
 Kleines Backend (FastAPI / Node.js), Auth + API + zentrale Persistenz

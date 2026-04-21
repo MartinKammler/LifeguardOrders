@@ -39,12 +39,11 @@
 </div>
 
 <script type="module">
-import { load }               from './src/storage.js';
-import { createWebDavClient } from './src/webdav.js';
 import { html, raw, setHTML } from './src/dom.js';
 import { getSession }         from './src/session.js';
 import { darfAktion }         from './src/authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
+import { createClientFromLocalNc } from './src/app-context.js';
 import {
   getScopeSyncStatus,
   getSyncState,
@@ -232,27 +231,18 @@ function render() {
 }
 
 async function init() {
-  const e = load(STORAGE_KEY_E);
-  const ncPass = e?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (e?.nc?.url && e?.nc?.user && ncPass) {
-    client = createWebDavClient({ ...e.nc, pass: ncPass });
-  }
-
-  const lokal = load(STORAGE_KEY_B);
-  if (lokal) bestellungen = lokal;
-
-  if (client) {
-    setHTML(document.getElementById('liste-inhalt'), '<p class="meta" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>');
-    const r = await hydrateJsonFromSync({
-      scope: SYNC_SCOPE_B,
-      storageKey: STORAGE_KEY_B,
-      client,
-      remotePath: NC_PFAD_B,
-      isValidRemote: data => Array.isArray(data),
-    });
-    if (Array.isArray(r.data)) {
-      bestellungen = r.data;
-    }
+  client = createClientFromLocalNc();
+  setHTML(document.getElementById('liste-inhalt'), '<p class="meta" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>');
+  const r = await hydrateJsonFromSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    client,
+    remotePath: NC_PFAD_B,
+    isValidRemote: data => Array.isArray(data),
+    defaultData: [],
+  });
+  if (Array.isArray(r.data)) {
+    bestellungen = r.data;
   }
 
   render();

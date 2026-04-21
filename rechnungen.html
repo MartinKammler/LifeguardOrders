@@ -104,8 +104,6 @@
 </div>
 
 <script type="module">
-import { load }               from './src/storage.js';
-import { createWebDavClient } from './src/webdav.js';
 import { druckePDF }           from './src/pdf.js';
 import { html, raw, setHTML }  from './src/dom.js';
 import { EXTERN_ID, OG_ID }    from './src/konstanten.js';
@@ -113,6 +111,7 @@ import { auditAktion }         from './src/audit.js';
 import { getSession }          from './src/session.js';
 import { darfAktion }          from './src/authz.js';
 import { renderSyncBanner, toast, confirmDialog } from './src/ui-feedback.js';
+import { createClientFromLocalNc, ladeRemoteEinstellungen } from './src/app-context.js';
 import {
   getScopeSyncStatus,
   getSyncState,
@@ -354,28 +353,22 @@ async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
 
 /* ── Init ────────────────────────────────────────────────────── */
 async function init() {
-  einstellungen = load(STORAGE_KEY_E);
+  client = createClientFromLocalNc();
+  const einstellungenResult = await ladeRemoteEinstellungen(client);
+  einstellungen = einstellungenResult.data;
+  mitglieder = einstellungen?.mitglieder || [];
 
-  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
-    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
-  }
-
-  mitglieder   = einstellungen?.mitglieder || [];
-  bestellungen = load(STORAGE_KEY_B) || [];
-
-  if (client) {
-    setHTML(document.getElementById('rechnungen-tabelle-container'), '<p class="meta" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>');
-    const r = await hydrateJsonFromSync({
-      scope: SYNC_SCOPE_B,
-      storageKey: STORAGE_KEY_B,
-      client,
-      remotePath: NC_PFAD_B,
-      isValidRemote: data => Array.isArray(data),
-    });
-    if (Array.isArray(r.data)) {
-      bestellungen = r.data;
-    }
+  setHTML(document.getElementById('rechnungen-tabelle-container'), '<p class="meta" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>');
+  const r = await hydrateJsonFromSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    client,
+    remotePath: NC_PFAD_B,
+    isValidRemote: data => Array.isArray(data),
+    defaultData: [],
+  });
+  if (Array.isArray(r.data)) {
+    bestellungen = r.data;
   }
 
   befuelleFilterBestellung(alleRechnungen());

@@ -75,24 +75,6 @@ function persistFunctionLoginSuccess(nc, user, actingPerson) {
   window.location.replace(getNextPath('index.html'));
 }
 
-function getLocalActingPersons() {
-  const einstellungenRaw = localStorage.getItem('lo_einstellungen');
-  if (!einstellungenRaw) return [];
-  try {
-    const einstellungen = JSON.parse(einstellungenRaw);
-    return Array.isArray(einstellungen?.mitglieder)
-      ? einstellungen.mitglieder
-          .map(entry => ({
-            id: String(entry?.id || '').trim(),
-            name: String(entry?.name || '').trim(),
-          }))
-          .filter(entry => entry.id && entry.name)
-      : [];
-  } catch {
-    return [];
-  }
-}
-
 function renderActingPersons(list) {
   const select = document.getElementById('acting-person');
   if (!select) return;
@@ -110,16 +92,10 @@ function renderActingPersons(list) {
 }
 
 async function ladeHandelndePersonen(client = null) {
-  const lokal = getLocalActingPersons();
-  if (lokal.length) {
-    actingPersons = [...lokal].sort((a, b) => a.name.localeCompare(b.name, 'de'));
-    renderActingPersons(actingPersons);
-    return { ok: true, source: 'local', personen: actingPersons };
-  }
   if (!client) {
     actingPersons = [];
     renderActingPersons([]);
-    return { ok: false, error: 'Keine Mitgliederliste lokal vorhanden.' };
+    return { ok: false, error: 'Ohne Nextcloud-Verbindung kann keine handelnde Person geladen werden.' };
   }
 
   const remote = await ladeAktiveStempeluhrBenutzer(client);
@@ -268,8 +244,8 @@ function prefill() {
   const nc = leseNcKonfiguration();
   document.getElementById('nc-url').value = nc.url;
   document.getElementById('nc-user').value = nc.user;
-  renderActingPersons(getLocalActingPersons().sort((a, b) => a.name.localeCompare(b.name, 'de')));
-  actingPersons = getLocalActingPersons().sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  renderActingPersons([]);
+  actingPersons = [];
 }
 
 document.getElementById('btn-member-mode').addEventListener('click', () => setMode('member'));

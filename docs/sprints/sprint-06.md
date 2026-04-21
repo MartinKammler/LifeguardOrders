@@ -51,7 +51,7 @@ Nextcloud und bereitet den Mehrnutzerbetrieb über ein App-Login vor.
 
 - [x] Kritische Änderungen landen append-only auf Remote
 - [x] Audit-Write-Fehler blockieren abrechnungsrelevante Aktionen
-- [x] Lokales Audit ist nur Cache/Fallback, nicht führende Wahrheit
+- [x] Lokales Audit ist nur technischer Cache, nicht führende Wahrheit
 
 ### Robustheit
 
@@ -73,7 +73,7 @@ Nextcloud und bereitet den Mehrnutzerbetrieb über ein App-Login vor.
 ## Technische Leitplanken
 
 - `sync.js` kennt nur noch klare Zustände wie `synced`, `conflict`, `offline-readonly`, `auth-required`
-- `pending` bleibt höchstens für unkritische oder rein lokale Nebenpfade relevant, nicht für fachliche Kernobjekte
+- Fachliche Daten werden ohne erreichbares WebDAV nicht mehr aus lokalem Cache geladen
 - `writeJson()` nutzt `If-Match` bzw. Remote-Metadaten, um Race Conditions sichtbar zu machen
 - Auto-Merge ist nur für append-only Daten wie Audit später erlaubt, nicht für Bestellungen oder Einstellungen
 

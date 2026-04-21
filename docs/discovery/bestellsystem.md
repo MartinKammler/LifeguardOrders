@@ -145,7 +145,7 @@ System, das:
 - **Bestellung im Dezember:** Frist läuft bis 31.12. des Folgejahres (Kulanzjahr greift sofort).
 - **Gleicher Artikel mehrfach im Import:** Jede Zeile ist eine eigene Position (z. B. verschiedene Größen).
 - **Importtext hat abweichende Formatierung:** System gibt klare Fehlermeldung mit Hinweis auf erwartetes Format.
-- **WebDAV nicht erreichbar:** Klare Fehlermeldung; lokal zwischengespeicherte Daten werden angezeigt.
+- **WebDAV nicht erreichbar:** Klare Fehlermeldung; fachliche Daten werden ohne erreichbares WebDAV nicht geladen.
 - **Mitgliedername in LifeguardClock weicht ab:** Matching über `nutzer`-Feld (Vollname) gegen ID-Lookup; nicht zuordenbare Einträge werden als "unbekannt" markiert.
 - **Zwei Sammelbestellungen, Stunden reichen nicht für beide:** Älteste Schuld wird zuerst getilgt; verbleibende Schuld bleibt offen.
 - **Alte Schuld bereits getilgt, neue noch offen:** Ampel und Frist richten sich nach der ältesten

@@ -95,8 +95,6 @@
 </div>
 
 <script type="module">
-import { load }               from './src/storage.js';
-import { createWebDavClient } from './src/webdav.js';
 import { html, raw, setHTML } from './src/dom.js';
 import { toast, confirmDialog, renderSyncBanner } from './src/ui-feedback.js';
 import {
@@ -108,6 +106,7 @@ import {
 } from './src/sync.js';
 import { getSession, isMemberSession } from './src/session.js';
 import { auditAktion }                 from './src/audit.js';
+import { createClientFromLocalNc }     from './src/app-context.js';
 import {
   erstelleWunsch,
   validateWunschEintrag,
@@ -455,30 +454,33 @@ async function wunschHinzufuegen() {
 
 /* ── Init ─────────────────────────────────────────────────────── */
 async function init() {
-  const einstellungen = load(STORAGE_KEY_E);
-  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
-    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
-  }
+  client = createClientFromLocalNc();
 
-  artikelKatalog = load(STORAGE_KEY_A) || [];
-
-  const lokalWuensche = load(STORAGE_KEY_W);
-  if (Array.isArray(lokalWuensche)) wuensche = lokalWuensche;
-
-  if (client) {
-    setHTML(document.getElementById('wunschliste-container'),
-      raw('<p class="meta" style="padding:16px 0">Synchronisiere mit Nextcloud …</p>'));
-    const r = await hydrateJsonFromSync({
+  setHTML(document.getElementById('wunschliste-container'),
+    raw('<p class="meta" style="padding:16px 0">Synchronisiere mit Nextcloud …</p>'));
+  const [wunschResult, artikelResult] = await Promise.all([
+    hydrateJsonFromSync({
       scope: SYNC_SCOPE_W,
       storageKey: STORAGE_KEY_W,
       client,
       remotePath: NC_PFAD_W,
       isValidRemote: data => isValidWuenscheListe(data),
-    });
-    if (Array.isArray(r.data)) {
-      wuensche = r.data.map(normalizeWunsch);
-    }
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: 'artikel',
+      storageKey: STORAGE_KEY_A,
+      client,
+      remotePath: '/LifeguardOrders/artikel.json',
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+  ]);
+  if (Array.isArray(wunschResult.data)) {
+    wuensche = wunschResult.data.map(normalizeWunsch);
+  }
+  if (Array.isArray(artikelResult.data)) {
+    artikelKatalog = artikelResult.data;
   }
 
   renderWunschliste();

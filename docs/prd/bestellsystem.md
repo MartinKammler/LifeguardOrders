@@ -15,7 +15,8 @@ durch Einsatzstunden abgearbeitet haben.
 Eine Progressive Web App (PWA) im gleichen Tech-Stack wie die bestehende Stempeluhr (Vanilla JS,
 reines HTML/CSS, keine Build-Tools). Daten werden als JSON-Dateien auf der Nextcloud der OG
 gespeichert und via WebDAV gelesen und geschrieben. Die App läuft im Browser, benötigt keinen
-eigenen Server und arbeitet nach dem ersten Laden auch offline.
+eigenen Server. Für fachliche Daten ist eine erreichbare Nextcloud/WebDAV-Verbindung Pflicht;
+ohne WebDAV werden keine Bestellungen, Wünsche, Lagerdaten, Rechnungen oder Rolleninformationen geladen.
 
 **Nextcloud-Dateistruktur:**
 ```
@@ -245,12 +246,13 @@ werden — der Parser versteht beide Formate.
     (Standard: 3 Stunden = 10 €).
 60. Als Admin möchte ich konfigurieren, welche Einsatztypen für die Stundenpflicht zählen.
 61. Als Admin möchte ich die Nextcloud-Zugangsdaten ändern können.
-62. Als Admin möchte ich die Einstellungen lokal im `localStorage` speichern.
+62. Als Admin möchte ich lokal höchstens die Nextcloud-URL und den Benutzernamen als Login-Hilfe behalten,
+    nicht aber fachliche Daten oder vollständige Einstellungen dauerhaft im Browser speichern.
 
 ### Fehler- und Leerzustände
 
-63. Als Admin möchte ich bei fehlendem Netzwerk eine klare Fehlermeldung sehen und mit
-    gecachten Daten weiterarbeiten können.
+63. Als Admin möchte ich bei fehlendem Netzwerk eine klare Fehlermeldung sehen und wissen,
+    dass ohne erreichbare Nextcloud keine fachlichen Daten bearbeitet oder geladen werden.
 64. Als Admin möchte ich bei fehlerhaftem Import-Text eine verständliche Fehlermeldung erhalten.
 65. Als Admin möchte ich auf jeder leeren Listenseite einen erklärenden Hinweis sehen.
 
@@ -654,11 +656,11 @@ Alle Seitenmodule verwenden ausschließlich:
 
 ### Sync-Architektur (sync.js)
 
-- Fachliche Daten arbeiten künftig **remote-first**: Schreiben nur wenn Nextcloud erreichbar ist
+- Fachliche Daten arbeiten künftig **remote-required**: Lesen und Schreiben nur wenn Nextcloud erreichbar ist
 - Kein stilles `pending`-Weiterschreiben mehr für Bestellungen, Artikel, Materialbestand, Einstellungen
 - Vor jedem Upload wird der aktuelle Remote-Stand geprüft (`ETag` / Remote-Version)
 - Bei Remote-Abweichung: **harte Konfliktsperre**, kein automatisches Überschreiben
-- Offline oder ohne Remote-Verbindung: App bleibt lesbar, aber fachliche Schreibvorgänge sind gesperrt
+- Offline oder ohne Remote-Verbindung: fachliche Daten werden nicht geladen; die App zeigt stattdessen einen klaren Verbindungsfehler
 - Pro Scope speichert `sync.js` zusätzlich Remote-Metadaten und Konfliktstatus
 - Konflikt-UX bietet zunächst nur: `Remote neu laden`, `lokale Kopie exportieren`, `Konflikt später lösen`
 - NC-Passwort wird nur in `sessionStorage` gehalten, nie in `localStorage` gespeichert
@@ -669,8 +671,9 @@ Alle Seitenmodule verwenden ausschließlich:
 - `einstellungen.json` wird nicht als Default vom Webserver geladen (würde Zugangsdaten exponieren)
 - NC-Credentials-Validierung: `client` ist nur dann ungleich `null`, wenn URL + User + Pass vollständig
 - App-Login wird vorbereitet, ist im Frontend-Only-Betrieb aber **keine harte Sicherheitsgrenze** gegen technisch versierte lokale Nutzer
-- Vereinsdaten im Browser-Cache gelten weiterhin als Geräte-Risiko und sind nur auf freigegebenen Geräten akzeptabel
-- Audit-Log wird künftig append-only auf Nextcloud geführt; lokale Kopie ist nur Cache/Fallback
+- Vereinsdaten werden nicht mehr als betrieblicher Lese-Fallback im Browser gehalten; lokal bleiben nur Sessiondaten,
+  Sync-Status und minimale Login-Hilfen
+- Audit-Log wird künftig append-only auf Nextcloud geführt; lokale Kopie ist nur ein technischer Kurzzeit-Cache
 
 ---
 
@@ -714,9 +717,9 @@ Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Re
 - **Stempeluhr-Referenz:** `C:\GitHub\Stempeluhr\stempeluhr\` — Code-Stil und WebDAV-Pattern.
 - **Parser-Robustheit:** Format der Materialstelle-Seite kann variieren — Parser wird
   laufend mit neuen Beispielen trainiert.
-- **NC-Sync-Strategie:** Nextcloud ist künftig die maßgebliche Schreibquelle.
-  Lokaler Cache dient dem schnelleren Laden und als lesbarer Fallback, aber nicht mehr
-  als stiller Offline-Schreibpuffer für fachliche Daten.
+- **NC-Sync-Strategie:** Nextcloud ist die maßgebliche Lese- und Schreibquelle.
+  Fachliche Daten werden ohne erreichbares WebDAV nicht geladen; lokaler Speicher dient nicht
+  mehr als betrieblicher Offline-Fallback.
 - **Konfliktstrategie:** Bei Remote-Änderungen zwischen Lesen und Schreiben wird nicht
   automatisch gemerged, sondern hart gesperrt und dem Nutzer eine Konfliktentscheidung
   aufgezwungen.

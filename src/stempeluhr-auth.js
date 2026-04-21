@@ -180,6 +180,12 @@ export async function authentifiziereMitglied({ client, pin, storage, sessionSto
   resetMitgliedsPinCooldown(sessionStore);
 
   const zugriff = await ladeZugriff(client, storage);
+  if (!zugriff.ok) {
+    return {
+      ok: false,
+      error: zugriff.error || 'Zugriffsdaten konnten nicht geladen werden.',
+    };
+  }
   const sperre = zugriff.ok
     ? findeMitgliedsSperre(zugriff.data, user.id)
     : { blocked: false, globalBlocked: false, memberBlocked: false, reason: '', globalReason: '', memberReason: '' };

@@ -160,8 +160,6 @@
 </div>
 
 <script type="module">
-import { load }               from './src/storage.js';
-import { createWebDavClient } from './src/webdav.js';
 import { html, raw, setHTML } from './src/dom.js';
 import { toast, confirmDialog, renderSyncBanner } from './src/ui-feedback.js';
 import {
@@ -174,6 +172,7 @@ import {
 import { getSession }  from './src/session.js';
 import { darfAktion }  from './src/authz.js';
 import { auditAktion } from './src/audit.js';
+import { createClientFromLocalNc, ladeRemoteEinstellungen } from './src/app-context.js';
 import {
   setzeStatus,
   filterAdminQueue,
@@ -599,31 +598,36 @@ async function init() {
     return;
   }
 
-  const einstellungen = load(STORAGE_KEY_E);
-  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
-    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
-  }
+  client = createClientFromLocalNc();
+  const einstellungenResult = await ladeRemoteEinstellungen(client);
+  const einstellungen = einstellungenResult.data;
+  mitglieder = einstellungen?.mitglieder || [];
 
-  mitglieder   = einstellungen?.mitglieder || [];
-  bestellungen = load(STORAGE_KEY_B) || [];
-
-  const lokalWuensche = load(STORAGE_KEY_W);
-  if (Array.isArray(lokalWuensche)) wuensche = lokalWuensche;
-
-  if (client) {
-    setHTML(document.getElementById('queue-container'),
-      raw('<p class="meta" style="padding:16px 0">Synchronisiere mit Nextcloud …</p>'));
-    const r = await hydrateJsonFromSync({
+  setHTML(document.getElementById('queue-container'),
+    raw('<p class="meta" style="padding:16px 0">Synchronisiere mit Nextcloud …</p>'));
+  const [wunschResult, bestellResult] = await Promise.all([
+    hydrateJsonFromSync({
       scope: SYNC_SCOPE_W,
       storageKey: STORAGE_KEY_W,
       client,
       remotePath: NC_PFAD_W,
       isValidRemote: data => isValidWuenscheListe(data),
-    });
-    if (Array.isArray(r.data)) {
-      wuensche = r.data.map(normalizeWunsch);
-    }
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: 'bestellungen',
+      storageKey: STORAGE_KEY_B,
+      client,
+      remotePath: '/LifeguardOrders/bestellungen.json',
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+  ]);
+  if (Array.isArray(wunschResult.data)) {
+    wuensche = wunschResult.data.map(normalizeWunsch);
+  }
+  if (Array.isArray(bestellResult.data)) {
+    bestellungen = bestellResult.data;
   }
 
   renderQueue();

@@ -102,13 +102,12 @@
 </div>
 
 <script type="module">
-import { load }               from './src/storage.js';
-import { createWebDavClient } from './src/webdav.js';
 import { parseBestellung }    from './src/parser.js';
 import { berechneFoerderung } from './src/berechnung.js';
 import { html, raw, setHTML } from './src/dom.js';
 import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import { validateListe, validatePosition } from './src/validation.js';
+import { createClientFromLocalNc, ladeRemoteEinstellungen } from './src/app-context.js';
 import {
   getScopeSyncStatus,
   getSyncState,
@@ -484,7 +483,7 @@ async function speichern() {
     return;
   }
   updateSyncBanner();
-  statusEl.textContent = gespeichert.remote?.skipped ? 'Lokal gespeichert' : 'Gespeichert';
+  statusEl.textContent = 'Gespeichert';
   statusEl.style.color = 'var(--green)';
 
   setTimeout(() => { window.location.href = 'bestellungen.html'; }, 800);
@@ -498,30 +497,34 @@ async function init() {
   // Datum vorbelegen
   document.getElementById('datum').value = heute();
 
-  const e = load(STORAGE_KEY_E);
-  const ncPass = e?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (e?.nc?.url && e?.nc?.user && ncPass) client = createWebDavClient({ ...e.nc, pass: ncPass });
-
-  // Mitglieder aus Einstellungen
+  client = createClientFromLocalNc();
+  const einstellungenResult = await ladeRemoteEinstellungen(client);
+  const e = einstellungenResult.data;
   mitglieder = e?.mitglieder || [];
 
-  // Artikelkatalog
-  artikel = load(STORAGE_KEY_A) || [];
-
-  // Bestellungen
-  const lokal = load(STORAGE_KEY_B);
-  if (lokal) bestellungen = lokal;
-  if (client) {
-    const r = await hydrateJsonFromSync({
+  const [rB, rA] = await Promise.all([
+    hydrateJsonFromSync({
       scope: SYNC_SCOPE_B,
       storageKey: STORAGE_KEY_B,
       client,
       remotePath: NC_PFAD_B,
       isValidRemote: data => Array.isArray(data),
-    });
-    if (Array.isArray(r.data)) {
-      bestellungen = r.data;
-    }
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: SYNC_SCOPE_A,
+      storageKey: STORAGE_KEY_A,
+      client,
+      remotePath: '/LifeguardOrders/artikel.json',
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+  ]);
+  if (Array.isArray(rB.data)) {
+    bestellungen = rB.data;
+  }
+  if (Array.isArray(rA.data)) {
+    artikel = rA.data;
   }
   updateSyncBanner();
 

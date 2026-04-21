@@ -43,8 +43,7 @@ export function normalizeZugriff(data) {
 
 export async function ladeZugriff(client, storage = { load, save }) {
   if (!client) {
-    const lokal = normalizeZugriff(storage.load(STORAGE_KEY_Z));
-    return { ok: true, data: lokal, source: 'local' };
+    return { ok: false, error: 'Zugriffsoverlay kann ohne Nextcloud nicht geladen werden.', data: defaultZugriff(), source: 'auth-required' };
   }
 
   const remote = await client.readJson(NC_PFAD_Z);
@@ -55,12 +54,11 @@ export async function ladeZugriff(client, storage = { load, save }) {
       storage.save(STORAGE_KEY_Z, data);
       return { ok: true, data, source: 'default' };
     }
-    const lokal = normalizeZugriff(storage.load(STORAGE_KEY_Z));
     return {
       ok: false,
       error: remote.error || 'Zugriffsoverlay konnte nicht geladen werden.',
-      data: lokal,
-      source: 'local-fallback',
+      data: defaultZugriff(),
+      source: 'remote-required',
     };
   }
 

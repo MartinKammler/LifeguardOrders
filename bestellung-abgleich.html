@@ -339,7 +339,6 @@ import {
   naechsteRechnungslaufnummer,
   rechnungsnummerMitLaufnummer,
 } from './src/berechnung.js';
-import { createWebDavClient }               from './src/webdav.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
 import { html, raw, setHTML }               from './src/dom.js';
 import { auditAktion }                      from './src/audit.js';
@@ -347,6 +346,7 @@ import { getSession }                       from './src/session.js';
 import { darfAktion }                       from './src/authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
 import { validateListe, validatePosition, validateWunsch } from './src/validation.js';
+import { createClientFromLocalNc, ladeRemoteEinstellungen } from './src/app-context.js';
 import {
   getScopeSyncStatus,
   getSyncState,
@@ -1729,52 +1729,45 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
 async function init() {
   const params    = new URLSearchParams(location.search);
   const id        = params.get('id');
-  einstellungen   = load(STORAGE_KEY_E);
+  client = createClientFromLocalNc();
+  const einstellungenResult = await ladeRemoteEinstellungen(client);
+  einstellungen = einstellungenResult.data;
+  mitglieder = einstellungen?.mitglieder || [];
 
-  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
-    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
+  const [rB, rA, rM] = await Promise.all([
+    hydrateJsonFromSync({
+      scope: SYNC_SCOPE_B,
+      storageKey: STORAGE_KEY_B,
+      client,
+      remotePath: NC_PFAD_B,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: SYNC_SCOPE_A,
+      storageKey: STORAGE_KEY_A,
+      client,
+      remotePath: NC_PFAD_A,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: SYNC_SCOPE_M,
+      storageKey: STORAGE_KEY_M,
+      client,
+      remotePath: NC_PFAD_M,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+  ]);
+  if (Array.isArray(rB.data)) {
+    bestellungen = rB.data;
   }
-
-  mitglieder   = einstellungen?.mitglieder || [];
-  bestellungen = load(STORAGE_KEY_B)   || [];
-  artikelListe = load(STORAGE_KEY_A)   || [];
-  materialbestand = load(STORAGE_KEY_M) || [];
-
-  // NC-Sync
-  if (client) {
-    const [rB, rA, rM] = await Promise.all([
-      hydrateJsonFromSync({
-        scope: SYNC_SCOPE_B,
-        storageKey: STORAGE_KEY_B,
-        client,
-        remotePath: NC_PFAD_B,
-        isValidRemote: data => Array.isArray(data),
-      }),
-      hydrateJsonFromSync({
-        scope: SYNC_SCOPE_A,
-        storageKey: STORAGE_KEY_A,
-        client,
-        remotePath: NC_PFAD_A,
-        isValidRemote: data => Array.isArray(data),
-      }),
-      hydrateJsonFromSync({
-        scope: SYNC_SCOPE_M,
-        storageKey: STORAGE_KEY_M,
-        client,
-        remotePath: NC_PFAD_M,
-        isValidRemote: data => Array.isArray(data),
-      }),
-    ]);
-    if (Array.isArray(rB.data)) {
-      bestellungen = rB.data;
-    }
-    if (Array.isArray(rA.data)) {
-      artikelListe = rA.data;
-    }
-    if (Array.isArray(rM.data)) {
-      materialbestand = rM.data;
-    }
+  if (Array.isArray(rA.data)) {
+    artikelListe = rA.data;
+  }
+  if (Array.isArray(rM.data)) {
+    materialbestand = rM.data;
   }
   updateSyncBanner();
 

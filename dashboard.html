@@ -120,8 +120,6 @@
 </div>
 
 <script type="module">
-import { load }                                       from './src/storage.js';
-import { createWebDavClient }                         from './src/webdav.js';
 import {
   berechneStunden,
   verechneSchuld,
@@ -131,6 +129,7 @@ import {
 } from './src/stunden.js';
 import { html, raw, setHTML }                         from './src/dom.js';
 import { hydrateJsonFromSync }                        from './src/sync.js';
+import { createClientFromLocalNc, ladeRemoteEinstellungen } from './src/app-context.js';
 
 /* ── Konstanten ──────────────────────────────────────────────── */
 const STORAGE_KEY_B = 'lo_bestellungen';
@@ -299,26 +298,21 @@ document.getElementById('filter-details').addEventListener('change', renderDashb
 
 /* ── Init ────────────────────────────────────────────────────── */
 async function init() {
-  einstellungen = load(STORAGE_KEY_E);
-  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
-    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
-  }
+  client = createClientFromLocalNc();
+  const einstellungenResult = await ladeRemoteEinstellungen(client);
+  einstellungen = einstellungenResult.data;
+  mitglieder = einstellungen?.mitglieder || [];
 
-  mitglieder   = einstellungen?.mitglieder || [];
-  bestellungen = load(STORAGE_KEY_B) || [];
-
-  if (client) {
-    const r = await hydrateJsonFromSync({
-      scope: SYNC_SCOPE_B,
-      storageKey: STORAGE_KEY_B,
-      client,
-      remotePath: NC_PFAD_B,
-      isValidRemote: data => Array.isArray(data),
-    });
-    if (Array.isArray(r.data)) {
-      bestellungen = r.data;
-    }
+  const r = await hydrateJsonFromSync({
+    scope: SYNC_SCOPE_B,
+    storageKey: STORAGE_KEY_B,
+    client,
+    remotePath: NC_PFAD_B,
+    isValidRemote: data => Array.isArray(data),
+    defaultData: [],
+  });
+  if (Array.isArray(r.data)) {
+    bestellungen = r.data;
   }
 
   await berechneDashboard();

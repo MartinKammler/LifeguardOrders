@@ -1,6 +1,6 @@
 /**
  * sync.js
- * Remote-first Speicherung mit nachvollziehbarem Nextcloud-Sync-Status.
+ * Remote-required Speicherung mit nachvollziehbarem Nextcloud-Sync-Status.
  *
  * Öffentliche API:
  *   getSyncState(storage?)                    → state
@@ -225,7 +225,6 @@ export async function persistJsonWithSync({
     ? remote
     : await client.head(remotePath);
   state = markSyncSuccess(state, scope, remotePath, bestaetigteMeta.ok === false ? meta : bestaetigteMeta);
-  storage.save(storageKey, data);
   schreibeSyncState(state, storage);
 
   return { ok: true, remote, sync: getScopeSyncStatus(state, scope) };
@@ -237,20 +236,19 @@ export async function hydrateJsonFromSync({
   client,
   remotePath,
   isValidRemote = () => true,
+  defaultData = null,
   storage = defaultStorage(),
 }) {
-  const lokal = storage.load(storageKey);
   let state = getSyncState(storage);
 
   if (!client) {
     state = markSyncAuthRequired(state, scope, remotePath);
     schreibeSyncState(state, storage);
-    return { data: lokal, source: 'local-no-client', sync: getScopeSyncStatus(state, scope) };
+    return { data: defaultData, source: 'auth-required', sync: getScopeSyncStatus(state, scope) };
   }
 
   const remote = await client.readJson(remotePath);
   if (remote.ok && isValidRemote(remote.data)) {
-    storage.save(storageKey, remote.data);
     state = markSyncReadSuccess(state, scope, remotePath, remote);
     schreibeSyncState(state, storage);
     return { data: remote.data, source: 'remote', sync: getScopeSyncStatus(state, scope), remote };
@@ -260,12 +258,12 @@ export async function hydrateJsonFromSync({
   if (remote.missing) {
     state = markSyncReadSuccess(state, scope, remotePath, {});
     schreibeSyncState(state, storage);
-    return { data: lokal, source: 'local-new', sync: getScopeSyncStatus(state, scope), remote };
+    return { data: defaultData, source: 'remote-missing', sync: getScopeSyncStatus(state, scope), remote };
   }
 
   state = markSyncOfflineReadonly(state, scope, remotePath, remote.error || 'Nextcloud nicht erreichbar.');
   schreibeSyncState(state, storage);
-  return { data: lokal, source: 'local-fallback', sync: getScopeSyncStatus(state, scope), remote };
+  return { data: defaultData, source: 'remote-required', sync: getScopeSyncStatus(state, scope), remote };
 }
 
 export function syncHinweisText(status, label = 'Daten') {
@@ -274,10 +272,10 @@ export function syncHinweisText(status, label = 'Daten') {
     return `${label} mit Nextcloud synchronisiert.`;
   }
   if (status.mode === 'auth-required') {
-    return `${label} sind nur lesbar: Nextcloud-Verbindung fehlt.`;
+    return `${label} können ohne Nextcloud-Verbindung nicht geladen werden.`;
   }
   if (status.mode === 'offline-readonly') {
-    return `${label} sind nur lesbar, solange Nextcloud nicht erreichbar ist${status.lastError ? `: ${status.lastError}` : '.'}`;
+    return `${label} können ohne erreichbare Nextcloud nicht geladen werden${status.lastError ? `: ${status.lastError}` : '.'}`;
   }
   if (status.mode === 'conflict') {
     return `${label} wurden remote geändert. Bitte zuerst Remote neu laden oder lokale Kopie exportieren.`;

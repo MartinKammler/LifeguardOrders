@@ -1,6 +1,4 @@
-import { createWebDavClient } from './webdav.js';
 import { downloadAlsJson } from './defaults.js';
-import { load } from './storage.js';
 import { html, raw, setHTML } from './dom.js';
 import { druckePDF } from './pdf.js';
 import { auditAktion } from './audit.js';
@@ -8,6 +6,7 @@ import { EXTERN_ID, OG_ID } from './konstanten.js';
 import { getSession } from './session.js';
 import { canRead, darfAktion } from './authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './ui-feedback.js';
+import { createClientFromLocalNc, ladeRemoteEinstellungen } from './app-context.js';
 import {
   bucheMaterialBewegung,
   normalisiereMaterialEintrag,
@@ -605,10 +604,7 @@ async function speichereMaterialanfragen() {
   });
 }
 
-async function speichereMaterialbestandUndAnfragen(statusText = '') {
-  const vorherMaterial = cloneData(load(STORAGE_KEY_M) || []);
-  const vorherAnfragen = cloneData(load(STORAGE_KEY_R) || []);
-
+async function speichereMaterialbestandUndAnfragen(vorherMaterial, vorherAnfragen, statusText = '') {
   const materialResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_M,
     storageKey: STORAGE_KEY_M,
@@ -645,10 +641,7 @@ async function speichereMaterialbestandUndAnfragen(statusText = '') {
   return { ok: false, materialResult, anfrageResult, rollback };
 }
 
-async function speichereBestellungenUndAnfragen(statusText = '') {
-  const vorherBestellungen = cloneData(load(STORAGE_KEY_B) || []);
-  const vorherAnfragen = cloneData(load(STORAGE_KEY_R) || []);
-
+async function speichereBestellungenUndAnfragen(vorherBestellungen, vorherAnfragen, statusText = '') {
   const bestellResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
     storageKey: STORAGE_KEY_B,
@@ -685,10 +678,7 @@ async function speichereBestellungenUndAnfragen(statusText = '') {
   return { ok: false, bestellResult, anfrageResult, rollback };
 }
 
-async function speichereMaterialbestandUndBestellungen(statusText = '') {
-  const vorherMaterial = cloneData(load(STORAGE_KEY_M) || []);
-  const vorherBestellungen = cloneData(load(STORAGE_KEY_B) || []);
-
+async function speichereMaterialbestandUndBestellungen(vorherMaterial, vorherBestellungen, statusText = '') {
   const materialResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_M,
     storageKey: STORAGE_KEY_M,
@@ -890,7 +880,11 @@ async function speichereVerkauf() {
   const vorherAnfragen = cloneData(materialanfragen);
   materialbestand[index] = bewegung.eintrag;
   materialanfragen = [anfrage, ...materialanfragen];
-  const gespeichert = await speichereMaterialbestandUndAnfragen('Lagerausgabe erfasst und zur Freigabe vorgemerkt.');
+  const gespeichert = await speichereMaterialbestandUndAnfragen(
+    vorherMaterial,
+    vorherAnfragen,
+    'Lagerausgabe erfasst und zur Freigabe vorgemerkt.'
+  );
   if (!gespeichert.ok) {
     materialbestand = vorherMaterial;
     materialanfragen = vorherAnfragen;
@@ -986,6 +980,8 @@ async function finalisiereLageranfrage(anfrageId, { ogKostenlos = false } = {}) 
   });
 
   const gespeichert = await speichereBestellungenUndAnfragen(
+    vorherBestellungen,
+    vorherAnfragen,
     ogKostenlos
       ? 'Lagerfreigabe abgeschlossen und OG-Übernahme gesetzt.'
       : 'Lagerfreigabe abgeschlossen und Rechnung erzeugt.'
@@ -1081,7 +1077,11 @@ async function lehneLageranfrageAb(anfrageId) {
     entschiedenVonName: aktivePersonName(),
   });
 
-  const gespeichert = await speichereMaterialbestandUndAnfragen('Lagerfreigabe abgelehnt und Bestand zurückgebucht.');
+  const gespeichert = await speichereMaterialbestandUndAnfragen(
+    vorherMaterial,
+    vorherAnfragen,
+    'Lagerfreigabe abgelehnt und Bestand zurückgebucht.'
+  );
   if (!gespeichert.ok) {
     materialbestand = vorherMaterial;
     materialanfragen = vorherAnfragen;
@@ -1118,65 +1118,61 @@ async function lehneLageranfrageAb(anfrageId) {
 }
 
 async function init() {
-  einstellungen = load(STORAGE_KEY_E);
+  client = createClientFromLocalNc();
+  const einstellungenResult = await ladeRemoteEinstellungen(client);
+  einstellungen = einstellungenResult.data;
   mitglieder = einstellungen?.mitglieder || [];
-  const ncPass = einstellungen?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (einstellungen?.nc?.url && einstellungen?.nc?.user && ncPass) {
-    client = createWebDavClient({ ...einstellungen.nc, pass: ncPass });
-  }
-
-  materialbestand = load(STORAGE_KEY_M) || [];
-  bestellungen = load(STORAGE_KEY_B) || [];
-  artikelListe = load(STORAGE_KEY_A) || [];
-  materialanfragen = (load(STORAGE_KEY_R) || []).map(normalisiereMaterialanfrage);
+  materialbestand = [];
+  bestellungen = [];
+  artikelListe = [];
+  materialanfragen = [];
   _artikelBasenCache = null;
-  if (client) {
-    const [materialLoaded, bestellungenLoaded, artikelLoaded, anfragenLoaded] = await Promise.all([
-      hydrateJsonFromSync({
-        scope: SYNC_SCOPE_M,
-        storageKey: STORAGE_KEY_M,
-        client,
-        remotePath: NC_PFAD_M,
-        isValidRemote: data => Array.isArray(data),
-      }),
-      hydrateJsonFromSync({
-        scope: SYNC_SCOPE_B,
-        storageKey: STORAGE_KEY_B,
-        client,
-        remotePath: NC_PFAD_B,
-        isValidRemote: data => Array.isArray(data),
-      }),
-      hydrateJsonFromSync({
-        scope: SYNC_SCOPE_A,
-        storageKey: STORAGE_KEY_A,
-        client,
-        remotePath: NC_PFAD_A,
-        isValidRemote: data => Array.isArray(data),
-      }),
-      hydrateJsonFromSync({
-        scope: SYNC_SCOPE_R,
-        storageKey: STORAGE_KEY_R,
-        client,
-        remotePath: NC_PFAD_R,
-        isValidRemote: data => Array.isArray(data),
-      }),
-    ]);
-    if (Array.isArray(materialLoaded.data)) {
-      materialbestand = materialLoaded.data.map(normalisiereMaterialEintrag);
-    }
-    if (Array.isArray(bestellungenLoaded.data)) {
-      bestellungen = bestellungenLoaded.data;
-    }
-    if (Array.isArray(artikelLoaded.data)) {
-      artikelListe = artikelLoaded.data;
-      _artikelBasenCache = null;
-    }
-    if (Array.isArray(anfragenLoaded.data)) {
-      materialanfragen = anfragenLoaded.data.map(normalisiereMaterialanfrage);
-    }
-  } else {
-    materialbestand = materialbestand.map(normalisiereMaterialEintrag);
-    materialanfragen = materialanfragen.map(normalisiereMaterialanfrage);
+  const [materialLoaded, bestellungenLoaded, artikelLoaded, anfragenLoaded] = await Promise.all([
+    hydrateJsonFromSync({
+      scope: SYNC_SCOPE_M,
+      storageKey: STORAGE_KEY_M,
+      client,
+      remotePath: NC_PFAD_M,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: SYNC_SCOPE_B,
+      storageKey: STORAGE_KEY_B,
+      client,
+      remotePath: NC_PFAD_B,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: SYNC_SCOPE_A,
+      storageKey: STORAGE_KEY_A,
+      client,
+      remotePath: NC_PFAD_A,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+    hydrateJsonFromSync({
+      scope: SYNC_SCOPE_R,
+      storageKey: STORAGE_KEY_R,
+      client,
+      remotePath: NC_PFAD_R,
+      isValidRemote: data => Array.isArray(data),
+      defaultData: [],
+    }),
+  ]);
+  if (Array.isArray(materialLoaded.data)) {
+    materialbestand = materialLoaded.data.map(normalisiereMaterialEintrag);
+  }
+  if (Array.isArray(bestellungenLoaded.data)) {
+    bestellungen = bestellungenLoaded.data;
+  }
+  if (Array.isArray(artikelLoaded.data)) {
+    artikelListe = artikelLoaded.data;
+    _artikelBasenCache = null;
+  }
+  if (Array.isArray(anfragenLoaded.data)) {
+    materialanfragen = anfragenLoaded.data.map(normalisiereMaterialanfrage);
   }
 
   render();

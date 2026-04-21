@@ -946,10 +946,8 @@ test('persistJsonWithSync erkennt Remote-Konflikte vor dem Upload', async () => 
   assert(isConflictSync(storage.load('lo_sync_status'), 'bestellungen'), 'Konfliktstatus muss gesetzt werden');
 });
 
-test('hydrateJsonFromSync faellt bei Remote-Fehler auf lokalen Cache zurück und markiert read-only', async () => {
-  const storage = createMemoryStorage({
-    lo_bestellungen: [{ id: 'lokal' }],
-  });
+test('hydrateJsonFromSync liefert bei Remote-Fehler keinen lokalen Fallback und markiert read-only', async () => {
+  const storage = createMemoryStorage();
   const result = await hydrateJsonFromSync({
     scope: 'bestellungen',
     storageKey: 'lo_bestellungen',
@@ -960,12 +958,13 @@ test('hydrateJsonFromSync faellt bei Remote-Fehler auf lokalen Cache zurück un
     },
     remotePath: '/LifeguardOrders/bestellungen.json',
     isValidRemote: data => Array.isArray(data),
+    defaultData: [],
     storage,
   });
 
-  assertEqual(result.source, 'local-fallback', 'Lokaler Cache muss bei Remote-Fehler lesbar bleiben');
-  assertEqual(result.data[0].id, 'lokal', 'Lokaler Cache darf nicht verloren gehen');
-  assertEqual(getScopeSyncStatus(storage.load('lo_sync_status'), 'bestellungen').mode, 'offline-readonly', 'Fallback muss als read-only markiert werden');
+  assertEqual(result.source, 'remote-required', 'Ohne erreichbare Nextcloud darf kein lokaler Fallback geliefert werden');
+  assertEqual(result.data.length, 0, 'Bei Remote-Fehler sollen nur die Default-Daten zurückkommen');
+  assertEqual(getScopeSyncStatus(storage.load('lo_sync_status'), 'bestellungen').mode, 'offline-readonly', 'Fehler muss als read-only markiert werden');
 });
 
 test('hashPassword und verifyPassword pruefen App-Logins stabil', async () => {

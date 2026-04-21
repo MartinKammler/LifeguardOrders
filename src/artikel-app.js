@@ -3,14 +3,13 @@
  * Logik für artikel.html — Artikelkatalog verwalten und importieren.
  */
 
-import { createWebDavClient }                   from './webdav.js';
 import { parseBestellung }                     from './parser.js';
-import { ladeDefaultArtikel, downloadAlsJson } from './defaults.js';
-import { load, save }                          from './storage.js';
+import { downloadAlsJson } from './defaults.js';
 import { html, raw, setHTML }                  from './dom.js';
 import { getSession }                          from './session.js';
 import { darfAktion }                          from './authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './ui-feedback.js';
+import { createClientFromLocalNc }             from './app-context.js';
 import { validateArtikel }                     from './validation.js';
 import {
   fuegeArtikelHinzu,
@@ -25,7 +24,6 @@ import {
   syncHinweisText,
 } from './sync.js';
 
-const STORAGE_KEY_E  = 'lo_einstellungen';
 const STORAGE_KEY_A  = 'lo_artikel';
 const NC_PFAD_A      = '/LifeguardOrders/artikel.json';
 const SYNC_SCOPE_A   = 'artikel';
@@ -53,8 +51,6 @@ function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function leseEinstellungen() { return load(STORAGE_KEY_E); }
-
 function zeigeStatus(elId, text, art = 'info') {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -78,16 +74,7 @@ function updateSyncBanner() {
 /* ── Persistenz ─────────────────────────────────────────────── */
 
 async function ladeArtikel() {
-  artikel = load(STORAGE_KEY_A) || [];
-
-  // Kein localStorage → data/artikel.json als Fallback
-  if (!artikel.length) {
-    const defaults = await ladeDefaultArtikel();
-    if (defaults.length) {
-      artikel = defaults;
-      save(STORAGE_KEY_A, artikel);
-    }
-  }
+  artikel = [];
 
   if (client) {
     const geladen = await hydrateJsonFromSync({
@@ -96,6 +83,7 @@ async function ladeArtikel() {
       client,
       remotePath: NC_PFAD_A,
       isValidRemote: data => Array.isArray(data),
+      defaultData: [],
     });
     if (Array.isArray(geladen.data)) {
       artikel = geladen.data;
@@ -395,11 +383,7 @@ document.getElementById('btn-download-artikel')?.addEventListener('click', () =>
 });
 
 async function init() {
-  const e = leseEinstellungen();
-  const ncPass = e?.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-  if (e?.nc?.url && e?.nc?.user && ncPass) {
-    client = createWebDavClient({ ...e.nc, pass: ncPass });
-  }
+  client = createClientFromLocalNc();
   await ladeArtikel();
 
   // Delegierter Event-Listener auf der Katalog-Tabelle (einmalig registriert)

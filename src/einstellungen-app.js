@@ -6,8 +6,8 @@
 import { createWebDavClient }                        from './webdav.js';
 import { parseMitglieder }                           from './mitglieder.js';
 import { downloadAlsJson } from './defaults.js';
-import { load, save }                                from './storage.js';
 import { renderSyncBanner, toast }                   from './ui-feedback.js';
+import { leseNcKonfiguration, speichereNcKonfiguration } from './auth.js';
 import {
   getScopeSyncStatus,
   getSyncState,
@@ -82,11 +82,6 @@ function updateSyncBanner(exportData = null) {
     exportFilename: 'einstellungen-konfliktkopie.json',
   });
 }
-
-/* ── Einstellungen lesen / schreiben ────────────────────────── */
-
-function leseLokal()      { return load(STORAGE_KEY); }
-function schreibeLokal(d) { save(STORAGE_KEY, d); }
 
 /* ── DOM ↔ Daten ────────────────────────────────────────────── */
 
@@ -231,12 +226,12 @@ document.getElementById('btn-mitglieder-import').addEventListener('click', () =>
 
 document.getElementById('btn-speichern').addEventListener('click', async () => {
   const daten  = formularLesen();
-  const lokal  = leseLokal() || {};
-  const gesamt = { ...lokal, ...daten, mitglieder: importierteMitglieder || lokal.mitglieder || [] };
+  const gesamt = { ...daten, mitglieder: importierteMitglieder || [] };
 
   // Passwort nicht persistent speichern
   const pass = gesamt.nc?.pass || '';
   if (pass) sessionStorage.setItem('lo_nc_pass', pass);
+  speichereNcKonfiguration(gesamt.nc);
   const gesamtOhnePass = { ...gesamt, nc: { ...gesamt.nc, pass: '' } };
 
   const ncPass = pass || sessionStorage.getItem('lo_nc_pass') || '';
@@ -255,10 +250,6 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     zeigeStatus('speichern-status', syncHinweisText(gespeichert.sync, 'Einstellungen'), 'error');
     updateSyncBanner(() => gesamtOhnePass);
     toast(syncHinweisText(gespeichert.sync, 'Einstellungen'), 'error', 7000);
-  } else if (gespeichert.remote?.skipped) {
-    zeigeStatus('speichern-status', '✓ Lokal gespeichert', 'ok');
-    updateSyncBanner();
-    toast('Einstellungen lokal gespeichert.', 'success');
   } else {
     zeigeStatus('speichern-status', '✓ Gespeichert', 'ok');
     updateSyncBanner();
@@ -269,51 +260,45 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
 /* ── Download als data/einstellungen.json ───────────────────── */
 
 document.getElementById('btn-download-einstellungen')?.addEventListener('click', () => {
-  const lokal = leseLokal();
-  if (!lokal) { toast('Keine Einstellungen zum Exportieren.', 'warn'); return; }
-  downloadAlsJson(lokal, 'einstellungen.json');
+  const daten = { ...formularLesen(), mitglieder: importierteMitglieder || [] };
+  downloadAlsJson({ ...daten, nc: { ...daten.nc, pass: '' } }, 'einstellungen.json');
   toast('Einstellungen exportiert.', 'info');
 });
 
 /* ── Init ───────────────────────────────────────────────────── */
 
 async function init() {
-  // 1. Erst localStorage
-  let lokal = leseLokal();
+  const nc = leseNcKonfiguration();
+  const sessionPass = sessionStorage.getItem('lo_nc_pass') || '';
+  formularFuellen({ ...DEFAULTS, nc: { ...DEFAULTS.nc, ...nc, pass: '' } });
+  const passField = document.getElementById('nc-pass');
+  if (passField && sessionPass) {
+    passField.value = sessionPass;
+  }
 
-  if (lokal) {
-    formularFuellen(lokal);
-    // Passwort aus sessionStorage (wird nicht persistent gespeichert)
-    const sessionPass = sessionStorage.getItem('lo_nc_pass');
-    if (sessionPass) {
-      const passField = document.getElementById('nc-pass');
-      if (passField) passField.value = sessionPass;
-    }
-    // 3. NC-Sync falls Zugangsdaten vorhanden
-    const ncPass = lokal.nc?.pass || sessionStorage.getItem('lo_nc_pass') || '';
-    if (lokal.nc?.url && lokal.nc?.user && ncPass) {
-      const client = ladeClient({ ...lokal, nc: { ...lokal.nc, pass: ncPass } });
-      const geladen = await hydrateJsonFromSync({
-        scope: SYNC_SCOPE_E,
-        storageKey: STORAGE_KEY,
-        client,
-        remotePath: NC_PFAD,
-        isValidRemote: data => !!data && typeof data === 'object' && !Array.isArray(data),
+  if (nc.url && nc.user && sessionPass) {
+    const client = ladeClient({ nc: { ...nc, pass: sessionPass } });
+    const geladen = await hydrateJsonFromSync({
+      scope: SYNC_SCOPE_E,
+      storageKey: STORAGE_KEY,
+      client,
+      remotePath: NC_PFAD,
+      isValidRemote: data => !!data && typeof data === 'object' && !Array.isArray(data),
+      defaultData: null,
+    });
+    if (geladen.data) {
+      formularFuellen({
+        ...geladen.data,
+        nc: { ...(geladen.data.nc || {}), url: nc.url, user: nc.user, pass: '' },
       });
-      if (geladen.data) {
-        formularFuellen(geladen.data);
-        // Passwort aus sessionStorage nach NC-Sync erneut eintragen (ncDaten hat kein pass)
-        if (sessionPass) {
-          const passField = document.getElementById('nc-pass');
-          if (passField) passField.value = sessionPass;
-        }
-        const ncDatenOhnePass = { ...geladen.data, nc: { ...geladen.data.nc, pass: '' } };
-        schreibeLokal(ncDatenOhnePass);
+      if (passField) {
+        passField.value = sessionPass;
       }
+    } else if (geladen.source === 'remote-missing') {
+      zeigeStatus('speichern-status', 'Noch keine Einstellungen auf Nextcloud gespeichert.', 'info');
+    } else if (geladen.source !== 'remote') {
+      zeigeStatus('speichern-status', syncHinweisText(geladen.sync, 'Einstellungen'), 'warn');
     }
-  } else {
-    // Keine Daten nirgends — Defaults aus Code laden
-    formularFuellen(DEFAULTS);
   }
   updateSyncBanner();
 }

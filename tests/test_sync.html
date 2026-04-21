@@ -56,7 +56,7 @@ document.getElementById('out').textContent += '\n── syncHinweisText ──\n
 assert('syncHinweisText: null → leerer String', syncHinweisText(null) === '');
 assert('syncHinweisText: synced enthält synchronisiert', syncHinweisText({ mode: 'synced' }, 'Daten').includes('synchronisiert'));
 assert('syncHinweisText: auth-required enthält Nextcloud', syncHinweisText({ mode: 'auth-required' }, 'Daten').includes('Nextcloud'));
-assert('syncHinweisText: offline-readonly enthält lesbar', syncHinweisText({ mode: 'offline-readonly' }, 'Daten').includes('lesbar'));
+assert('syncHinweisText: offline-readonly enthält geladen', syncHinweisText({ mode: 'offline-readonly' }, 'Daten').includes('geladen'));
 assert('syncHinweisText: conflict enthält remote', syncHinweisText({ mode: 'conflict' }, 'Daten').includes('remote'));
 
 // ── persistJsonWithSync: kein Client ────────────────────────────────
@@ -123,12 +123,11 @@ assert('412 Precondition: mode === conflict', r6.sync?.mode === 'conflict');
 // ── hydrateJsonFromSync ─────────────────────────────────────────────
 document.getElementById('out').textContent += '\n── hydrateJsonFromSync ──\n';
 
-// kein Client → lokale Daten
+// kein Client → kein lokaler Fallback
 const s7 = mockStorage();
-s7.save('lo_data', [{ id: 'lokal' }]);
-const h1 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: null, remotePath: '/p', storage: s7 });
-assert('hydrate kein Client: source === local-no-client', h1.source === 'local-no-client');
-assert('hydrate kein Client: lokale Daten zurück', h1.data?.[0]?.id === 'lokal');
+const h1 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: null, remotePath: '/p', storage: s7, defaultData: [] });
+assert('hydrate kein Client: source === auth-required', h1.source === 'auth-required');
+assert('hydrate kein Client: leere Daten zurück', Array.isArray(h1.data) && h1.data.length === 0);
 assert('hydrate kein Client: mode === auth-required', h1.sync?.mode === 'auth-required');
 
 // gültiger Remote → Remote-Daten
@@ -142,26 +141,24 @@ assert('hydrate Remote: source === remote', h2.source === 'remote');
 assert('hydrate Remote: Remote-Daten zurück', h2.data?.[0]?.id === 'remote');
 assert('hydrate Remote: mode === synced', h2.sync?.mode === 'synced');
 
-// Remote-Fehler → lokaler Fallback
+// Remote-Fehler → kein lokaler Fallback
 const s9 = mockStorage();
-s9.save('lo_data', [{ id: 'fallback' }]);
 const clientFehler = {
   readJson: async () => ({ ok: false, error: 'Netzwerk' }),
 };
-const h3 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientFehler, remotePath: '/p', storage: s9 });
-assert('hydrate Fallback: source === local-fallback', h3.source === 'local-fallback');
-assert('hydrate Fallback: lokale Daten zurück', h3.data?.[0]?.id === 'fallback');
+const h3 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientFehler, remotePath: '/p', storage: s9, defaultData: [] });
+assert('hydrate Fallback: source === remote-required', h3.source === 'remote-required');
+assert('hydrate Fallback: leere Daten zurück', Array.isArray(h3.data) && h3.data.length === 0);
 assert('hydrate Fallback: mode === offline-readonly', h3.sync?.mode === 'offline-readonly');
 
-// isValidRemote schlägt fehl → lokaler Fallback
+// isValidRemote schlägt fehl → kein lokaler Fallback
 const s10 = mockStorage();
-s10.save('lo_data', [{ id: 'lokal2' }]);
 const clientInvalid = {
   readJson: async () => ({ ok: true, data: 'kein-array', etag: 'e2' }),
 };
-const h4 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientInvalid, remotePath: '/p', isValidRemote: d => Array.isArray(d), storage: s10 });
-assert('hydrate invalid Remote: source === local-fallback', h4.source === 'local-fallback');
-assert('hydrate invalid Remote: lokale Daten zurück', h4.data?.[0]?.id === 'lokal2');
+const h4 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientInvalid, remotePath: '/p', isValidRemote: d => Array.isArray(d), storage: s10, defaultData: [] });
+assert('hydrate invalid Remote: source === remote-required', h4.source === 'remote-required');
+assert('hydrate invalid Remote: leere Daten zurück', Array.isArray(h4.data) && h4.data.length === 0);
 
 document.getElementById('out').textContent += `\n${ok}/${ok + fail} Tests bestanden — ${fail} fehlgeschlagen`;
 </script></body></html>

@@ -24,6 +24,8 @@ Das Bestellsystem ergänzt darauf nur Rollen, Sperren und fachliche Workflows.
 - Rechte werden zentral in `authz.js` geprüft, nicht nur durch versteckte Buttons
 - Mitglieder sehen ausschließlich eigene Daten
 - Wunschqueue und offizielle Sammelbestellung bleiben getrennte Datenbestände
+- Fachliche Daten und Rollen-/Sperrinformationen werden nur mit erreichbarem WebDAV geladen;
+  lokaler Browser-Cache ist kein betrieblicher Fallback mehr
 
 ---
 
