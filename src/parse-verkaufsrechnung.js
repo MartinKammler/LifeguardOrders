@@ -13,10 +13,11 @@
  *   EILAUFTRAG Kosten für Eilauftrag {Menge} {Preis} {Betrag} {Steuer}
  */
 
-/** Preis-String → positive Zahl.  "-44,90" → 44.90 */
+/** Preis-String → positive Zahl.  "-44,90" → 44.90,  "1.049,90" → 1049.90 */
 function parsePreis(raw) {
   if (!raw) return 0;
-  const cleaned = String(raw).replace(/[€\s]/g, '').replace(',', '.').replace(/^-/, '');
+  // Tausenderpunkt entfernen, dann Komma als Dezimaltrennzeichen umwandeln
+  const cleaned = String(raw).replace(/[€\s]/g, '').replace(/\./g, '').replace(',', '.').replace(/^-/, '');
   const val = parseFloat(cleaned);
   return isNaN(val) ? 0 : Math.round(val * 100) / 100;
 }
@@ -97,12 +98,10 @@ const SKIP_RE = [
   /^Seite \d+ \/ \d+$/,
   /^Lief\. an/,
   /^DLRG Ortsgruppe/,
-  /^Martin\s/,
-  /^Ermlandstr\./,
   /^\d{5}\s+\w/,
   /^Deutschland$/,
-  /^[ABC]\s+\d+\s+\d/,    // USt-Tabellenzeile
-  /^\d+,\d+\s+\d+,\d+$/,  // Summenzeile
+  /^[ABC]\s+\d+\s+\d/,              // USt-Tabellenzeile
+  /^[\d.]+,\d+\s+[\d.]+,\d+$/,     // Summenzeile (auch mit Tausenderpunkt)
 ];
 
 function shouldSkip(line) {
@@ -111,18 +110,21 @@ function shouldSkip(line) {
 
 // ── Regex-Patterns ────────────────────────────────────────────────────────────
 
+/** Preistoken: Ziffern mit optionalem Tausenderpunkt, Komma als Dezimaltrennzeichen */
+const PREIS_TOKEN = '[\\d.]+,\\d+';
+
 /** Artikel mit Preis: ArtNr desc… menge E-Preis Betrag A|B */
-const ARTIKEL_PREIS_RE = /^(.+?)\s+(\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+([AB])$/;
+const ARTIKEL_PREIS_RE    = new RegExp(`^(.+?)\\s+(\\d+)\\s+(${PREIS_TOKEN})\\s+(${PREIS_TOKEN})\\s+([AB])$`);
 /** Artikel ohne Preis (Bundlekomponente): ArtNr desc… menge A|B */
 const ARTIKEL_KEIN_PREIS_RE = /^(.+?)\s+(\d+)\s+([AB])$/;
 /** Beginnt mit 6–10-stelliger Artikelnummer */
 const ARTNR_PREFIX_RE = /^\d{6,10}\s/;
 /** MITTELVERW.-Zeile */
-const MITTELVERW_RE = /^MITTELVERW\. (BV|LV)\s+.+\s+(\d+)\s+STÜCK\s+(-\d+,\d+)\s+(-\d+,\d+)\s+C$/;
+const MITTELVERW_RE   = new RegExp(`^MITTELVERW\\. (BV|LV)\\s+.+\\s+(\\d+)\\s+STÜCK\\s+(-${PREIS_TOKEN})\\s+(-${PREIS_TOKEN})\\s+C$`);
 /** EILAUFTRAG-Zeile */
-const EILAUFTRAG_RE = /^EILAUFTRAG\s+.+?\s+(\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+([AB])$/;
+const EILAUFTRAG_RE   = new RegExp(`^EILAUFTRAG\\s+.+?\\s+(\\d+)\\s+(${PREIS_TOKEN})\\s+(${PREIS_TOKEN})\\s+([AB])$`);
 /** Preis-Abschlusszeile nach gesplitteter Artikelzeile: menge E-Preis Betrag A|B */
-const PREIS_ABSCHLUSS_RE = /^(\d+)\s+(\d+,\d+)\s+(\d+,\d+)\s+([AB])$/;
+const PREIS_ABSCHLUSS_RE = new RegExp(`^(\\d+)\\s+(${PREIS_TOKEN})\\s+(${PREIS_TOKEN})\\s+([AB])$`);
 /** Kein-Preis-Abschluss nach gesplitteter Bundlezeile: menge A|B */
 const KEIN_PREIS_ABSCHLUSS_RE = /^(\d+)\s+([AB])$/;
 
@@ -273,7 +275,7 @@ export function parseVerkaufsrechnung(text) {
     }
 
     // ── Fortsetzungszeile (Beschreibung mehrzeilig) ───────────────
-    if (pendingNr && zeile !== 'Stück') {
+    if (pendingNr && zeile.toLowerCase() !== 'stück') {
       pendingDesc = (pendingDesc + ' ' + zeile).trim();
     }
   }

@@ -1313,6 +1313,14 @@ MITTELVERW. BV Mittelverwendung Bundesverband 1 STÜCK -5,00 -5,00 C
   assertEqual(tshirtM.menge, 2, 'Menge M korrekt');
 });
 
+test('parseVerkaufsrechnung parst Preise über 999 EUR mit Tausenderpunkt korrekt', () => {
+  const text = `18504118 Wetterjacke 4.0 1 1.049,90 1.049,90 A\nStück\n`;
+  const result = parseVerkaufsrechnung(text);
+  assertEqual(result.artikel.length, 1, 'Artikel mit Tausenderpunkt-Preis muss erkannt werden');
+  assertEqual(result.artikel[0].einzelpreis, 1049.9, 'Preis 1.049,90 muss als 1049.90 geparst werden');
+  assertEqual(result.artikel[0].menge, 1, 'Menge korrekt');
+});
+
 test('auditAktion schreibt append-only auf Remote und cached lokal', async () => {
   const storage = createMemoryStorage();
   let remoteLog = [];
