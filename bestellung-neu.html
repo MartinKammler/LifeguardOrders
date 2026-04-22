@@ -119,7 +119,9 @@ import {
 const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_A = 'lo_artikel';
 const STORAGE_KEY_B = 'lo_bestellungen';
+const NC_PFAD_A     = '/LifeguardOrders/artikel.json';
 const NC_PFAD_B     = '/LifeguardOrders/bestellungen.json';
+const SYNC_SCOPE_A  = 'artikel';
 const SYNC_SCOPE_B  = 'bestellungen';
 
 let client      = null;
@@ -515,7 +517,7 @@ async function init() {
       scope: SYNC_SCOPE_A,
       storageKey: STORAGE_KEY_A,
       client,
-      remotePath: '/LifeguardOrders/artikel.json',
+      remotePath: NC_PFAD_A,
       isValidRemote: data => Array.isArray(data),
       defaultData: [],
     }),

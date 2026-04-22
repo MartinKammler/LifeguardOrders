@@ -9,7 +9,21 @@ const LOCAL_CACHE_KEYS = [
   'lo_materialbestand',
   'lo_artikel',
   'lo_materialanfragen',
+  'lo_wuensche',
+  'lo_rechnungen',
   'lo_audit_log',
+  'lo_zugriff',
+];
+
+/** Keys, die seit Sprint 12 nicht mehr lokal persistiert werden (Orphans aus älteren Versionen). */
+export const ORPHAN_LOCAL_KEYS = [
+  'lo_benutzer',
+  'lo_bestellungen',
+  'lo_materialbestand',
+  'lo_artikel',
+  'lo_materialanfragen',
+  'lo_wuensche',
+  'lo_rechnungen',
   'lo_zugriff',
 ];
 

@@ -6,7 +6,7 @@
 import { createWebDavClient }                        from './webdav.js';
 import { parseMitglieder }                           from './mitglieder.js';
 import { downloadAlsJson } from './defaults.js';
-import { renderSyncBanner, toast }                   from './ui-feedback.js';
+import { confirmDialog, renderSyncBanner, toast }    from './ui-feedback.js';
 import { leseNcKonfiguration, speichereNcKonfiguration } from './auth.js';
 import {
   getScopeSyncStatus,
@@ -239,21 +239,41 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     ? createWebDavClient({ ...daten.nc, pass: ncPass })
     : null;
   zeigeStatus('speichern-status', 'Speichern…', 'info');
-  const gespeichert = await persistJsonWithSync({
-    scope: SYNC_SCOPE_E,
-    storageKey: STORAGE_KEY,
-    data: gesamtOhnePass,
-    client,
-    remotePath: NC_PFAD,
-  });
-  if (!gespeichert.ok) {
-    zeigeStatus('speichern-status', syncHinweisText(gespeichert.sync, 'Einstellungen'), 'error');
+
+  while (true) {
+    const gespeichert = await persistJsonWithSync({
+      scope: SYNC_SCOPE_E,
+      storageKey: STORAGE_KEY,
+      data: gesamtOhnePass,
+      client,
+      remotePath: NC_PFAD,
+    });
+    if (gespeichert.ok) {
+      zeigeStatus('speichern-status', '✓ Gespeichert', 'ok');
+      updateSyncBanner();
+      toast('Einstellungen gespeichert.', 'success');
+      return;
+    }
+
+    const fehlertext = syncHinweisText(gespeichert.sync, 'Einstellungen');
+    zeigeStatus('speichern-status', fehlertext, 'error');
     updateSyncBanner(() => gesamtOhnePass);
-    toast(syncHinweisText(gespeichert.sync, 'Einstellungen'), 'error', 7000);
-  } else {
-    zeigeStatus('speichern-status', '✓ Gespeichert', 'ok');
-    updateSyncBanner();
-    toast('Einstellungen gespeichert.', 'success');
+
+    const anzahlMitglieder = (gesamtOhnePass.mitglieder || []).length;
+    const erneutVersuchen = await confirmDialog({
+      title: 'Einstellungen konnten nicht gespeichert werden',
+      body: `${fehlertext}\n\nDeine Eingaben (inkl. ${anzahlMitglieder} Mitglieder) sind nur im Arbeitsspeicher. Beim Neuladen gehen sie verloren.\n\n„Erneut versuchen" → Speichern wiederholen.\n„Als JSON sichern" → Download als Backup, anschließend manuell erneut einspielen.`,
+      confirmText: 'Erneut versuchen',
+      cancelText: 'Als JSON sichern',
+      confirmTone: 'primary',
+    });
+
+    if (!erneutVersuchen) {
+      downloadAlsJson(gesamtOhnePass, 'einstellungen-backup.json');
+      toast('Backup als JSON heruntergeladen. Bitte nach Verbindungsaufbau erneut öffnen und speichern.', 'warn', 10000);
+      return;
+    }
+    zeigeStatus('speichern-status', 'Speichern…', 'info');
   }
 });
 

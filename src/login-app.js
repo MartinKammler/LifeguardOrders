@@ -6,6 +6,7 @@ import {
   speichereNcKonfiguration,
 } from './auth.js';
 import { setHTML, raw } from './dom.js';
+import { toast } from './ui-feedback.js';
 import { ladeAktiveStempeluhrBenutzer, authentifiziereMitglied } from './stempeluhr-auth.js';
 import { getNextPath, SESSION_KEY_NC_PASS, setFunctionSession, setMemberSession } from './session.js';
 
@@ -253,7 +254,16 @@ document.getElementById('btn-function-mode').addEventListener('click', async () 
   setMode('function');
   const nc = readNc();
   const client = createNcClient(nc);
-  await ladeHandelndePersonen(client);
+  if (!client) {
+    setStatus('nc-status', 'Nextcloud-Passwort erforderlich – bitte eingeben und "Verbindung testen".', 'warn');
+    toast('Nextcloud-Passwort eingeben und Verbindung testen, um handelnde Personen zu laden.', 'warn', 6000);
+    return;
+  }
+  const result = await ladeHandelndePersonen(client);
+  if (!result.ok) {
+    setStatus('nc-status', result.error || 'Personenliste konnte nicht geladen werden.', 'err');
+    toast(result.error || 'Handelnde Personen konnten nicht geladen werden.', 'err', 6000);
+  }
 });
 document.getElementById('btn-member-login').addEventListener('click', memberLogin);
 document.getElementById('btn-login').addEventListener('click', functionLogin);
