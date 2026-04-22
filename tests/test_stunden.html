@@ -112,7 +112,7 @@ const einstellungen = { stundenRate: { stunden: 3, euro: 10 } };
 const bestellungenMitRechnungen = [{
   id: 'b1', datum: '2025-03-01', status: 'abgeschlossen',
   rechnungen: [{
-    id: 'r1', mitgliedId: 'martin', nummer: 'R_MAT_2025_03_15_001',
+    id: 'r1', mitgliedId: 'martin', nummer: 'R_MAT_2025_03_001',
     datum: '2025-03-15', erwartetEinsatzstunden: 6,
   }],
 }];
@@ -148,11 +148,11 @@ await test('mehrere Rechnungen: älteste zuerst tilgen', () => {
   const bestellungen = [
     {
       id: 'b1', datum: '2024-06-01', status: 'abgeschlossen',
-      rechnungen: [{ id: 'r1', mitgliedId: 'martin', nummer: 'R_MAT_2024_06_10_001', datum: '2024-06-10', erwartetEinsatzstunden: 6 }],
+      rechnungen: [{ id: 'r1', mitgliedId: 'martin', nummer: 'R_MAT_2024_06_001', datum: '2024-06-10', erwartetEinsatzstunden: 6 }],
     },
     {
       id: 'b2', datum: '2025-03-01', status: 'abgeschlossen',
-      rechnungen: [{ id: 'r2', mitgliedId: 'martin', nummer: 'R_MAT_2025_03_15_001', datum: '2025-03-15', erwartetEinsatzstunden: 3 }],
+      rechnungen: [{ id: 'r2', mitgliedId: 'martin', nummer: 'R_MAT_2025_03_001', datum: '2025-03-15', erwartetEinsatzstunden: 3 }],
     },
   ];
   const r = verechneSchuld('martin', bestellungen, 6, einstellungen);
@@ -164,12 +164,12 @@ await test('mehrere Rechnungen: älteste zuerst tilgen', () => {
 
 await test('verechneSchuld: älteste Schuld zuerst getilgt (Datumsreihenfolge auch wenn Bestellungen nicht chronologisch)', () => {
   const bestellungen = [
-    { datum: '2025-06-01', rechnungen: [{ id: 'r2', mitgliedId: 'alice', nummer: 'R_MAT_2025_06_15_001', datum: '2025-06-15', erwartetEinsatzstunden: 6 }] },
-    { datum: '2025-01-01', rechnungen: [{ id: 'r1', mitgliedId: 'alice', nummer: 'R_MAT_2025_01_10_001', datum: '2025-01-10', erwartetEinsatzstunden: 3 }] },
+    { datum: '2025-06-01', rechnungen: [{ id: 'r2', mitgliedId: 'alice', nummer: 'R_MAT_2025_06_001', datum: '2025-06-15', erwartetEinsatzstunden: 6 }] },
+    { datum: '2025-01-01', rechnungen: [{ id: 'r1', mitgliedId: 'alice', nummer: 'R_MAT_2025_01_001', datum: '2025-01-10', erwartetEinsatzstunden: 3 }] },
   ];
   const r = verechneSchuld('alice', bestellungen, 3, einstellungen);
   // Älteste Rechnung (Januar) muss zuerst verrechnet sein und vollständig getilgt
-  assertEqual(r.verrechnungen[0].rechnungNummer, 'R_MAT_2025_01_10_001', 'älteste Rechnung ist erste');
+  assertEqual(r.verrechnungen[0].rechnungNummer, 'R_MAT_2025_01_001', 'älteste Rechnung ist erste');
   assertEqual(r.verrechnungen[0].offenStunden, 0, 'älteste Rechnung vollständig getilgt');
 });
 

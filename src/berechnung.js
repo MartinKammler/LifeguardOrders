@@ -4,9 +4,9 @@
  *
  * Öffentliche API:
  *   berechneFoerderung(artikel, menge) → { bv, lv, og, mitglied, gesamt }
- *   rechnungsnummerMitLaufnummer(datum, laufnummer) → "R_MAT_YYYY_MM_DD_NNN"
+ *   rechnungsnummerMitLaufnummer(datum, laufnummer) → "R_MAT_YYYY_MM_NNN"
  *   naechsteRechnungslaufnummer(rechnungen, datum, minLaufnummer?) → number
- *   naechsteRechnungsnummer(rechnungen, datum) → "R_MAT_YYYY_MM_DD_NNN"
+ *   naechsteRechnungsnummer(rechnungen, datum) → "R_MAT_YYYY_MM_NNN"
  */
 
 import {
@@ -23,8 +23,7 @@ function runde(wert) {
 function rechnungsPrefix(datum) {
   const jahr = datum.getFullYear();
   const monat = String(datum.getMonth() + 1).padStart(2, '0');
-  const tag = String(datum.getDate()).padStart(2, '0');
-  return `R_MAT_${jahr}_${monat}_${tag}_`;
+  return `R_MAT_${jahr}_${monat}_`;
 }
 
 /**
@@ -104,7 +103,7 @@ export function naechsteRechnungslaufnummer(rechnungen, datum, minLaufnummer = 1
 
 /**
  * Ermittelt die nächste Rechnungsnummer für den angegebenen Monat.
- * Format: R_MAT_YYYY_MM_DD_NNN (dreistellig, führende Nullen)
+ * Format: R_MAT_YYYY_MM_NNN (dreistellig, führende Nullen)
  *
  * @param {Array<{nummer: string}>} rechnungen  Alle bisher gespeicherten Rechnungen
  * @param {Date}                    datum        Datum der neuen Rechnung

@@ -189,19 +189,19 @@ suite('naechsteRechnungsnummer — erste Rechnung');
 
 await test('erste Rechnung im Monat → 001', () => {
   const r = naechsteRechnungsnummer([], new Date('2025-07-15'));
-  assertEqual(r, 'R_MAT_2025_07_15_001');
+  assertEqual(r, 'R_MAT_2025_07_001');
 });
 
 await test('anderer Monat → korrekte Monatsangabe', () => {
   const r = naechsteRechnungsnummer([], new Date('2025-03-01'));
-  assertEqual(r, 'R_MAT_2025_03_01_001');
+  assertEqual(r, 'R_MAT_2025_03_001');
 });
 
 suite('rechnungsnummerMitLaufnummer');
 
 await test('formatiert laufende Nummer dreistellig', () => {
   const r = rechnungsnummerMitLaufnummer(new Date('2025-07-15'), 7);
-  assertEqual(r, 'R_MAT_2025_07_15_007');
+  assertEqual(r, 'R_MAT_2025_07_007');
 });
 
 await test('wirft Fehler bei ungueltiger Laufnummer', () => {
@@ -218,18 +218,18 @@ suite('naechsteRechnungsnummer — fortlaufend');
 
 await test('nach 001 kommt 002', () => {
   const r = naechsteRechnungsnummer(
-    [{ nummer: 'R_MAT_2025_07_15_001' }],
+    [{ nummer: 'R_MAT_2025_07_001' }],
     new Date('2025-07-15')
   );
-  assertEqual(r, 'R_MAT_2025_07_15_002');
+  assertEqual(r, 'R_MAT_2025_07_002');
 });
 
 await test('nach 009 kommt 010', () => {
   const rechnungen = Array.from({ length: 9 }, (_, i) =>
-    ({ nummer: `R_MAT_2025_07_15_00${i + 1}` })
+    ({ nummer: `R_MAT_2025_07_00${i + 1}` })
   );
   const r = naechsteRechnungsnummer(rechnungen, new Date('2025-07-15'));
-  assertEqual(r, 'R_MAT_2025_07_15_010');
+  assertEqual(r, 'R_MAT_2025_07_010');
 });
 
 suite('naechsteRechnungslaufnummer');
@@ -241,7 +241,7 @@ await test('respektiert explizite Mindest-Laufnummer fuer neue Serie', () => {
 
 await test('faellt auf bestehende hoehere Rechnung zurueck', () => {
   const lauf = naechsteRechnungslaufnummer(
-    [{ nummer: 'R_MAT_2025_07_15_019' }],
+    [{ nummer: 'R_MAT_2025_07_019' }],
     new Date('2025-07-15'),
     17
   );
@@ -252,18 +252,18 @@ suite('naechsteRechnungsnummer — Monatswechsel');
 
 await test('Rechnungen aus Vormonat zählen nicht für neuen Monat', () => {
   const r = naechsteRechnungsnummer(
-    [{ nummer: 'R_MAT_2025_06_15_005' }],
+    [{ nummer: 'R_MAT_2025_06_005' }],
     new Date('2025-07-01')
   );
-  assertEqual(r, 'R_MAT_2025_07_01_001');
+  assertEqual(r, 'R_MAT_2025_07_001');
 });
 
 await test('Rechnungen aus anderem Jahr zählen nicht', () => {
   const r = naechsteRechnungsnummer(
-    [{ nummer: 'R_MAT_2024_07_01_003' }],
+    [{ nummer: 'R_MAT_2024_07_003' }],
     new Date('2025-07-01')
   );
-  assertEqual(r, 'R_MAT_2025_07_01_001');
+  assertEqual(r, 'R_MAT_2025_07_001');
 });
 
 suite('berechneFoerderung — Förderlogik clamping');

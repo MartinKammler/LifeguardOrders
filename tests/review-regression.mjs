@@ -137,13 +137,13 @@ test('fristDerAeltestenOffenenSchuld ignoriert bereits getilgte alte Schulden', 
     {
       datum: '2024-03-01',
       rechnungen: [
-        { mitgliedId: 'max', nummer: 'R_MAT_2024_03_10_001', datum: '2024-03-10', erwartetEinsatzstunden: 3 },
+        { mitgliedId: 'max', nummer: 'R_MAT_2024_03_001', datum: '2024-03-10', erwartetEinsatzstunden: 3 },
       ],
     },
     {
       datum: '2025-05-01',
       rechnungen: [
-        { mitgliedId: 'max', nummer: 'R_MAT_2025_05_10_001', datum: '2025-05-10', erwartetEinsatzstunden: 6 },
+        { mitgliedId: 'max', nummer: 'R_MAT_2025_05_001', datum: '2025-05-10', erwartetEinsatzstunden: 6 },
       ],
     },
   ];
@@ -988,7 +988,7 @@ test('erstelleRechnungsDaten akzeptiert explizite Laufnummer fuer Serienrechnung
   });
 
   assert(rechnung, 'Rechnung muss erzeugt werden');
-  assertEqual(rechnung.nummer, 'R_MAT_2026_04_19_017', 'Explizite Serienlaufnummer muss verwendet werden');
+  assertEqual(rechnung.nummer, 'R_MAT_2026_04_017', 'Explizite Serienlaufnummer muss verwendet werden');
 });
 
 test('kritische UI-Dateien verwenden keine direkten HTML-Injection-APIs mehr', async () => {

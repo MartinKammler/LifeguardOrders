@@ -317,7 +317,7 @@
       <button class="btn btn-primary btn-sm" id="btn-anprobe-abschliessen" style="display:none">Anprobe abschließen</button>
       <label class="text-sm" id="rechnungsserie-wrap" style="display:flex;align-items:center;gap:8px;color:var(--text-2)">
         Erste Rechnungsnummer:
-        <span id="rechnungs-prefix" class="badge badge-blue" style="font-family:monospace">R_MAT_YYYY_MM_DD_</span>
+        <span id="rechnungs-prefix" class="badge badge-blue" style="font-family:monospace">R_MAT_YYYY_MM_</span>
         <input type="number" id="inp-rechnung-start" min="1" step="1" placeholder="001" style="width:92px;margin:0">
       </label>
       <button class="btn btn-primary btn-sm" id="btn-alle-rechnungen">Alle Rechnungen erzeugen</button>
@@ -544,8 +544,7 @@ function heutigesRechnungsDatum() {
 function rechnungsPrefix(datum = heutigesRechnungsDatum()) {
   const jahr = datum.getFullYear();
   const monat = String(datum.getMonth() + 1).padStart(2, '0');
-  const tag = String(datum.getDate()).padStart(2, '0');
-  return `R_MAT_${jahr}_${monat}_${tag}_`;
+  return `R_MAT_${jahr}_${monat}_`;
 }
 
 function naechsteFreieRechnungslaufnummer(datum = heutigesRechnungsDatum()) {
