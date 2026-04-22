@@ -2,7 +2,7 @@
   "name": "dlrg-bestellsystem",
   "private": true,
   "type": "module",
-  "version": "0.23.0",
+  "version": "0.26.0",
   "scripts": {
     "test": "npm run test:html && npm run test:regression",
     "test:html": "node tests/run-html-tests.mjs",
