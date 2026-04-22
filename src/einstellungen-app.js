@@ -24,22 +24,11 @@ const DEFAULTS = {
     pass: '',
   },
   og: {
-    name:        'OG Beispielstadt e.V.',
-    lv:          'Landesverband Beispiel',
-    bezirk:      'Bezirk Muster',
-    strasse:     'Musterstr. 1',
-    plz:         '12345',
-    ort:         'Beispielstadt',
-    email:       'kasse@example.org',
-    web:         'www.example.org',
-    iban:        'DE00 0000 0000 0000 0000 00',
-    bic:         'GENODE00XXX',
-    bank:        'Beispielbank',
-    amtsgericht: 'Musterstadt VR 12345',
-    steuernr:    '00/000/00000',
-    vorstand1:   'Max Beispiel',
-    vorstand2:   'Erika Beispiel',
-    finanzen:    'Pat Beispiel',
+    name:     'OG Beispielstadt e.V.',
+    iban:     'DE00 0000 0000 0000 0000 00',
+    bic:      'GENODE00XXX',
+    bank:     'Beispielbank',
+    finanzen: 'Pat Beispiel',
   },
   stundenRate: { stunden: 3, euro: 10 },
   einsatztypen: ['wachdienst', 'sanitaetsdienst', 'helfer', 'verwaltung'],
@@ -91,22 +80,11 @@ function formularFuellen(e) {
   document.getElementById('nc-user').value = nc.user || '';
   document.getElementById('nc-pass').value = nc.pass || '';
 
-  document.getElementById('og-name').value        = og.name        || '';
-  document.getElementById('og-lv').value          = og.lv          || '';
-  document.getElementById('og-bv-name').value     = og.bezirk      || '';
-  document.getElementById('og-strasse').value     = og.strasse      || '';
-  document.getElementById('og-plz').value         = og.plz         || '';
-  document.getElementById('og-ort').value         = og.ort         || '';
-  document.getElementById('og-email').value       = og.email       || '';
-  document.getElementById('og-web').value         = og.web         || '';
-  document.getElementById('og-iban').value        = og.iban        || '';
-  document.getElementById('og-bic').value         = og.bic         || '';
-  document.getElementById('og-bank').value        = og.bank        || '';
-  document.getElementById('og-amtsgericht').value = og.amtsgericht || '';
-  document.getElementById('og-steuernr').value    = og.steuernr    || '';
-  document.getElementById('og-vorstand1').value   = og.vorstand1   || '';
-  document.getElementById('og-vorstand2').value   = og.vorstand2   || '';
-  document.getElementById('og-finanzen').value    = og.finanzen    || '';
+  document.getElementById('og-name').value    = og.name    || '';
+  document.getElementById('og-iban').value    = og.iban    || '';
+  document.getElementById('og-bic').value     = og.bic     || '';
+  document.getElementById('og-bank').value    = og.bank    || '';
+  document.getElementById('og-finanzen').value = og.finanzen || '';
 
   document.getElementById('stunden-rate-h').value   = sr.stunden ?? 3;
   document.getElementById('stunden-rate-eur').value = sr.euro    ?? 10;
@@ -126,22 +104,11 @@ function formularLesen() {
       pass: document.getElementById('nc-pass').value,
     },
     og: {
-      name:        document.getElementById('og-name').value.trim(),
-      lv:          document.getElementById('og-lv').value.trim(),
-      bezirk:      document.getElementById('og-bv-name').value.trim(),
-      strasse:     document.getElementById('og-strasse').value.trim(),
-      plz:         document.getElementById('og-plz').value.trim(),
-      ort:         document.getElementById('og-ort').value.trim(),
-      email:       document.getElementById('og-email').value.trim(),
-      web:         document.getElementById('og-web').value.trim(),
-      iban:        document.getElementById('og-iban').value.trim(),
-      bic:         document.getElementById('og-bic').value.trim(),
-      bank:        document.getElementById('og-bank').value.trim(),
-      amtsgericht: document.getElementById('og-amtsgericht').value.trim(),
-      steuernr:    document.getElementById('og-steuernr').value.trim(),
-      vorstand1:   document.getElementById('og-vorstand1').value.trim(),
-      vorstand2:   document.getElementById('og-vorstand2').value.trim(),
-      finanzen:    document.getElementById('og-finanzen').value.trim(),
+      name:     document.getElementById('og-name').value.trim(),
+      iban:     document.getElementById('og-iban').value.trim(),
+      bic:      document.getElementById('og-bic').value.trim(),
+      bank:     document.getElementById('og-bank').value.trim(),
+      finanzen: document.getElementById('og-finanzen').value.trim(),
     },
     stundenRate: {
       stunden: parseInt(document.getElementById('stunden-rate-h').value, 10)   || 3,
