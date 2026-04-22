@@ -4,10 +4,16 @@
  *
  * Öffentliche API:
  *   berechneFoerderung(artikel, menge) → { bv, lv, og, mitglied, gesamt }
- *   rechnungsnummerMitLaufnummer(datum, laufnummer) → "R_YYYY_MM_NNN"
+ *   rechnungsnummerMitLaufnummer(datum, laufnummer) → "R_MAT_YYYY_MM_DD_NNN"
  *   naechsteRechnungslaufnummer(rechnungen, datum, minLaufnummer?) → number
- *   naechsteRechnungsnummer(rechnungen, datum) → "R_YYYY_MM_NNN"
+ *   naechsteRechnungsnummer(rechnungen, datum) → "R_MAT_YYYY_MM_DD_NNN"
  */
+
+import {
+  erzeugtStundenpflicht,
+  istOgUebernahme,
+  leseKostenmodus,
+} from './kostenmodus.js';
 
 /** Rundet auf 2 Dezimalstellen (kaufmännisch). */
 function runde(wert) {
@@ -17,7 +23,8 @@ function runde(wert) {
 function rechnungsPrefix(datum) {
   const jahr = datum.getFullYear();
   const monat = String(datum.getMonth() + 1).padStart(2, '0');
-  return `R_${jahr}_${monat}_`;
+  const tag = String(datum.getDate()).padStart(2, '0');
+  return `R_MAT_${jahr}_${monat}_${tag}_`;
 }
 
 /**
@@ -25,17 +32,27 @@ function rechnungsPrefix(datum) {
  *
  * @param {object} artikel        Artikel-Objekt aus artikel.json
  * @param {number} menge          Zugewiesene Menge (für dieses Mitglied)
- * @param {{ ogKostenlos?: boolean }} [opts]
- * @returns {{ bv, lv, og, mitglied, gesamt }}  Alle Beträge in €
+ * @param {{ ogKostenlos?: boolean, kostenmodus?: string, einstellungen?: { stundenRate?: { stunden?: number, euro?: number } } }} [opts]
+ * @returns {{ bv, lv, og, mitglied, gesamt, erwartetEinsatzstunden, kostenmodus }}  Alle Beträge in €
  */
 export function berechneFoerderung(artikel, menge, opts = {}) {
   const gesamt = runde(artikel.einzelpreis * menge);
   const bv     = runde((artikel.bvFoerderung || 0) * menge);
   const lv     = runde((artikel.lvFoerderung || 0) * menge);
+  const kostenmodus = leseKostenmodus(opts);
 
-  if (opts.ogKostenlos) {
+  if (istOgUebernahme(kostenmodus)) {
     const og = Math.max(0, runde(gesamt - bv - lv));
-    return { bv, lv, og, mitglied: 0, gesamt };
+    const stundenRate = opts?.einstellungen?.stundenRate || { stunden: 3, euro: 10 };
+    const erwartetEinsatzstunden = (
+      og > 0 &&
+      erzeugtStundenpflicht(kostenmodus) &&
+      stundenRate?.euro > 0 &&
+      stundenRate?.stunden > 0
+    )
+      ? Math.ceil(og / stundenRate.euro * stundenRate.stunden)
+      : 0;
+    return { bv, lv, og, mitglied: 0, gesamt, erwartetEinsatzstunden, kostenmodus };
   }
 
   let og;
@@ -46,8 +63,7 @@ export function berechneFoerderung(artikel, menge, opts = {}) {
   }
 
   const mitglied = Math.max(0, runde(gesamt - bv - lv - og));
-
-  return { bv, lv, og, mitglied, gesamt };
+  return { bv, lv, og, mitglied, gesamt, erwartetEinsatzstunden: 0, kostenmodus };
 }
 
 /**
@@ -88,7 +104,7 @@ export function naechsteRechnungslaufnummer(rechnungen, datum, minLaufnummer = 1
 
 /**
  * Ermittelt die nächste Rechnungsnummer für den angegebenen Monat.
- * Format: R_YYYY_MM_NNN (dreistellig, führende Nullen)
+ * Format: R_MAT_YYYY_MM_DD_NNN (dreistellig, führende Nullen)
  *
  * @param {Array<{nummer: string}>} rechnungen  Alle bisher gespeicherten Rechnungen
  * @param {Date}                    datum        Datum der neuen Rechnung

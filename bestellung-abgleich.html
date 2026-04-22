@@ -317,7 +317,7 @@
       <button class="btn btn-primary btn-sm" id="btn-anprobe-abschliessen" style="display:none">Anprobe abschließen</button>
       <label class="text-sm" id="rechnungsserie-wrap" style="display:flex;align-items:center;gap:8px;color:var(--text-2)">
         Erste Rechnungsnummer:
-        <span id="rechnungs-prefix" class="badge badge-blue" style="font-family:monospace">R_YYYY_MM_</span>
+        <span id="rechnungs-prefix" class="badge badge-blue" style="font-family:monospace">R_MAT_YYYY_MM_DD_</span>
         <input type="number" id="inp-rechnung-start" min="1" step="1" placeholder="001" style="width:92px;margin:0">
       </label>
       <button class="btn btn-primary btn-sm" id="btn-alle-rechnungen">Alle Rechnungen erzeugen</button>
@@ -359,6 +359,12 @@ import {
   naechsteRechnungslaufnummer,
   rechnungsnummerMitLaufnummer,
 } from './src/berechnung.js';
+import {
+  KOSTENMODUS_NORMAL,
+  kostenmodusBadgeKlasse,
+  kostenmodusLabel,
+  leseKostenmodus,
+} from './src/kostenmodus.js';
 import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
 import { html, raw, setHTML }               from './src/dom.js';
 import { auditAktion }                      from './src/audit.js';
@@ -434,8 +440,29 @@ function aktuellerAkteurInfo() {
   };
 }
 
+function normalisiereWunschFuerPersistenz(wunsch) {
+  const { ogKostenlos, ...rest } = wunsch || {};
+  return {
+    ...rest,
+    kostenmodus: leseKostenmodus(wunsch),
+  };
+}
+
+function normalisiereRechnungenFuerPersistenz(rechnungen = []) {
+  return (rechnungen || []).map(rechnung => ({
+    ...rechnung,
+    positionen: (rechnung.positionen || []).map(position => ({
+      ...position,
+      kostenmodus: leseKostenmodus(position),
+    })),
+  }));
+}
+
 function normalisiereBestellungFuerPersistenz(bestellungNeu) {
   const basis = { ...bestellungNeu };
+  basis.wuensche = (basis.wuensche || []).map(normalisiereWunschFuerPersistenz);
+  basis.positionen = normalisiereArtikelPositionen(basis.positionen || []);
+  basis.rechnungen = normalisiereRechnungenFuerPersistenz(basis.rechnungen || []);
   if (basis.status === 'anprobe' || basis.status === 'abgeschlossen') {
     basis.anprobeFreigaben = normalisiereAnprobeFreigaben(basis);
   } else {
@@ -517,7 +544,8 @@ function heutigesRechnungsDatum() {
 function rechnungsPrefix(datum = heutigesRechnungsDatum()) {
   const jahr = datum.getFullYear();
   const monat = String(datum.getMonth() + 1).padStart(2, '0');
-  return `R_${jahr}_${monat}_`;
+  const tag = String(datum.getDate()).padStart(2, '0');
+  return `R_MAT_${jahr}_${monat}_${tag}_`;
 }
 
 function naechsteFreieRechnungslaufnummer(datum = heutigesRechnungsDatum()) {
@@ -585,6 +613,15 @@ function renderMitgliedOptionen(selectedId) {
   return html`${mitgliedOptionen().map(option => html`
     <option value="${option.id}"${selectedId === option.id ? raw(' selected') : raw('')}>${option.name}</option>
   `)}`;
+}
+
+function renderKostenmodusOptionen(selectedValue) {
+  const selected = leseKostenmodus({ kostenmodus: selectedValue });
+  return html`
+    <option value="normal"${selected === 'normal' ? raw(' selected') : raw('')}>Normal (selbst zahlt)</option>
+    <option value="og_mit_stunden"${selected === 'og_mit_stunden' ? raw(' selected') : raw('')}>Wache (gegen Helferstunden)</option>
+    <option value="og_ohne_gegenleistung"${selected === 'og_ohne_gegenleistung' ? raw(' selected') : raw('')}>OG (ohne Gegenleistung)</option>
+  `;
 }
 
 function klonePosition(position) {
@@ -1257,7 +1294,7 @@ function renderPositionenCard() {
               <tr>
                 <th>Mitglied</th>
                 <th style="text-align:right">Menge</th>
-                <th>OG-kostenlos</th>
+                <th>Kostenmodus</th>
                 <th></th>
               </tr>
             </thead>
@@ -1280,16 +1317,13 @@ function renderPositionenCard() {
                       data-field="menge">
                   </td>
                   <td>
-                    <label style="display:flex;align-items:center;gap:8px;font-size:.82rem">
-                      <input
-                        type="checkbox"
-                        ${z.ogKostenlos ? raw('checked') : raw('')}
-                        ${speichertGerade ? raw(' disabled') : raw('')}
-                        data-pos-id="${position.id}"
-                        data-zuweisung-index="${z._index}"
-                        data-field="ogKostenlos">
-                      OG übernimmt
-                    </label>
+                    <select
+                      ${speichertGerade ? raw(' disabled') : raw('')}
+                      data-pos-id="${position.id}"
+                      data-zuweisung-index="${z._index}"
+                      data-field="kostenmodus">
+                      ${renderKostenmodusOptionen(leseKostenmodus(z))}
+                    </select>
                   </td>
                   <td style="text-align:right">
                     <button class="btn btn-danger btn-sm" data-anprobe-remove="${position.id}" data-zuweisung-index="${z._index}"${speichertGerade ? raw(' disabled') : raw('')}>×</button>
@@ -1352,8 +1386,8 @@ function renderPositionenCard() {
             eintrag.mitgliedId = e.target.value;
           } else if (field === 'menge') {
             eintrag.menge = parseNichtNegativeGanzzahl(e.target.value);
-          } else if (field === 'ogKostenlos') {
-            eintrag.ogKostenlos = !!e.target.checked;
+          } else if (field === 'kostenmodus') {
+            eintrag.kostenmodus = e.target.value;
           }
         });
         await speichereAnprobeAenderung(bestellungNeu);
@@ -1384,7 +1418,7 @@ function renderPositionenCard() {
             mitgliedId,
             menge: 0,
             ogAnteil: 0,
-            ogKostenlos: false,
+            kostenmodus: KOSTENMODUS_NORMAL,
           });
         });
         await speichereAnprobeAenderung(bestellungNeu);
@@ -1400,7 +1434,7 @@ function renderPositionenCard() {
 
     const zuwHtml = html`${(p.zuweisung || [])
       .filter(z => z.menge > 0)
-      .map(z => html`<span>${mitgliedName(z.mitgliedId)} ×${z.menge}</span>`)
+      .map(z => html`<span>${mitgliedName(z.mitgliedId)} ×${z.menge} <span class="${kostenmodusBadgeKlasse(z)}">${kostenmodusLabel(z)}</span></span>`)
       .concat(extras)}`;
     return html`
       <tr>
@@ -2174,6 +2208,9 @@ async function init() {
     document.getElementById('hinweis-keine-bestellung').style.display = '';
     return;
   }
+
+  bestellung = normalisiereBestellungFuerPersistenz(bestellung);
+  bestellungen = bestellungen.map(eintrag => eintrag.id === bestellung.id ? bestellung : eintrag);
 
   // Kopfdaten anzeigen
   document.getElementById('card-kopfdaten').style.display = '';

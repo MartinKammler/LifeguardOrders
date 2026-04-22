@@ -64,6 +64,10 @@ import {
   getScopeSyncStatus,
   isConflictSync,
 } from '../src/sync.js';
+import {
+  kostenmodusBadgeKlasse,
+  kostenmodusLabel,
+} from '../src/kostenmodus.js';
 import { parseVerkaufsrechnung } from '../src/parse-verkaufsrechnung.js';
 
 const tests = [];
@@ -133,13 +137,13 @@ test('fristDerAeltestenOffenenSchuld ignoriert bereits getilgte alte Schulden', 
     {
       datum: '2024-03-01',
       rechnungen: [
-        { mitgliedId: 'max', nummer: 'R_2024_03_001', datum: '2024-03-10', erwartetEinsatzstunden: 3 },
+        { mitgliedId: 'max', nummer: 'R_MAT_2024_03_10_001', datum: '2024-03-10', erwartetEinsatzstunden: 3 },
       ],
     },
     {
       datum: '2025-05-01',
       rechnungen: [
-        { mitgliedId: 'max', nummer: 'R_2025_05_001', datum: '2025-05-10', erwartetEinsatzstunden: 6 },
+        { mitgliedId: 'max', nummer: 'R_MAT_2025_05_10_001', datum: '2025-05-10', erwartetEinsatzstunden: 6 },
       ],
     },
   ];
@@ -160,7 +164,7 @@ test('fristDerAeltestenOffenenSchuld gibt null ohne offene Schuld zurueck', () =
   assertEqual(frist, null, 'Ohne offene Schuld darf keine Frist gesetzt werden');
 });
 
-test('berechneKassenwartZeilen beruecksichtigt ogKostenlos in der Mitgliederbelastung', () => {
+test('berechneKassenwartZeilen trennt OG mit Stunden vom Mitgliederanteil', () => {
   const bestellungen = [
     {
       id: 'b1',
@@ -178,7 +182,7 @@ test('berechneKassenwartZeilen beruecksichtigt ogKostenlos in der Mitgliederbela
           ogFoerderung: 0,
           ogUebernimmtRest: false,
           zuweisung: [
-            { mitgliedId: 'max', menge: 1, ogKostenlos: true },
+            { mitgliedId: 'max', menge: 1, kostenmodus: 'og_mit_stunden' },
           ],
         },
       ],
@@ -189,8 +193,10 @@ test('berechneKassenwartZeilen beruecksichtigt ogKostenlos in der Mitgliederbela
   const zeilen = berechneKassenwartZeilen(bestellungen, [], [{ id: 'max', name: 'Max Muster' }]);
 
   assertEqual(zeilen.length, 1, 'Es muss genau eine Zeile entstehen');
-  assertEqual(zeilen[0].anteil, 0, 'ogKostenlos darf keinen Mitgliederanteil ausweisen');
+  assertEqual(zeilen[0].anteil, 0, 'OG mit Stunden darf keinen Mitgliederanteil ausweisen');
   assertEqual(zeilen[0].og, 12, 'Der Rest muss dem OG-Anteil zugeschlagen werden');
+  assertEqual(zeilen[0].ogMitStunden, 12, 'OG mit Stunden muss getrennt ausgewiesen werden');
+  assertEqual(zeilen[0].ogOhneGegenleistung, 0, 'Nur der passende OG-Topf darf gefuellt sein');
 });
 
 test('berechneKassenwartZeilen bevorzugt gespeicherte Positionsdaten vor aktuellem Katalog', () => {
@@ -494,7 +500,7 @@ test('erstelleLagerverkauf baut abgeschlossene Bestellung mit Rechnung aus aktue
   assertEqual(verkauf.rechnung.gesamtbetrag, 90, 'Rechnung muss mit aktuellem Katalogpreis und Foerderung rechnen');
 });
 
-test('erstelleLagerverkauf respektiert OG uebernimmt wie im normalen Bestellfluss', () => {
+test('erstelleLagerverkauf respektiert OG ohne Gegenleistung wie im normalen Bestellfluss', () => {
   const bestand = normalisiereMaterialEintrag({
     nummer: '4711',
     bezeichnung: 'Einsatzhose',
@@ -519,12 +525,13 @@ test('erstelleLagerverkauf respektiert OG uebernimmt wie im normalen Bestellflus
     'Max Muster',
     { stundenRate: { stunden: 3, euro: 10 } },
     [],
-    { ogKostenlos: true }
+    { kostenmodus: 'og_ohne_gegenleistung' }
   );
 
-  assertEqual(verkauf.bestellung.positionen[0].zuweisung[0].ogKostenlos, true, 'Lagerverkauf muss ogKostenlos in die Zuweisung schreiben');
+  assertEqual(verkauf.bestellung.positionen[0].zuweisung[0].kostenmodus, 'og_ohne_gegenleistung', 'Lagerverkauf muss kostenmodus in die Zuweisung schreiben');
   assertEqual(verkauf.rechnung.gesamtbetrag, 0, 'Wenn OG uebernimmt, muss die Rechnung 0 Euro ausweisen');
   assertEqual(verkauf.rechnung.ogAnteil, 45, 'Der Rest muss als OG-Anteil gerechnet werden');
+  assertEqual(verkauf.rechnung.erwartetEinsatzstunden, 0, 'OG ohne Gegenleistung darf keine Stundenpflicht erzeugen');
 });
 
 test('normalisiereMaterialanfrage setzt Status und Entscheidungsfelder stabil', () => {
@@ -775,22 +782,31 @@ test('bauePositionenAusAbgleich uebernimmt OG-Kosten separat', () => {
   assertEqual(positionen[0].einzelpreis, 6.5, 'OG-Kosten muessen Preiswerte behalten');
 });
 
-test('normalisierePosition trennt gleiche Mitglieder bei unterschiedlichem ogKostenlos-Status', () => {
+test('normalisierePosition trennt gleiche Mitglieder bei unterschiedlichem Kostenmodus', () => {
   const position = normalisierePosition({
     artikelNr: 'A1',
     menge: 4,
     zuweisung: [
-      { mitgliedId: 'max', menge: 1, ogKostenlos: false },
-      { mitgliedId: 'max', menge: 2, ogKostenlos: true },
-      { mitgliedId: 'max', menge: 1, ogKostenlos: true },
+      { mitgliedId: 'max', menge: 1, kostenmodus: 'normal' },
+      { mitgliedId: 'max', menge: 2, kostenmodus: 'og_mit_stunden' },
+      { mitgliedId: 'max', menge: 1, kostenmodus: 'og_mit_stunden' },
     ],
   });
 
-  assertEqual(position.zuweisung.length, 2, 'gleicher Mitgliedseintrag darf nur je ogKostenlos-Status gemerged werden');
+  assertEqual(position.zuweisung.length, 2, 'gleicher Mitgliedseintrag darf nur je Kostenmodus gemerged werden');
   assertEqual(position.zuweisung[0].menge, 1);
-  assertEqual(position.zuweisung[0].ogKostenlos, false);
+  assertEqual(position.zuweisung[0].kostenmodus, 'normal');
   assertEqual(position.zuweisung[1].menge, 3);
-  assertEqual(position.zuweisung[1].ogKostenlos, true);
+  assertEqual(position.zuweisung[1].kostenmodus, 'og_mit_stunden');
+});
+
+test('kostenmodus-Label und Badge lesen auch aus kompletten Objekten korrekt', () => {
+  assertEqual(kostenmodusLabel({ kostenmodus: 'normal' }), 'Normal');
+  assertEqual(kostenmodusBadgeKlasse({ kostenmodus: 'normal' }), 'badge badge-blue');
+  assertEqual(kostenmodusLabel({ kostenmodus: 'og_ohne_gegenleistung' }), 'OG');
+  assertEqual(kostenmodusBadgeKlasse({ kostenmodus: 'og_ohne_gegenleistung' }), 'badge badge-green');
+  assertEqual(kostenmodusLabel({ kostenmodus: 'og_mit_stunden' }), 'Wache');
+  assertEqual(kostenmodusBadgeKlasse({ kostenmodus: 'og_mit_stunden' }), 'badge badge-amber');
 });
 
 test('betroffeneMitgliederIdsAusPositionen ignoriert OG und sammelt nur positive Zuweisungen', () => {
@@ -893,21 +909,22 @@ test('geaenderteMitgliederIdsZwischenPositionen liefert nur wirklich geaenderte 
   assertEqual(ids.includes('tom'), true, 'Neue Besteller muessen erkannt werden');
 });
 
-test('geaenderteMitgliederIdsZwischenPositionen ignoriert reine ogKostenlos-Umstellung', () => {
+test('geaenderteMitgliederIdsZwischenPositionen erkennt Kostenmodus-Umstellung als relevante Aenderung', () => {
   const ids = geaenderteMitgliederIdsZwischenPositionen(
     {
       artikelNr: 'A1',
       menge: 2,
-      zuweisung: [{ mitgliedId: 'max', menge: 2, ogKostenlos: false }],
+      zuweisung: [{ mitgliedId: 'max', menge: 2, kostenmodus: 'normal' }],
     },
     {
       artikelNr: 'A1',
       menge: 2,
-      zuweisung: [{ mitgliedId: 'max', menge: 2, ogKostenlos: true }],
+      zuweisung: [{ mitgliedId: 'max', menge: 2, kostenmodus: 'og_ohne_gegenleistung' }],
     }
   );
 
-  assertEqual(ids.length, 0, 'OG-uebernimmt-Haken darf Anprobe und Rechnungen nicht invalidieren');
+  assertEqual(ids.length, 1, 'Kostenmoduswechsel muss Anprobe und Rechnungen invalidieren');
+  assertEqual(ids[0], 'max', 'Der betroffene Besteller muss erkannt werden');
 });
 
 test('erstelleRechnungsDaten beruecksichtigt mehrere Zuweisungen derselben Position fuer ein Mitglied', () => {
@@ -971,7 +988,7 @@ test('erstelleRechnungsDaten akzeptiert explizite Laufnummer fuer Serienrechnung
   });
 
   assert(rechnung, 'Rechnung muss erzeugt werden');
-  assertEqual(rechnung.nummer, 'R_2026_04_017', 'Explizite Serienlaufnummer muss verwendet werden');
+  assertEqual(rechnung.nummer, 'R_MAT_2026_04_19_017', 'Explizite Serienlaufnummer muss verwendet werden');
 });
 
 test('kritische UI-Dateien verwenden keine direkten HTML-Injection-APIs mehr', async () => {
@@ -1025,7 +1042,7 @@ test('persistJsonWithSync sperrt Schreiben bei Remote-Fehler als offline-readonl
   assertEqual(getScopeSyncStatus(storage.load('lo_sync_status'), 'bestellungen').mode, 'offline-readonly', 'Sync-Status muss auf offline-readonly wechseln');
 });
 
-test('persistJsonWithSync erkennt Remote-Konflikte vor dem Upload', async () => {
+test('persistJsonWithSync schreibt gegen den aktuellen Remote-Stand und sperrt nur echte 412-Races', async () => {
   const storage = createMemoryStorage({
     lo_bestellungen: [{ id: 'lokal' }],
     lo_sync_status: {
@@ -1052,6 +1069,7 @@ test('persistJsonWithSync erkennt Remote-Konflikte vor dem Upload', async () => 
 
   assertEqual(result.source, 'remote', 'Initiales Laden muss Remote-Daten mit ETag übernehmen');
 
+  let lastIfMatch = '';
   const saveResult = await persistJsonWithSync({
     scope: 'bestellungen',
     data: [{ id: 'lokal', changed: true }],
@@ -1059,16 +1077,56 @@ test('persistJsonWithSync erkennt Remote-Konflikte vor dem Upload', async () => 
       async head() {
         return { ok: true, etag: '"fremd"', lastModified: 'Sat, 19 Apr 2026 11:00:00 GMT' };
       },
-      async writeJson() {
-        throw new Error('writeJson darf bei Konflikt nicht aufgerufen werden');
+      async writeJson(path, data, opts = {}) {
+        lastIfMatch = opts.ifMatch || '';
+        return { ok: true, etag: '"geschrieben-neu"' };
       },
     },
     remotePath: '/LifeguardOrders/bestellungen.json',
     storage,
   });
 
-  assertEqual(saveResult.ok, false, 'Konflikte muessen den Write blockieren');
-  assert(isConflictSync(storage.load('lo_sync_status'), 'bestellungen'), 'Konfliktstatus muss gesetzt werden');
+  assertEqual(saveResult.ok, true, 'Ein geaenderter Remote-ETag vor dem Upload darf den Save nicht pauschal blockieren');
+  assertEqual(lastIfMatch, '"fremd"', 'Geschrieben werden muss gegen den aktuellen Remote-ETag');
+  assertEqual(getScopeSyncStatus(storage.load('lo_sync_status'), 'bestellungen').mode, 'synced', 'Nach erfolgreichem Write bleibt der Scope synchron');
+
+  const blockedAgain = await persistJsonWithSync({
+    scope: 'bestellungen',
+    data: [{ id: 'lokal', changed: true, changedAgain: true }],
+    client: {
+      async head() {
+        return { ok: true, etag: '"fremd"' };
+      },
+      async writeJson() {
+        return { ok: false, conflict: true, error: '412 Precondition Failed' };
+      },
+    },
+    remotePath: '/LifeguardOrders/bestellungen.json',
+    storage,
+  });
+
+  assertEqual(blockedAgain.ok, false, 'Ein echter 412-Race-Konflikt muss den Save blockieren');
+  assertEqual(blockedAgain.sync?.mode, 'conflict', 'Konfliktstatus muss bestehen bleiben');
+
+  let headCalled = false;
+  const blockedConflict = await persistJsonWithSync({
+    scope: 'bestellungen',
+    data: [{ id: 'lokal', changed: true, changedAgain: true, changedThird: true }],
+    client: {
+      async head() {
+        headCalled = true;
+        return { ok: true, etag: '"nochmal"' };
+      },
+      async writeJson() {
+        throw new Error('writeJson darf im Konfliktzustand nicht erneut laufen');
+      },
+    },
+    remotePath: '/LifeguardOrders/bestellungen.json',
+    storage,
+  });
+
+  assertEqual(blockedConflict.ok, false, 'Weitere Saves muessen bis zum Remote-Reload blockiert bleiben');
+  assertEqual(headCalled, false, 'Im Konfliktzustand darf kein erneuter HEAD-Check laufen');
 });
 
 test('hydrateJsonFromSync liefert bei Remote-Fehler keinen lokalen Fallback und markiert read-only', async () => {

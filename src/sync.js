@@ -12,10 +12,10 @@
  *   markSyncSuccess(state, scope, path, meta) → state
  *   persistJsonWithSync(opts)                 → { ok, remote, sync }
  *   hydrateJsonFromSync(opts)                 → { data, source, sync, remote? }
- *
- * Seit Sprint 13 (Remote-required): `storageKey` ist kein Parameter mehr –
- * `persistJsonWithSync` schreibt nicht mehr in localStorage.
  *   syncHinweisText(status, label?)           → string
+ *
+ * Seit Sprint 13: `storageKey` ist kein Parameter mehr –
+ * `persistJsonWithSync` schreibt nicht mehr in localStorage.
  */
 
 import { load, save } from './storage.js';
@@ -185,26 +185,24 @@ export async function persistJsonWithSync({
     };
   }
 
+  if (vorher?.mode === 'conflict') {
+    return {
+      ok: false,
+      remote: {
+        ok: false,
+        conflict: true,
+        skipped: true,
+        error: 'Remote-Daten wurden zwischenzeitlich geändert.',
+      },
+      sync: vorher,
+    };
+  }
+
   const meta = await client.head(remotePath);
   if (!meta.ok && !meta.missing) {
     state = markSyncOfflineReadonly(state, scope, remotePath, meta.error);
     schreibeSyncState(state, storage);
     return { ok: false, remote: meta, sync: getScopeSyncStatus(state, scope) };
-  }
-
-  const vorigeVersion = versionToken(vorher || {});
-  const remoteVersion = meta.missing ? '' : versionToken(meta);
-  if (vorigeVersion && remoteVersion && vorigeVersion !== remoteVersion) {
-    state = markSyncConflict(state, scope, remotePath, {
-      error: 'Remote-Daten wurden zwischenzeitlich geändert.',
-      remoteMeta: meta,
-    });
-    schreibeSyncState(state, storage);
-    return {
-      ok: false,
-      remote: { ok: false, conflict: true, error: 'Remote-Daten wurden zwischenzeitlich geändert.' },
-      sync: getScopeSyncStatus(state, scope),
-    };
   }
 
   const remote = await client.writeJson(remotePath, data, meta.missing

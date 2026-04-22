@@ -21,6 +21,13 @@ import {
 } from './materialanfragen.js';
 import { erstelleLagerverkauf, findeArtikelFuerBestand } from './materialverkauf.js';
 import {
+  KOSTENMODUS_NORMAL,
+  KOSTENMODUS_OG_MIT_STUNDEN,
+  KOSTENMODUS_OG_OHNE_GEGENLEISTUNG,
+  kostenmodusLabel,
+  leseKostenmodus,
+} from './kostenmodus.js';
+import {
   getScopeSyncStatus,
   getSyncState,
   hydrateJsonFromSync,
@@ -28,10 +35,6 @@ import {
   syncHinweisText,
 } from './sync.js';
 
-const STORAGE_KEY_M = 'lo_materialbestand';
-const STORAGE_KEY_B = 'lo_bestellungen';
-const STORAGE_KEY_A = 'lo_artikel';
-const STORAGE_KEY_R = 'lo_materialanfragen';
 const NC_PFAD_M = '/LifeguardOrders/materialbestand.json';
 const NC_PFAD_B = '/LifeguardOrders/bestellungen.json';
 const NC_PFAD_A = '/LifeguardOrders/artikel.json';
@@ -285,7 +288,9 @@ function anfrageStatusBadge(anfrage) {
 
 function anfrageEntscheidLabel(anfrage) {
   if (anfrage.status === 'abgelehnt') return 'Abgelehnt';
-  if (anfrage.ogKostenlos) return 'OG übernimmt';
+  if (anfrage.status === 'abgerechnet' && leseKostenmodus(anfrage) !== KOSTENMODUS_NORMAL) {
+    return kostenmodusLabel(anfrage);
+  }
   if (anfrage.status === 'abgerechnet') return 'Normal abgerechnet';
   return anfrage.foerderwunsch ? 'Förderentscheidung angefragt' : 'Normale Abrechnung vorgesehen';
 }
@@ -391,7 +396,8 @@ function renderAnfragen() {
               ${anfrage.status === 'offen' && kannFreigeben
                 ? html`
                     <button class="btn btn-primary btn-sm" data-anfrage-action="freigabe-normal" data-id="${anfrage.id}">Normal</button>
-                    <button class="btn btn-ghost btn-sm" data-anfrage-action="freigabe-og" data-id="${anfrage.id}">OG übernimmt</button>
+                    <button class="btn btn-ghost btn-sm" data-anfrage-action="freigabe-og-mit-stunden" data-id="${anfrage.id}">OG mit Stunden</button>
+                    <button class="btn btn-ghost btn-sm" data-anfrage-action="freigabe-og-ohne" data-id="${anfrage.id}">OG ohne Gegenleistung</button>
                     <button class="btn btn-danger btn-sm" data-anfrage-action="freigabe-ablehnen" data-id="${anfrage.id}">Ablehnen</button>
                   `
                 : ''}
@@ -914,7 +920,7 @@ async function speichereVerkauf() {
   });
 }
 
-async function finalisiereLageranfrage(anfrageId, { ogKostenlos = false } = {}) {
+async function finalisiereLageranfrage(anfrageId, { kostenmodus = KOSTENMODUS_NORMAL } = {}) {
   if (!darfLageranfrageFreigeben()) {
     toast('Du darfst Lagerfreigaben nicht abschließen.', 'error');
     return;
@@ -945,7 +951,7 @@ async function finalisiereLageranfrage(anfrageId, { ogKostenlos = false } = {}) 
     einstellungen,
     alleRechnungen(),
     {
-      ogKostenlos,
+      kostenmodus,
       quelle: 'lagerfreigabe',
       referenzAnfrageId: anfrage.id,
     }
@@ -957,11 +963,11 @@ async function finalisiereLageranfrage(anfrageId, { ogKostenlos = false } = {}) 
   materialanfragen[index] = normalisiereMaterialanfrage({
     ...anfrage,
     status: 'abgerechnet',
-    entscheidung: ogKostenlos ? 'og' : 'normal',
+    entscheidung: kostenmodus,
     entschiedenAm: new Date().toISOString(),
     entschiedenVonRolle: aktiveRolle(),
     entschiedenVonName: aktivePersonName(),
-    ogKostenlos,
+    kostenmodus,
     bestellungId: verkauf.bestellung.id,
     rechnungId: verkauf.rechnung?.id || '',
     rechnungsnummer: verkauf.rechnung?.nummer || '',
@@ -970,9 +976,9 @@ async function finalisiereLageranfrage(anfrageId, { ogKostenlos = false } = {}) 
   const gespeichert = await speichereBestellungenUndAnfragen(
     vorherBestellungen,
     vorherAnfragen,
-    ogKostenlos
-      ? 'Lagerfreigabe abgeschlossen und OG-Übernahme gesetzt.'
-      : 'Lagerfreigabe abgeschlossen und Rechnung erzeugt.'
+    kostenmodus === KOSTENMODUS_NORMAL
+      ? 'Lagerfreigabe abgeschlossen und Rechnung erzeugt.'
+      : `Lagerfreigabe abgeschlossen: ${kostenmodusLabel(kostenmodus)}.`
   );
   if (!gespeichert.ok) {
     bestellungen = vorherBestellungen;
@@ -997,13 +1003,13 @@ async function finalisiereLageranfrage(anfrageId, { ogKostenlos = false } = {}) 
     action: 'LAGERANFRAGE_FREIGEGEBEN',
     scope: 'materialanfragen',
     entityId: anfrage.id,
-    summary: `Lagerfreigabe für ${anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId)} wurde ${ogKostenlos ? 'mit OG-Übernahme' : 'normal'} abgeschlossen`,
+    summary: `Lagerfreigabe für ${anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId)} wurde mit Kostenmodus ${kostenmodusLabel(kostenmodus)} abgeschlossen`,
     changes: {
       anfrageId: anfrage.id,
       bestellungId: verkauf.bestellung.id,
       rechnungId: verkauf.rechnung?.id || '',
       rechnungsnummer: verkauf.rechnung?.nummer || '',
-      ogKostenlos,
+      kostenmodus,
       menge: anfrage.menge,
       mitgliedId: anfrage.mitgliedId,
       mitgliedName: anfrage.mitgliedName || mitgliedName(anfrage.mitgliedId),
@@ -1280,10 +1286,13 @@ async function init() {
     if (!button) return;
     const id = button.dataset.id;
     if (button.dataset.anfrageAction === 'freigabe-normal') {
-      await finalisiereLageranfrage(id, { ogKostenlos: false });
+      await finalisiereLageranfrage(id, { kostenmodus: KOSTENMODUS_NORMAL });
     }
-    if (button.dataset.anfrageAction === 'freigabe-og') {
-      await finalisiereLageranfrage(id, { ogKostenlos: true });
+    if (button.dataset.anfrageAction === 'freigabe-og-mit-stunden') {
+      await finalisiereLageranfrage(id, { kostenmodus: KOSTENMODUS_OG_MIT_STUNDEN });
+    }
+    if (button.dataset.anfrageAction === 'freigabe-og-ohne') {
+      await finalisiereLageranfrage(id, { kostenmodus: KOSTENMODUS_OG_OHNE_GEGENLEISTUNG });
     }
     if (button.dataset.anfrageAction === 'freigabe-ablehnen') {
       await lehneLageranfrageAb(id);

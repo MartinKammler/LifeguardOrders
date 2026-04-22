@@ -20,7 +20,7 @@ assert('logAktion: enthält timestamp (ISO)', typeof eintrag.timestamp === 'stri
 assert('logAktion: enthält changes', eintrag.changes?.rechnungId === 'r1');
 
 // istRechnungUnveraendert
-const rechnung = { id: 'r1', nummer: 'R_2025_01_001', gesamtbetrag: 49.90, positionen: [{ name: 'T-Shirt', menge: 1 }] };
+const rechnung = { id: 'r1', nummer: 'R_MAT_2025_01_15_001', gesamtbetrag: 49.90, positionen: [{ name: 'T-Shirt', menge: 1 }] };
 assert('istRechnungUnveraendert: gleiche Rechnung → true', istRechnungUnveraendert(rechnung, rechnung));
 assert('istRechnungUnveraendert: geänderter Betrag → false', (() => {
   const geaendert = { ...rechnung, gesamtbetrag: 99.90 };
