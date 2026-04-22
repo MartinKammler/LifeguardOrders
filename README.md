@@ -13,6 +13,7 @@ Daten werden als JSON-Dateien auf der Nextcloud der OG via WebDAV gespeichert.
 
 ```
 index.html                ← Startseite: Kacheln + Live-Statistiken + ausstehende Syncs
+login.html                ← Login: Mitglied per Stempeluhr-PIN oder Funktionslogin
 artikel.html              ← Artikelkatalog: Import, CRUD, BV-/LV-/OG-Förderung je Artikel
 bestellungen.html         ← Übersicht aller Sammelbestellungen mit Phase und Status
 materialbestand.html      ← Lagerbestand: Posten anlegen, Zu-/Abgänge buchen, Lagerverkauf
@@ -22,7 +23,10 @@ bestellung-abgleich.html  ← Phase 2+3: Rechnungsimport, Abgleich, Anprobe, Abs
 rechnungen.html           ← Rechnungsübersicht: PDF-Download, Zahlungsstatus
 kassenwart.html           ← Kassenwart-Übersicht: Förderanteile, Summen, PDF/CSV-Export
 dashboard.html            ← Einsatzstunden-Dashboard: Ampel je Mitglied, LifeguardClock-Import
-einstellungen.html        ← Konfiguration: NC-Zugangsdaten, OG-Stammdaten, Mitglieder
+mitglied.html             ← Mitglieder-Startseite
+wuensche.html             ← Mitglieder-Wunschliste
+wunsch-queue.html         ← Admin-Queue für Mitgliederwünsche
+einstellungen.html        ← Konfiguration: NC-Zugangsdaten, OG-Stammdaten (Name, IBAN, BIC, Bank, Finanzen), Mitglieder
 ```
 
 ### Workflow einer Sammelbestellung
@@ -30,7 +34,11 @@ einstellungen.html        ← Konfiguration: NC-Zugangsdaten, OG-Stammdaten, Mit
 ```
 Phase 1 – Sammlung (bestellung-sammeln.html):
   Admin legt Bestellung an → erfasst Wünsche (Mitglied + Artikel + Variante + Menge)
-  → optional "OG übernimmt Kosten" → CSV-Export für Materialstelle-Bestellformular
+  → Kostenmodus je Wunsch:
+      - Normal
+      - OG übernimmt mit Wachstunden
+      - OG übernimmt ohne Gegenleistung
+  → CSV-Export für Materialstelle-Bestellformular
   → "Als bestellt markieren" übergibt an Phase 2
 
 Phase 2 – Eingang / Abgleich (bestellung-abgleich.html):
@@ -41,7 +49,8 @@ Phase 2 – Eingang / Abgleich (bestellung-abgleich.html):
 
 Phase 3 – Anprobe (bestellung-abgleich.html):
   Admin prüft Mengen-Zuweisung je Mitglied → kann Retoure- und Lagerbestandsmengen markieren
-  → Abschluss erst wenn alle Positionen vollständig zugeordnet
+  → pro Besteller kann die Anprobe einzeln abgeschlossen und die Rechnung erzeugt werden
+  → Gesamtabschluss erst wenn alle Positionen vollständig zugeordnet sind
   → "Bestellung wieder öffnen" → zurück zu Phase 1 (Wünsche bearbeiten) oder Phase 2 (Neuabgleich)
 
 Phase 4 – Abschluss & Rechnungen:
@@ -58,7 +67,7 @@ Phase 4 – Abschluss & Rechnungen:
 | Sprache | Vanilla JS (ES-Module), kein TypeScript, kein Framework |
 | Stil | HTML/CSS, kein Build-Schritt — direkt im Browser ausführbar |
 | Persistenz | JSON-Dateien auf Nextcloud via WebDAV (`/LifeguardOrders/`) |
-| Datenzugriff | WebDAV/Nextcloud ist für fachliche Daten zwingend; localStorage dient nur als Login-Hilfe und für technische Marker |
+| Datenzugriff | WebDAV/Nextcloud ist für fachliche Daten zwingend; `localStorage` dient nur als Login-Hilfe, Sessiondaten und technische Marker |
 | PDF | [pdf-lib](https://pdf-lib.js.org/) (lokal in `lib/`), Template-basiert (`Rechnung _Template.pdf`) |
 | XSS-Schutz | `html\`...\`` tagged template (auto-escaped), `raw()` nur für vertrauenswürdige Strings, `setHTML()` für alle DOM-Mutationen |
 | Tests | Node.js-Testrunner (`tests/run-html-tests.mjs`) + Regression (`tests/review-regression.mjs`) |
@@ -70,23 +79,34 @@ Phase 4 – Abschluss & Rechnungen:
 
 ```
 src/
+  app-context.js          — gemeinsamer NC-/Remote-Kontext für fachliche Daten
+  auth.js                 — Funktionslogin gegen `benutzer.json`
+  auth-guard.js           — Session-/Seitenschutz
+  authz.js                — Rollen- und Aktionsrechte
   webdav.js               — WebDAV-Client, Factory-Pattern, strukturierte Fehler
-  sync.js                 — persistJsonWithSync, hydrateJsonFromSync, Pending-State
+  sync.js                 — remote-required Laden/Speichern, ETag-Prüfung, Konfliktsperren
   storage.js              — localStorage load/save
   dom.js                  — html``, raw(), setHTML() (XSS-Schutz)
+  kostenmodus.js          — Kostenmodus-Helfer (`normal`, `og_mit_stunden`, `og_ohne_gegenleistung`)
   parser.js               — Auftragsbestätigung-Parser (3 Formate: Produktseite, mehrzeilig, Tab)
   parse-verkaufsrechnung.js — DLRG-Verkaufsrechnung-Parser (PDF-Textextraktion):
                               Artikelzeilen mit/ohne Preis (Bundlekomponenten werden ignoriert),
                               gesplittete Zeilen (Variante auf Folgezeile), MITTELVERW. BV/LV,
                               EILAUFTRAG; extrahiert Varianten aus Klammern oder als bareSize-Token;
                               Seiten-/Zeilenverfolgung (_seite, _zeile) für Debug-Anzeige im UI
-  berechnung.js           — berechneFoerderung: bv, lv, og, mitglied, ogUebernimmtRest, ogKostenlos
+  berechnung.js           — berechneFoerderung: BV/LV/OG/Anteil Mitglied + Stundenpflicht nach Kostenmodus;
+                              Rechnungsnummer-Format: R_MAT_YYYY_MM_NNN (monatlich laufend)
   sammlung.js             — aggregiereWuensche, exportiereCSV, validiereWunsch
   abgleich.js             — gleiche_ab (2-Pass: exakt + fuzzy), bauePositionenAusAbgleich,
                               normalisierePosition, verteileGelieferteMenge
   stunden.js              — berechneStunden, verechneSchuld, ampelStatus
   kassenwart.js           — Kassenwart-Zeilen aus gespeicherten Positions-Snapshots
   pdf.js                  — druckePDF, erstelleRechnungsDaten (pdf-lib, Template)
+  session.js              — Sessionverwaltung, Timeouts, Login-Redirect
+  stempeluhr-auth.js      — Mitgliedslogin gegen `/LifeguardClock/lgc_users.json`
+  zugriff.js              — globale und individuelle Sperren
+  wunsch.js               — Mitgliederwünsche und Queue-Helfer
+  materialanfragen.js     — Lagerfreigaben / offene Materialanfragen
   mitglieder.js           — Mitglieder-Import (JS-Literal + JSON-Format)
   materialbestand.js      — Materialbestand-Logik, Bewegungen, Normalisierung
   materialverkauf.js      — Lagerverkauf: Bestandsabgang + Bestellung + Rechnung in einem Schritt
@@ -123,6 +143,11 @@ Rechnung _Template.pdf   — PDF-Vorlage für Rechnungserzeugung
   bestellungen.json     ← Sammelbestellungen mit Wünschen, Positionen, Rechnungen
   materialbestand.json  ← Lagerposten
   einstellungen.json    ← OG-Stammdaten, NC-Credentials, Mitglieder
+  benutzer.json         ← Funktionskonten (`admin`, `finanzen`, `materialwart`)
+  zugriff.json          ← globale und individuelle Sperren
+  wuensche.json         ← Mitglieder-Wunschqueue
+  materialanfragen.json ← offene Lagerfreigaben / Materialanfragen
+  audit.log.json        ← Remote-Audit-Log
 
 /LifeguardClock/
   lgc_*.json            ← Stempeluhr-Exports (nur lesen, für Dashboard)
@@ -136,8 +161,10 @@ Jeder Artikel hat optionale Förderbeträge (BV, LV, OG) in €. Die Rechnung ze
 nur den Mitgliedsanteil nach Abzug aller Förderungen.
 
 - `ogUebernimmtRest: true` → OG-Anteil = Preis − BV − LV
-- `ogKostenlos: true` (pro Wunsch) → Mitgliedsanteil = 0 €, OG übernimmt den Rest
-- OG-Förderung erzeugt eine Stunden-Verpflichtung: 3 Std. je 10 € OG-Anteil
+- `kostenmodus = normal` → Mitglied zahlt regulären Restbetrag
+- `kostenmodus = og_mit_stunden` → Mitglied zahlt `0 €`, OG übernimmt den Rest, daraus entsteht Stundenpflicht
+- `kostenmodus = og_ohne_gegenleistung` → Mitglied zahlt `0 €`, OG übernimmt den Rest ohne Stundenpflicht
+- Nur `og_mit_stunden` erzeugt eine Stunden-Verpflichtung: standardmäßig 3 Std. je 10 € OG-Anteil
 
 Virtuelle Mitglieder:
 - `OG_ID` (`__OG__`) — interne OG-Kosten (Versand, Eilauftrag)
@@ -147,16 +174,38 @@ Virtuelle Mitglieder:
 
 ## Sync-Verhalten
 
-Schreiboperationen sind lokal-first. Bei NC-Fehler bleiben Daten lokal erhalten,
-`syncStatus = 'pending'` wird gesetzt und beim nächsten Schreibzugriff erneut versucht.
-Die Startseite (`index.html`) zeigt ausstehende Scopes persistent an.
+Fachliche Daten sind **remote-required**:
+
+- Ohne erreichbare Nextcloud/WebDAV-Verbindung werden Bestellungen, Wünsche, Lagerdaten,
+  Rechnungen und Rolleninformationen nicht geladen.
+- Schreiben erfolgt nur nach Remote-Prüfung mit ETag-/Versionskontrolle.
+- Bei Remote-Konflikten wird hart gesperrt statt still zu überschreiben.
+- Lokal bleiben nur minimale Login-Hilfen, Sessiondaten und technische Marker.
+
+---
+
+## Login und Rollen
+
+Es gibt zwei Login-Wege:
+
+- **Mitgliedslogin** über Stempeluhr-PIN aus `/LifeguardClock/lgc_users.json`
+- **Funktionslogin** über `/LifeguardOrders/benutzer.json`
+
+Funktionskonten:
+
+- `admin`
+- `finanzen`
+- `materialwart`
+
+Nach dem Funktionslogin muss zusätzlich eine handelnde Person gewählt werden, damit
+Audit-Einträge einer realen Person zugeordnet bleiben.
 
 ---
 
 ## Einrichtung
 
 1. Alle Dateien auf einem Webserver bereitstellen (oder lokal über `localhost` öffnen).
-2. `einstellungen.html` öffnen: NC-URL, Benutzer, App-Passwort, OG-Stammdaten eintragen.
+2. `einstellungen.html` öffnen: NC-URL, Benutzer, App-Passwort sowie OG-Name, IBAN, BIC, Bank und Finanzkontakt eintragen.
 3. Mitgliederliste aus Stempeluhr-`config.js` importieren (Copy-Paste).
 4. Artikelkatalog über `artikel.html` aufbauen (Import oder manuell).
 5. Erste Sammelbestellung über `bestellung-neu.html` anlegen.
@@ -172,15 +221,16 @@ Zugriff auf die WebDAV-API hat.
 # Alle Tests
 run-tests.bat
 # Oder direkt
+npm test
 node tests/run-html-tests.mjs
 node tests/review-regression.mjs
 ```
 
-Testabdeckung: parser.js (39), berechnung.js (22), webdav.js (19), mitglieder.js (8),
-sammlung.js, abgleich.js (inkl. Fuzzy-Match, Wunsch-Variante, Doppel-Position-Summierung),
+Testabdeckung: parser.js, berechnung.js, webdav.js, mitglieder.js,
+sammlung.js, abgleich.js (inkl. Fuzzy-Match, Kostenmodus, Teilabschluss-Logik),
 parse-verkaufsrechnung.js (Bundle, Split-Zeile, VPE-False-Positive, Seitentracking),
 stunden.js, kassenwart.js, materialbestand.js, validation.js, authz.js, wunsch.js, audit.js,
-sync.js, session.js — 48 Regressions-Assertions in review-regression.mjs.
+sync.js, session.js, stempeluhr-auth.js — vollständiger Lauf via `npm test`.
 
 ---
 
