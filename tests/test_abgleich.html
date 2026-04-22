@@ -22,7 +22,13 @@
 <div id="summary"></div>
 
 <script type="module">
-import { gleiche_ab, offeneMenge, normalisierePosition } from '../src/abgleich.js';
+import {
+  gleiche_ab,
+  offeneMenge,
+  normalisiereAnprobeFreigaben,
+  normalisierePosition,
+  pruefeAnprobeFuerBesteller,
+} from '../src/abgleich.js';
 
 /* ── Mini Test-Runner ───────────────────────────────────────── */
 const results = [];
@@ -273,6 +279,42 @@ await test('normalisierePosition merged nur doppelte Mitglieder-Zuweisungen mit 
   assertEqual(position.zuweisung[0].ogKostenlos, false);
   assertEqual(position.zuweisung[1].menge, 3);
   assertEqual(position.zuweisung[1].ogKostenlos, true);
+});
+
+await test('normalisiereAnprobeFreigaben initialisiert in Anprobe offene Freigaben pro Besteller', () => {
+  const freigaben = normalisiereAnprobeFreigaben({
+    status: 'anprobe',
+    positionen: [{
+      typ: 'artikel',
+      zuweisung: [
+        { mitgliedId: 'max', menge: 1 },
+        { mitgliedId: 'lea', menge: 2 },
+      ],
+    }],
+  });
+
+  assertEqual(freigaben.length, 2);
+  assertEqual(freigaben.every(eintrag => eintrag.status === 'offen'), true);
+});
+
+await test('pruefeAnprobeFuerBesteller ignoriert offene Restmengen anderer Besteller', () => {
+  const pruefung = pruefeAnprobeFuerBesteller([
+    {
+      typ: 'artikel',
+      artikelNr: 'A1',
+      menge: 4,
+      einzelpreis: 10,
+      retoureMenge: 0,
+      ogBestandMenge: 0,
+      zuweisung: [
+        { mitgliedId: 'max', menge: 1 },
+        { mitgliedId: 'lea', menge: 1 },
+      ],
+    },
+  ], 'max');
+
+  assertEqual(pruefung.ok, true);
+  assertEqual(pruefung.positionen.length, 1);
 });
 
 /* ── Render ─────────────────────────────────────────────────── */

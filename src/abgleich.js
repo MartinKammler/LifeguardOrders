@@ -3,6 +3,9 @@
  * Abgleich von Bestellwünschen gegen tatsächlich gelieferte Rechnungspositionen.
  */
 
+import { OG_ID } from './konstanten.js';
+import { validatePosition } from './validation.js';
+
 /**
  * Vergleicht aggregierte Wünsche mit Rechnungspositionen.
  *
@@ -214,6 +217,110 @@ export function normalisierePosition(position) {
   return {
     ...basis,
     zuweisung: [...map.values()],
+  };
+}
+
+export function betroffeneMitgliederIdsAusPositionen(positionen = []) {
+  const ids = new Set();
+  for (const position of positionen) {
+    if (position?.typ === 'og-kosten') continue;
+    for (const zuweisung of (position?.zuweisung || [])) {
+      if ((zuweisung?.menge || 0) > 0 && zuweisung.mitgliedId && zuweisung.mitgliedId !== OG_ID) {
+        ids.add(zuweisung.mitgliedId);
+      }
+    }
+  }
+  return [...ids];
+}
+
+function signaturProMitglied(position) {
+  const map = new Map();
+  for (const zuweisung of (position?.zuweisung || [])) {
+    if (!zuweisung?.mitgliedId || zuweisung.menge <= 0) continue;
+    const key = zuweisung.mitgliedId;
+    const liste = map.get(key) || [];
+    liste.push({
+      menge: Number(zuweisung.menge || 0),
+      ogKostenlos: !!zuweisung.ogKostenlos,
+    });
+    map.set(key, liste);
+  }
+
+  return new Map(
+    [...map.entries()].map(([mitgliedId, eintraege]) => [
+      mitgliedId,
+      JSON.stringify(
+        eintraege.sort((a, b) => {
+          if (a.ogKostenlos !== b.ogKostenlos) return Number(a.ogKostenlos) - Number(b.ogKostenlos);
+          return a.menge - b.menge;
+        })
+      ),
+    ])
+  );
+}
+
+export function geaenderteMitgliederIdsZwischenPositionen(vorherPosition, nachherPosition) {
+  const vorher = signaturProMitglied(normalisierePosition(vorherPosition || {}));
+  const nachher = signaturProMitglied(normalisierePosition(nachherPosition || {}));
+  const ids = new Set([...vorher.keys(), ...nachher.keys()]);
+  return [...ids].filter(mitgliedId => (vorher.get(mitgliedId) || '') !== (nachher.get(mitgliedId) || ''));
+}
+
+export function normalisiereAnprobeFreigaben(bestellung) {
+  const ids = betroffeneMitgliederIdsAusPositionen(bestellung?.positionen || []);
+  const basisStatus = bestellung?.status === 'abgeschlossen' ? 'abgeschlossen' : 'offen';
+  const map = new Map(
+    (bestellung?.anprobeFreigaben || [])
+      .filter(eintrag => eintrag?.mitgliedId)
+      .map(eintrag => [eintrag.mitgliedId, {
+        ...eintrag,
+        mitgliedId: eintrag.mitgliedId,
+        status: eintrag.status === 'abgeschlossen' ? 'abgeschlossen' : 'offen',
+      }])
+  );
+
+  return ids.map(mitgliedId => {
+    const vorhanden = map.get(mitgliedId);
+    return vorhanden || {
+      mitgliedId,
+      status: basisStatus,
+      abgeschlossenAm: '',
+      abgeschlossenVonRolle: '',
+      abgeschlossenVonName: '',
+    };
+  });
+}
+
+export function holeAnprobeFreigabe(bestellung, mitgliedId) {
+  return normalisiereAnprobeFreigaben(bestellung).find(eintrag => eintrag.mitgliedId === mitgliedId) || null;
+}
+
+export function istBestellerAbgeschlossen(bestellung, mitgliedId) {
+  return holeAnprobeFreigabe(bestellung, mitgliedId)?.status === 'abgeschlossen';
+}
+
+export function sindAlleBestellerAbgeschlossen(bestellung) {
+  return normalisiereAnprobeFreigaben(bestellung).every(eintrag => eintrag.status === 'abgeschlossen');
+}
+
+export function pruefeAnprobeFuerBesteller(positionen = [], mitgliedId) {
+  const relevantePositionen = positionen
+    .filter(position => position?.typ === 'artikel')
+    .map(normalisierePosition)
+    .filter(position => (position.zuweisung || []).some(z => z.mitgliedId === mitgliedId && z.menge > 0));
+
+  const invalid = [];
+  relevantePositionen.forEach((position, index) => {
+    const validierung = validatePosition(position);
+    if (!validierung.ok) {
+      invalid.push({ index, position, fehler: validierung.fehler });
+    }
+  });
+
+  return {
+    ok: invalid.length === 0,
+    positionen: relevantePositionen,
+    invalid,
   };
 }
 

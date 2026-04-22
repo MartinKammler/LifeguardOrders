@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { OG_ID } from '../src/konstanten.js';
 import {
   berechneStunden,
   verechneSchuld,
@@ -7,7 +8,17 @@ import {
 } from '../src/stunden.js';
 import { fuegeArtikelHinzu } from '../src/artikel-katalog.js';
 import { berechneKassenwartZeilen, berechneSondermengenZeilen } from '../src/kassenwart.js';
-import { gleiche_ab, bauePositionenAusAbgleich, normalisierePosition } from '../src/abgleich.js';
+import {
+  gleiche_ab,
+  bauePositionenAusAbgleich,
+  betroffeneMitgliederIdsAusPositionen,
+  geaenderteMitgliederIdsZwischenPositionen,
+  holeAnprobeFreigabe,
+  normalisiereAnprobeFreigaben,
+  normalisierePosition,
+  pruefeAnprobeFuerBesteller,
+  sindAlleBestellerAbgeschlossen,
+} from '../src/abgleich.js';
 import {
   bucheMaterialBewegung,
   normalisiereMaterialEintrag,
@@ -780,6 +791,106 @@ test('normalisierePosition trennt gleiche Mitglieder bei unterschiedlichem ogKos
   assertEqual(position.zuweisung[0].ogKostenlos, false);
   assertEqual(position.zuweisung[1].menge, 3);
   assertEqual(position.zuweisung[1].ogKostenlos, true);
+});
+
+test('betroffeneMitgliederIdsAusPositionen ignoriert OG und sammelt nur positive Zuweisungen', () => {
+  const ids = betroffeneMitgliederIdsAusPositionen([
+    {
+      typ: 'artikel',
+      zuweisung: [
+        { mitgliedId: 'max', menge: 1 },
+        { mitgliedId: OG_ID, menge: 2 },
+        { mitgliedId: 'lea', menge: 0 },
+      ],
+    },
+  ]);
+
+  assertEqual(ids.length, 1, 'Nur Mitglieder mit positiver Menge und ohne OG sollen berücksichtigt werden');
+  assertEqual(ids[0], 'max');
+});
+
+test('normalisiereAnprobeFreigaben initialisiert in anprobe offene Eintraege pro Besteller', () => {
+  const bestellung = {
+    status: 'anprobe',
+    positionen: [{
+      typ: 'artikel',
+      zuweisung: [
+        { mitgliedId: 'max', menge: 1 },
+        { mitgliedId: 'lea', menge: 2 },
+      ],
+    }],
+  };
+
+  const freigaben = normalisiereAnprobeFreigaben(bestellung);
+
+  assertEqual(freigaben.length, 2);
+  assertEqual(freigaben.every(eintrag => eintrag.status === 'offen'), true, 'Alle Besteller muessen initial offen sein');
+});
+
+test('holeAnprobeFreigabe und sindAlleBestellerAbgeschlossen werten Teilabschluss pro Besteller aus', () => {
+  const bestellung = {
+    status: 'anprobe',
+    positionen: [{
+      typ: 'artikel',
+      zuweisung: [
+        { mitgliedId: 'max', menge: 1 },
+        { mitgliedId: 'lea', menge: 2 },
+      ],
+    }],
+    anprobeFreigaben: [
+      { mitgliedId: 'max', status: 'abgeschlossen' },
+      { mitgliedId: 'lea', status: 'offen' },
+    ],
+  };
+
+  assertEqual(holeAnprobeFreigabe(bestellung, 'max')?.status, 'abgeschlossen');
+  assertEqual(sindAlleBestellerAbgeschlossen(bestellung), false, 'Solange ein Besteller offen ist, darf die Bestellung nicht insgesamt abgeschlossen sein');
+});
+
+test('pruefeAnprobeFuerBesteller ignoriert offene Mengen anderer Besteller', () => {
+  const result = pruefeAnprobeFuerBesteller([
+    {
+      typ: 'artikel',
+      artikelNr: 'A1',
+      menge: 4,
+      einzelpreis: 20,
+      retoureMenge: 0,
+      ogBestandMenge: 0,
+      zuweisung: [
+        { mitgliedId: 'max', menge: 1 },
+        { mitgliedId: 'lea', menge: 1 },
+      ],
+    },
+  ], 'max');
+
+  assertEqual(result.ok, true, 'Der Teilabschluss fuer max darf nicht an offener Restmenge anderer Besteller scheitern');
+  assertEqual(result.positionen.length, 1);
+});
+
+test('geaenderteMitgliederIdsZwischenPositionen liefert nur wirklich geaenderte Besteller', () => {
+  const ids = geaenderteMitgliederIdsZwischenPositionen(
+    {
+      artikelNr: 'A1',
+      menge: 3,
+      zuweisung: [
+        { mitgliedId: 'max', menge: 1, ogKostenlos: false },
+        { mitgliedId: 'lea', menge: 2, ogKostenlos: false },
+      ],
+    },
+    {
+      artikelNr: 'A1',
+      menge: 3,
+      zuweisung: [
+        { mitgliedId: 'max', menge: 1, ogKostenlos: false },
+        { mitgliedId: 'lea', menge: 1, ogKostenlos: false },
+        { mitgliedId: 'tom', menge: 1, ogKostenlos: false },
+      ],
+    }
+  );
+
+  assertEqual(ids.includes('max'), false, 'Unveraenderte Besteller duerfen nicht zurueckgesetzt werden');
+  assertEqual(ids.includes('lea'), true, 'Geaenderte Mengen muessen erkannt werden');
+  assertEqual(ids.includes('tom'), true, 'Neue Besteller muessen erkannt werden');
 });
 
 test('erstelleRechnungsDaten beruecksichtigt mehrere Zuweisungen derselben Position fuer ein Mitglied', () => {

@@ -206,6 +206,19 @@
         <label>Status</label>
         <div id="info-status" style="margin-top:4px">–</div>
       </div>
+      <div class="field" id="anprobe-ansicht-wrap" style="display:none">
+        <label for="sel-anprobe-ansicht">Ansicht Anprobe</label>
+        <select id="sel-anprobe-ansicht">
+          <option value="artikel">Nach Artikel</option>
+          <option value="besteller">Nach Besteller</option>
+        </select>
+      </div>
+      <div class="field" id="anprobe-besteller-filter-wrap" style="display:none">
+        <label for="sel-anprobe-besteller-filter">Besteller filtern</label>
+        <select id="sel-anprobe-besteller-filter">
+          <option value="">Alle Besteller</option>
+        </select>
+      </div>
     </div>
   </div>
 
@@ -327,8 +340,15 @@ import {
   abweichKey,
   verteileGelieferteMenge,
   bauePositionenAusAbgleich,
+  betroffeneMitgliederIdsAusPositionen,
+  geaenderteMitgliederIdsZwischenPositionen,
+  holeAnprobeFreigabe,
+  istBestellerAbgeschlossen,
+  normalisiereAnprobeFreigaben,
   offeneMenge,
   normalisierePosition,
+  pruefeAnprobeFuerBesteller,
+  sindAlleBestellerAbgeschlossen,
   summeZuweisung,
 } from './src/abgleich.js';
 import {
@@ -375,6 +395,10 @@ let mitglieder    = [];
 let artikelListe  = [];
 let materialbestand = [];
 let einstellungen = null;
+let anprobeAnsicht = 'artikel';
+let anprobeBestellerFilter = '';
+let anprobeSpeicherKette = Promise.resolve();
+let anprobeSpeicherOffen = 0;
 
 // Abgleich-Ergebnis + Auflösungs-Status
 let abgleichResult = null;
@@ -400,6 +424,37 @@ function eur(v) {
 
 function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function aktuellerAkteurInfo() {
+  const session = getSession();
+  return {
+    rolle: session?.rolle || '',
+    name: session?.actingPersonName || session?.name || '',
+  };
+}
+
+function normalisiereBestellungFuerPersistenz(bestellungNeu) {
+  const basis = { ...bestellungNeu };
+  if (basis.status === 'anprobe' || basis.status === 'abgeschlossen') {
+    basis.anprobeFreigaben = normalisiereAnprobeFreigaben(basis);
+  } else {
+    delete basis.anprobeFreigaben;
+  }
+  return basis;
+}
+
+function normalisiereArtikelPositionen(positionen = bestellung.positionen || [], { entferneLeereZuweisungen = false } = {}) {
+  return positionen.map(position =>
+    position.typ === 'artikel'
+      ? (() => {
+          const normalisiert = normalisierePosition(position);
+          return entferneLeereZuweisungen
+            ? { ...normalisiert, zuweisung: normalisiert.zuweisung.filter(z => z.menge > 0) }
+            : normalisiert;
+        })()
+      : position
+  );
 }
 
 async function schreibeAuditStatus({ action, scope = 'bestellungen', entityId, summary, changes }) {
@@ -574,22 +629,85 @@ function findeFreiesMitgliedId(position) {
 }
 
 function aktualisierePosition(positionId, mutator) {
+  const zuruecksetzenIds = new Set();
   const positionen = (bestellung.positionen || []).map(position => {
     if (position.id !== positionId || position.typ !== 'artikel') return position;
+    const vorher = normalisierePosition(klonePosition(position));
     const klon = klonePosition(position);
     mutator(klon);
-    return normalisierePosition(klon);
+    const nachher = normalisierePosition(klon);
+    const zuweisungHatSichGeaendert = JSON.stringify(vorher.zuweisung || []) !== JSON.stringify(nachher.zuweisung || []);
+    if (zuweisungHatSichGeaendert) {
+      geaenderteMitgliederIdsZwischenPositionen(vorher, nachher).forEach(id => zuruecksetzenIds.add(id));
+    }
+    return nachher;
   });
-  bestellung = { ...bestellung, positionen };
+  let bestellungNeu = { ...bestellung, positionen };
+  if (zuruecksetzenIds.size) {
+    bestellungNeu = {
+      ...bestellungNeu,
+      rechnungen: (bestellungNeu.rechnungen || []).filter(rechnung => !zuruecksetzenIds.has(rechnung.mitgliedId)),
+      anprobeFreigaben: normalisiereAnprobeFreigaben(bestellungNeu).map(eintrag =>
+        zuruecksetzenIds.has(eintrag.mitgliedId)
+          ? {
+              ...eintrag,
+              status: 'offen',
+              abgeschlossenAm: '',
+              abgeschlossenVonRolle: '',
+              abgeschlossenVonName: '',
+            }
+          : eintrag
+      ),
+    };
+  }
+  bestellung = bestellungNeu;
   renderPositionenCard();
   renderRechnungenCard();
+  return bestellungNeu;
+}
+
+function speichereAnprobeAenderung(bestellungNeu, statusText = '✓ Anprobe gespeichert') {
+  const snapshot = cloneData(bestellungNeu);
+  anprobeSpeicherOffen += 1;
+  renderPositionenCard();
+  renderRechnungenCard();
+  anprobeSpeicherKette = anprobeSpeicherKette
+    .then(async () => {
+      const gespeichert = await persistiereBestellung(snapshot, statusText);
+      return gespeichert;
+    })
+    .catch(error => {
+      console.error(error);
+      toast('Anprobe konnte nicht gespeichert werden.', 'error');
+      return null;
+    })
+    .finally(() => {
+      anprobeSpeicherOffen = Math.max(0, anprobeSpeicherOffen - 1);
+      renderPositionenCard();
+      renderRechnungenCard();
+    });
+  return anprobeSpeicherKette;
+}
+
+async function warteAufAnprobeSpeicherKette() {
+  await anprobeSpeicherKette;
+}
+
+async function flushAnprobeUiAenderungen() {
+  const active = document.activeElement;
+  if (active && typeof active.blur === 'function' && document.getElementById('positionen-inhalt')?.contains(active)) {
+    active.blur();
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  await warteAufAnprobeSpeicherKette();
 }
 
 function persistiereBestellung(bestellungNeu, statusText) {
-  const idx = bestellungen.findIndex(b => b.id === bestellungNeu.id);
+  const persistierteBestellung = normalisiereBestellungFuerPersistenz(bestellungNeu);
+  const idx = bestellungen.findIndex(b => b.id === persistierteBestellung.id);
   if (idx < 0) return null;
   const vorherBestellungen = cloneData(bestellungen);
-  bestellungen[idx] = bestellungNeu;
+  bestellungen[idx] = persistierteBestellung;
   bestellung = bestellungen[idx];
   aktualisiereStatusAnzeige();
 
@@ -617,12 +735,13 @@ function persistiereBestellung(bestellungNeu, statusText) {
 }
 
 async function persistiereBestellungUndMaterial(bestellungNeu, materialNeu, statusText, warnungen = []) {
-  const idx = bestellungen.findIndex(b => b.id === bestellungNeu.id);
+  const persistierteBestellung = normalisiereBestellungFuerPersistenz(bestellungNeu);
+  const idx = bestellungen.findIndex(b => b.id === persistierteBestellung.id);
   if (idx < 0) return null;
   const vorherBestellungen = cloneData(bestellungen);
   const vorherMaterial = cloneData(materialbestand);
 
-  bestellungen[idx] = bestellungNeu;
+  bestellungen[idx] = persistierteBestellung;
   bestellung = bestellungen[idx];
   materialbestand = materialNeu;
   aktualisiereStatusAnzeige();
@@ -865,18 +984,210 @@ function bauePositionen() {
 /* ── Abgeschlossen: Positionen & Rechnungen ─────────────────── */
 
 function betroffeneMitgliederIds() {
-  const ids = new Set();
-  for (const p of (bestellung.positionen || [])) {
-    if (p.typ === 'og-kosten') continue;
-    for (const z of (p.zuweisung || [])) {
-      if (z.menge > 0 && z.mitgliedId !== OG_ID) ids.add(z.mitgliedId);
-    }
+  return betroffeneMitgliederIdsAusPositionen(bestellung.positionen || [])
+    .sort((a, b) => mitgliedName(a).localeCompare(mitgliedName(b), 'de'));
+}
+
+function positionSortKeyArtikel(position) {
+  return `${String(position.name || '').trim()}|||${String(position.variante || '').trim()}`;
+}
+
+function hauptBestellerInfo(position) {
+  const zuweisungen = (position.zuweisung || [])
+    .filter(z => String(z?.mitgliedId || '').trim())
+    .map(z => ({
+      mitgliedId: z.mitgliedId,
+      menge: Number(z.menge || 0),
+      name: mitgliedName(z.mitgliedId),
+    }))
+    .sort((a, b) => {
+      if (b.menge !== a.menge) return b.menge - a.menge;
+      return a.name.localeCompare(b.name, 'de');
+    });
+
+  const top = zuweisungen[0];
+  if (!top) {
+    return { key: '~~~~~', label: 'Ohne Zuordnung' };
   }
-  return [...ids].sort((a, b) => mitgliedName(a).localeCompare(mitgliedName(b), 'de'));
+  return {
+    key: `${top.name}|||${top.mitgliedId}`,
+    label: top.name,
+  };
+}
+
+function bestellerInfos(position) {
+  return (position.zuweisung || [])
+    .filter(z => String(z?.mitgliedId || '').trim() && Number(z.menge || 0) > 0)
+    .map(z => ({
+      id: z.mitgliedId,
+      name: mitgliedName(z.mitgliedId),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+}
+
+function positionHatBesteller(position, mitgliedId) {
+  if (!mitgliedId) return true;
+  return bestellerInfos(position).some(info => info.id === mitgliedId);
+}
+
+function sortiereAnprobePositionen(positionen) {
+  const artikelPositionen = [...positionen].map(normalisierePosition);
+  if (anprobeAnsicht === 'besteller') {
+    return artikelPositionen.sort((a, b) => {
+      const aBesteller = hauptBestellerInfo(a);
+      const bBesteller = hauptBestellerInfo(b);
+      const bestellerCmp = aBesteller.key.localeCompare(bBesteller.key, 'de');
+      if (bestellerCmp !== 0) return bestellerCmp;
+      return positionSortKeyArtikel(a).localeCompare(positionSortKeyArtikel(b), 'de');
+    });
+  }
+  return artikelPositionen.sort((a, b) =>
+    positionSortKeyArtikel(a).localeCompare(positionSortKeyArtikel(b), 'de')
+  );
+}
+
+function renderAnprobeBestellerFilter(positionen) {
+  const wrap = document.getElementById('anprobe-besteller-filter-wrap');
+  const select = document.getElementById('sel-anprobe-besteller-filter');
+  if (!wrap || !select) return;
+
+  if (anprobeAnsicht !== 'besteller') {
+    wrap.style.display = 'none';
+    select.value = '';
+    return;
+  }
+
+  const optionen = [...new Map(
+    positionen.flatMap(position =>
+      bestellerInfos(normalisierePosition(position)).map(info => [info.id, info])
+    )
+  ).values()].sort((a, b) => a.name.localeCompare(b.name, 'de'));
+
+  setHTML(select, html`
+    <option value="">Alle Besteller</option>
+    ${optionen.map(option => html`<option value="${option.id}">${option.name}</option>`)}
+  `);
+  select.value = optionen.some(option => option.id === anprobeBestellerFilter)
+    ? anprobeBestellerFilter
+    : '';
+  if (select.value !== anprobeBestellerFilter) {
+    anprobeBestellerFilter = select.value;
+  }
+  wrap.style.display = '';
 }
 
 function alleRechnungenAusAllenBestellungen() {
   return bestellungen.flatMap(b => b.rechnungen || []);
+}
+
+function bindeRechnungsAktionen(root) {
+  root.querySelectorAll('[data-pdf-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const rechnung = (bestellung.rechnungen || []).find(r => r.id === btn.dataset.pdfId);
+      if (rechnung) {
+        druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen)
+          .catch(error => toast(error.message || 'PDF konnte nicht erzeugt werden.', 'error'));
+      }
+    });
+  });
+
+  root.querySelectorAll('[data-erzeugen-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const mid = btn.dataset.erzeugenId;
+      const datum = heutigesRechnungsDatum();
+      let nummer;
+      try {
+        nummer = leseStartLaufnummer(1, datum).nummern[0];
+      } catch (error) {
+        toast(error.message || 'Rechnungsnummer konnte nicht vorbereitet werden.', 'error');
+        return;
+      }
+      await erzeugeRechnungFuerMitglied(mid, { nummer, datum });
+      renderRechnungenCard();
+    });
+  });
+
+  root.querySelectorAll('[data-besteller-abschliessen-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await schliesseAnprobeFuerBesteller(btn.dataset.bestellerAbschliessenId);
+    });
+  });
+}
+
+async function schliesseAnprobeFuerBesteller(mitgliedId) {
+  if (!darfBestellungAbschliessen()) {
+    toast('Du darfst die Anprobe nicht für einzelne Besteller abschließen.', 'error');
+    return;
+  }
+  await flushAnprobeUiAenderungen();
+  if (istBestellerAbgeschlossen(bestellung, mitgliedId)) {
+    toast('Für diesen Besteller ist die Anprobe bereits abgeschlossen.', 'info');
+    return;
+  }
+
+  const positionen = normalisiereArtikelPositionen(bestellung.positionen || []);
+  const pruefung = pruefeAnprobeFuerBesteller(positionen, mitgliedId);
+  if (!pruefung.positionen.length) {
+    toast('Für diesen Besteller gibt es keine zugewiesenen Positionen.', 'warn');
+    return;
+  }
+  if (!pruefung.ok) {
+    toast(pruefung.invalid[0]?.fehler || 'Die Anprobe dieses Bestellers ist noch nicht konsistent.', 'error', 7000);
+    return;
+  }
+
+  const bestaetigt = await confirmDialog({
+    title: `Anprobe für ${mitgliedName(mitgliedId)} abschließen?`,
+    body: 'Danach kann für diesen Besteller sofort eine Rechnung erzeugt werden.',
+    confirmText: 'Besteller abschließen',
+    confirmTone: 'primary',
+  });
+  if (!bestaetigt) return;
+
+  const akteur = aktuellerAkteurInfo();
+  const abgeschlossenAm = new Date().toISOString();
+  const bestellungNeu = {
+    ...bestellung,
+    positionen,
+    anprobeFreigaben: normalisiereAnprobeFreigaben({ ...bestellung, positionen }).map(eintrag =>
+      eintrag.mitgliedId === mitgliedId
+        ? {
+            ...eintrag,
+            status: 'abgeschlossen',
+            abgeschlossenAm,
+            abgeschlossenVonRolle: akteur.rolle,
+            abgeschlossenVonName: akteur.name,
+          }
+        : eintrag
+    ),
+  };
+
+  const gespeichert = await persistiereBestellung(
+    bestellungNeu,
+    `✓ Anprobe für ${mitgliedName(mitgliedId)} abgeschlossen`
+  );
+  if (!gespeichert?.ok) return;
+
+  await schreibeAuditStatus({
+    action: 'ANPROBE_BESTELLER_ABGESCHLOSSEN',
+    entityId: bestellung.id,
+    summary: `Anprobe für ${mitgliedName(mitgliedId)} wurde abgeschlossen`,
+    changes: {
+      bestellungId: bestellung.id,
+      mitgliedId,
+      mitgliedName: mitgliedName(mitgliedId),
+      status: 'abgeschlossen',
+      positionen: pruefung.positionen.length,
+    },
+  });
+
+  const globalPruefung = pruefeAnprobePositionen(positionen);
+  if (sindAlleBestellerAbgeschlossen(bestellung) && globalPruefung.ok) {
+    toast('Alle Besteller sind abgeschlossen. Die Anprobe kann jetzt vollständig abgeschlossen werden.', 'ok', 5000);
+  }
+
+  renderPositionenCard();
+  renderRechnungenCard();
 }
 
 function renderPositionenCard() {
@@ -884,6 +1195,15 @@ function renderPositionenCard() {
   const positionen = (bestellung.positionen || []).filter(p => p.typ !== 'og-kosten');
   const ogKosten   = (bestellung.positionen || []).filter(p => p.typ === 'og-kosten');
   const istAnprobe = bestellung.status === 'anprobe';
+  const ansichtWrap = document.getElementById('anprobe-ansicht-wrap');
+  const ansichtSelect = document.getElementById('sel-anprobe-ansicht');
+  if (ansichtWrap) {
+    ansichtWrap.style.display = istAnprobe ? '' : 'none';
+  }
+  if (ansichtSelect) {
+    ansichtSelect.value = anprobeAnsicht;
+  }
+  renderAnprobeBestellerFilter(positionen);
 
   document.getElementById('label-positionen').textContent = istAnprobe ? 'Anprobe / Verteilung' : 'Positionen';
 
@@ -893,8 +1213,11 @@ function renderPositionenCard() {
   }
 
   if (istAnprobe) {
-    const cards = positionen.map(originalPosition => {
-      const position = normalisierePosition(originalPosition);
+    const speichertGerade = anprobeSpeicherOffen > 0;
+    const sortiertePositionen = sortiereAnprobePositionen(positionen)
+      .filter(position => positionHatBesteller(position, anprobeBestellerFilter));
+    let letzterBestellerKey = '';
+    const cards = sortiertePositionen.map(position => {
       const rest = offeneMenge(position);
       const validierung = validatePosition(position);
       const cardKlasse = !validierung.ok ? 'anprobe-position ungueltig' : (rest !== 0 ? 'anprobe-position offen' : 'anprobe-position');
@@ -904,13 +1227,25 @@ function renderPositionenCard() {
           ? raw('<span class="badge badge-green">Vollständig verteilt</span>')
           : raw(html`<span class="badge badge-amber">Offen: ${rest}</span>`);
       const zuweisungen = position.zuweisung || [];
+      const sichtbareZuweisungen = (anprobeBestellerFilter
+        ? zuweisungen
+            .map((z, index) => ({ ...z, _index: index }))
+            .filter(z => z.mitgliedId === anprobeBestellerFilter)
+        : zuweisungen.map((z, index) => ({ ...z, _index: index })));
+      const hauptBesteller = hauptBestellerInfo(position);
+      const gruppenTitel = anprobeAnsicht === 'besteller' && !anprobeBestellerFilter && hauptBesteller.key !== letzterBestellerKey
+        ? html`<div class="section-label" style="margin:0 0 8px 0">${hauptBesteller.label}</div>`
+        : raw('');
+      letzterBestellerKey = hauptBesteller.key;
 
       return html`
-        <div class="${cardKlasse}">
+        ${gruppenTitel}
+          <div class="${cardKlasse}">
           <div class="anprobe-kopf">
             <div>
               <strong>${position.name}</strong>
               ${position.variante ? raw(html` <span class="badge badge-blue">${position.variante}</span>`) : raw('')}
+              <div class="text-sm" style="margin-top:4px;color:var(--text-2)">DLRG-Nr.: ${position.artikelNr || '–'}</div>
               <div class="anprobe-meta">
                 <span>Geliefert: <strong>${position.menge}</strong></span>
                 <span>Zugewiesen: <strong>${summeZuweisung(position)}</strong></span>
@@ -931,10 +1266,10 @@ function renderPositionenCard() {
               </tr>
             </thead>
             <tbody>
-              ${zuweisungen.map((z, index) => html`
+              ${sichtbareZuweisungen.map(z => html`
                 <tr>
                   <td>
-                    <select data-pos-id="${position.id}" data-zuweisung-index="${index}" data-field="mitgliedId">
+                    <select data-pos-id="${position.id}" data-zuweisung-index="${z._index}" data-field="mitgliedId"${speichertGerade ? raw(' disabled') : raw('')}>
                       ${renderMitgliedOptionen(z.mitgliedId)}
                     </select>
                   </td>
@@ -943,8 +1278,9 @@ function renderPositionenCard() {
                       type="number"
                       min="0"
                       value="${z.menge}"
+                      ${speichertGerade ? raw(' disabled') : raw('')}
                       data-pos-id="${position.id}"
-                      data-zuweisung-index="${index}"
+                      data-zuweisung-index="${z._index}"
                       data-field="menge">
                   </td>
                   <td>
@@ -952,14 +1288,15 @@ function renderPositionenCard() {
                       <input
                         type="checkbox"
                         ${z.ogKostenlos ? raw('checked') : raw('')}
+                        ${speichertGerade ? raw(' disabled') : raw('')}
                         data-pos-id="${position.id}"
-                        data-zuweisung-index="${index}"
+                        data-zuweisung-index="${z._index}"
                         data-field="ogKostenlos">
                       OG übernimmt
                     </label>
                   </td>
                   <td style="text-align:right">
-                    <button class="btn btn-danger btn-sm" data-anprobe-remove="${position.id}" data-zuweisung-index="${index}">×</button>
+                    <button class="btn btn-danger btn-sm" data-anprobe-remove="${position.id}" data-zuweisung-index="${z._index}"${speichertGerade ? raw(' disabled') : raw('')}>×</button>
                   </td>
                 </tr>
               `)}
@@ -969,11 +1306,11 @@ function renderPositionenCard() {
           <div class="anprobe-extra-grid">
             <div class="field">
               <label for="retoure-${position.id}">Retoure</label>
-              <input type="number" id="retoure-${position.id}" min="0" value="${position.retoureMenge || 0}" data-pos-id="${position.id}" data-field="retoureMenge">
+              <input type="number" id="retoure-${position.id}" min="0" value="${position.retoureMenge || 0}"${speichertGerade ? raw(' disabled') : raw('')} data-pos-id="${position.id}" data-field="retoureMenge">
             </div>
             <div class="field">
               <label for="og-${position.id}">Lagerbestand</label>
-              <input type="number" id="og-${position.id}" min="0" value="${position.ogBestandMenge || 0}" data-pos-id="${position.id}" data-field="ogBestandMenge">
+              <input type="number" id="og-${position.id}" min="0" value="${position.ogBestandMenge || 0}"${speichertGerade ? raw(' disabled') : raw('')} data-pos-id="${position.id}" data-field="ogBestandMenge">
             </div>
             <div class="anprobe-stat">
               <span>Offene Menge</span>
@@ -982,9 +1319,9 @@ function renderPositionenCard() {
           </div>
 
           <div class="flex gap-8 mt-16" style="align-items:center;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-sm" data-anprobe-add="${position.id}">Mitglied hinzufügen</button>
+            <button class="btn btn-ghost btn-sm" data-anprobe-add="${position.id}"${speichertGerade ? raw(' disabled') : raw('')}>Mitglied hinzufügen</button>
             <span class="anprobe-hinweis">
-              Mitgliederwechsel: Menge anpassen oder Mitglied in der Zeile umstellen. Abschluss erst bei offener Menge 0.
+              ${speichertGerade ? 'Änderung wird gespeichert… Bitte kurz warten.' : 'Mitgliederwechsel: Menge anpassen oder Mitglied in der Zeile umstellen. Abschluss erst bei offener Menge 0.'}
             </span>
           </div>
           ${!validierung.ok ? raw(html`<div class="hinweis hinweis-warn" style="margin-top:12px">${validierung.fehler}</div>`) : raw('')}
@@ -1002,12 +1339,12 @@ function renderPositionenCard() {
     setHTML(el, html`<div class="anprobe-liste">${cards}</div>${ogHtml}`);
 
     el.querySelectorAll('[data-field]').forEach(input => {
-      input.addEventListener('change', e => {
+      input.addEventListener('change', async e => {
         const positionId = e.target.dataset.posId;
         const field = e.target.dataset.field;
         const index = parseInt(e.target.dataset.zuweisungIndex, 10);
 
-        aktualisierePosition(positionId, position => {
+        const bestellungNeu = aktualisierePosition(positionId, position => {
           if (field === 'retoureMenge' || field === 'ogBestandMenge') {
             position[field] = parseNichtNegativeGanzzahl(e.target.value);
             return;
@@ -1023,23 +1360,25 @@ function renderPositionenCard() {
             eintrag.ogKostenlos = !!e.target.checked;
           }
         });
+        await speichereAnprobeAenderung(bestellungNeu);
       });
     });
 
     el.querySelectorAll('[data-anprobe-remove]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const positionId = btn.dataset.anprobeRemove;
         const index = parseInt(btn.dataset.zuweisungIndex, 10);
-        aktualisierePosition(positionId, position => {
+        const bestellungNeu = aktualisierePosition(positionId, position => {
           position.zuweisung.splice(index, 1);
         });
+        await speichereAnprobeAenderung(bestellungNeu);
       });
     });
 
     el.querySelectorAll('[data-anprobe-add]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const positionId = btn.dataset.anprobeAdd;
-        aktualisierePosition(positionId, position => {
+        const bestellungNeu = aktualisierePosition(positionId, position => {
           const mitgliedId = findeFreiesMitgliedId(position);
           if (!mitgliedId) {
             toast('Alle verfügbaren Mitglieder sind bereits in dieser Position vorhanden.', 'warn');
@@ -1052,6 +1391,7 @@ function renderPositionenCard() {
             ogKostenlos: false,
           });
         });
+        await speichereAnprobeAenderung(bestellungNeu);
       });
     });
     return;
@@ -1068,7 +1408,10 @@ function renderPositionenCard() {
       .concat(extras)}`;
     return html`
       <tr>
-        <td>${p.name}${p.variante ? raw(html` <span class="badge badge-blue">${p.variante}</span>`) : raw('')}</td>
+        <td>
+          <strong>${p.name}</strong>${p.variante ? raw(html` <span class="badge badge-blue">${p.variante}</span>`) : raw('')}
+          <div class="text-sm" style="margin-top:4px;color:var(--text-2)">DLRG-Nr.: ${p.artikelNr || '–'}</div>
+        </td>
         <td style="text-align:right">${p.menge}</td>
         <td class="zuweisung-liste">${zuwHtml}</td>
       </tr>`;
@@ -1109,31 +1452,101 @@ function renderRechnungenCard() {
   const kannBestellungSchreiben = darfBestellungSchreiben();
   const kannBestellungAbschliessen = darfBestellungAbschliessen();
   const kannRechnungErstellen = darfRechnungErstellen();
+  const ids = betroffeneMitgliederIds();
+  const vorhanden = bestellung.rechnungen || [];
 
   if (bestellung.status === 'anprobe') {
     const pruefung = pruefeAnprobePositionen();
+    const offeneBesteller = ids.filter(mid => !istBestellerAbgeschlossen(bestellung, mid));
+    const alleBestellerAbgeschlossen = offeneBesteller.length === 0;
     document.getElementById('label-rechnungen').textContent = 'Abschluss';
     btnSave.style.display = '';
     btnFinalize.style.display = '';
+    btnFinalize.textContent = 'Anprobe vollständig abschließen';
     btnAlle.style.display = 'none';
     serienWrap.style.display = 'none';
     linkUebersicht.style.display = 'none';
     btnWieder.style.display = '';
     btnSave.disabled = !kannBestellungSchreiben;
-    btnFinalize.disabled = !pruefung.ok || !kannBestellungAbschliessen;
-    btnFinalize.title = pruefung.ok
-      ? ''
-      : (pruefung.invalid[0]?.fehler || `${pruefung.offene.length} Position(en) haben noch offene Mengen.`);
+    btnFinalize.disabled = !alleBestellerAbgeschlossen || !pruefung.ok || !kannBestellungAbschliessen;
+    if (!alleBestellerAbgeschlossen) {
+      btnFinalize.title = `${offeneBesteller.length} Besteller müssen noch einzeln abgeschlossen werden.`;
+    } else {
+      btnFinalize.title = pruefung.ok
+        ? ''
+        : (pruefung.invalid[0]?.fehler || `${pruefung.offene.length} Position(en) haben noch offene Mengen.`);
+    }
     if (!kannBestellungAbschliessen) {
-      btnFinalize.title = 'Du darfst die Anprobe nicht abschließen.';
+      btnFinalize.title = 'Du darfst die Anprobe nicht vollständig abschließen.';
     }
     btnWieder.disabled = !kannBestellungSchreiben;
+    const hinweisText = !ids.length
+      ? (pruefung.ok
+        ? 'Keine abrechenbaren Besteller gefunden. Die Anprobe kann vollständig abgeschlossen werden.'
+        : `Vor dem Gesamtabschluss fehlen noch Angaben zu ${pruefung.invalid.length} ungültigen oder ${pruefung.offene.length} offenen Positionen.`)
+      : !alleBestellerAbgeschlossen
+        ? `${offeneBesteller.length} Besteller müssen noch einzeln abgeschlossen werden. Rechnungen sind jeweils nach Teilabschluss möglich.`
+        : pruefung.ok
+          ? 'Alle Besteller sind abgeschlossen. Du kannst die Anprobe jetzt vollständig abschließen.'
+          : `Alle Besteller sind abgeschlossen, aber für den Gesamtabschluss fehlen noch Angaben: ${pruefung.invalid.length} ungültig, ${pruefung.offene.length} mit offener Restmenge.`;
+
+    if (!ids.length) {
+      setHTML(el, html`<div class="hinweis ${pruefung.ok ? 'hinweis-info' : 'hinweis-warn'}">${hinweisText}</div>`);
+      return;
+    }
+
+    const rows = ids.map(mid => {
+      const freigabe = holeAnprobeFreigabe(bestellung, mid);
+      const rechnung = vorhanden.find(r => r.mitgliedId === mid);
+      const teilPruefung = pruefeAnprobeFuerBesteller(bestellung.positionen || [], mid);
+      const statusHtml = freigabe?.status === 'abgeschlossen'
+        ? raw('<span class="badge badge-green">Abgeschlossen</span>')
+        : raw('<span class="badge badge-amber">Offen</span>');
+      const rechnungsHtml = rechnung
+        ? raw(html`<span class="badge badge-blue">${rechnung.nummer}</span>`)
+        : raw('<span class="meta">Noch keine Rechnung</span>');
+      let aktionHtml;
+      if (rechnung) {
+        aktionHtml = raw(html`<button class="btn btn-ghost btn-sm" data-pdf-id="${rechnung.id}">PDF</button>`);
+      } else if (freigabe?.status === 'abgeschlossen') {
+        aktionHtml = kannRechnungErstellen
+          ? raw(html`<button class="btn btn-primary btn-sm" data-erzeugen-id="${mid}">Rechnung erzeugen</button>`)
+          : raw('<span class="meta">Keine Berechtigung</span>');
+      } else {
+        aktionHtml = kannBestellungAbschliessen
+          ? raw(html`<button class="btn btn-primary btn-sm" data-besteller-abschliessen-id="${mid}">Anprobe abschließen</button>`)
+          : raw('<span class="meta">Keine Berechtigung</span>');
+      }
+      const hinweisHtml = freigabe?.status === 'offen' && !teilPruefung.ok
+        ? raw(html`<div class="text-sm" style="color:var(--red);margin-top:4px">${teilPruefung.invalid[0]?.fehler || 'Anprobe noch nicht konsistent.'}</div>`)
+        : raw('');
+
+      return html`
+        <tr>
+          <td>
+            <strong>${mitgliedName(mid)}</strong>
+            ${hinweisHtml}
+          </td>
+          <td>${statusHtml}</td>
+          <td>${rechnungsHtml}</td>
+          <td style="text-align:right;white-space:nowrap">${aktionHtml}</td>
+        </tr>`;
+    });
+
     setHTML(el, html`
-      <div class="hinweis ${pruefung.ok ? 'hinweis-info' : 'hinweis-warn'}">
-        ${pruefung.ok
-          ? 'Die Anprobe ist vollständig verteilt. Du kannst jetzt abschließen und danach Rechnungen erzeugen.'
-          : `Anprobe noch nicht abschließbar: ${pruefung.invalid.length} ungültig, ${pruefung.offene.length} mit offener Restmenge.`}
-      </div>`);
+      <div class="hinweis ${pruefung.ok && alleBestellerAbgeschlossen ? 'hinweis-info' : 'hinweis-warn'}">${hinweisText}</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Besteller</th>
+            <th>Status Anprobe</th>
+            <th>Rechnung</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`);
+    bindeRechnungsAktionen(el);
     return;
   }
 
@@ -1147,8 +1560,6 @@ function renderRechnungenCard() {
   btnAlle.disabled = !kannRechnungErstellen;
   btnWieder.disabled = !kannBestellungSchreiben;
   aktualisiereRechnungsserienFeld();
-  const ids         = betroffeneMitgliederIds();
-  const vorhanden   = bestellung.rechnungen || [];
 
   if (!ids.length) {
     setHTML(el, '<p class="text-sm">Keine Mitglieder mit Positionszuweisung gefunden.</p>');
@@ -1196,34 +1607,7 @@ function renderRechnungenCard() {
       </thead>
       <tbody>${rows}</tbody>
     </table>`);
-
-  // PDF-Buttons
-  el.querySelectorAll('[data-pdf-id]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const rechnung = (bestellung.rechnungen || []).find(r => r.id === btn.dataset.pdfId);
-      if (rechnung) {
-        druckePDF(rechnung, mitgliedName(rechnung.mitgliedId), einstellungen)
-          .catch(error => toast(error.message || 'PDF konnte nicht erzeugt werden.', 'error'));
-      }
-    });
-  });
-
-  // Einzeln erzeugen
-  el.querySelectorAll('[data-erzeugen-id]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const mid = btn.dataset.erzeugenId;
-      const datum = heutigesRechnungsDatum();
-      let nummer;
-      try {
-        nummer = leseStartLaufnummer(1, datum).nummern[0];
-      } catch (error) {
-        toast(error.message || 'Rechnungsnummer konnte nicht vorbereitet werden.', 'error');
-        return;
-      }
-      await erzeugeRechnungFuerMitglied(mid, { nummer, datum });
-      renderRechnungenCard();
-    });
-  });
+  bindeRechnungsAktionen(el);
 
   // Alle-Button: nur aktiv wenn noch welche fehlen
   const alleErzeugt = ids.every(mid => vorhanden.some(r => r.mitgliedId === mid));
@@ -1236,6 +1620,10 @@ function renderRechnungenCard() {
 async function erzeugeRechnungFuerMitglied(mitgliedId, opts = {}) {
   if (!darfRechnungErstellen()) {
     toast('Du darfst keine Rechnungen erzeugen.', 'error');
+    return;
+  }
+  if (!istBestellerAbgeschlossen(bestellung, mitgliedId)) {
+    toast('Für diesen Besteller ist die Anprobe noch nicht abgeschlossen.', 'error');
     return;
   }
   const alleRechnungen = alleRechnungenAusAllenBestellungen();
@@ -1476,7 +1864,7 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     return;
   }
 
-  const positionen = bauePositionen();
+  const positionen = normalisiereArtikelPositionen(bauePositionen());
   const positionsValidierung = validateListe(
     positionen.filter(p => p.typ === 'artikel'),
     validatePosition
@@ -1485,36 +1873,20 @@ document.getElementById('btn-abschliessen').addEventListener('click', async () =
     toast(`Ungültige Position in Zeile ${positionsValidierung.index + 1}: ${positionsValidierung.fehler}`, 'error', 6000);
     return;
   }
-  const idx = bestellungen.findIndex(b => b.id === bestellung.id);
-  if (idx < 0) return;
-  const vorherBestellungen = cloneData(bestellungen);
-
-  bestellungen[idx] = {
+  const gespeichert = await persistiereBestellung({
     ...bestellung,
-    status:    'anprobe',
+    status: 'anprobe',
     positionen,
     rechnungen: [],
-  };
-  bestellung = bestellungen[idx];
-
-  const gespeichert = await persistJsonWithSync({
-    scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
-    data: bestellungen,
-    client,
-    remotePath: NC_PFAD_B,
+    anprobeFreigaben: normalisiereAnprobeFreigaben({
+      ...bestellung,
+      status: 'anprobe',
+      positionen,
+      rechnungen: [],
+    }),
   });
   if (!gespeichert.ok) {
-    bestellungen = vorherBestellungen;
-    bestellung = bestellungen.find(b => b.id === bestellung.id) || bestellung;
-    aktualisiereStatusAnzeige();
-    updateSyncBanner();
-    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'error', 7000);
     return;
-  }
-  if (gespeichert.sync?.pending) {
-    updateSyncBanner();
-    toast(syncHinweisText(gespeichert.sync, 'Bestellungen'), 'warn', 7000);
   }
 
   await schreibeAuditStatus({
@@ -1580,9 +1952,8 @@ document.getElementById('btn-anprobe-speichern').addEventListener('click', async
     toast('Du darfst die Anprobe nicht speichern.', 'error');
     return;
   }
-  const positionen = (bestellung.positionen || []).map(position =>
-    position.typ === 'artikel' ? normalisierePosition(position) : position
-  );
+  await flushAnprobeUiAenderungen();
+  const positionen = normalisiereArtikelPositionen(bestellung.positionen || []);
   const positionsValidierung = validateListe(
     positionen.filter(p => p.typ === 'artikel'),
     validatePosition
@@ -1607,22 +1978,40 @@ document.getElementById('btn-anprobe-speichern').addEventListener('click', async
   renderRechnungenCard();
 });
 
+document.getElementById('sel-anprobe-ansicht')?.addEventListener('change', event => {
+  anprobeAnsicht = event.target.value === 'besteller' ? 'besteller' : 'artikel';
+  if (anprobeAnsicht !== 'besteller') {
+    anprobeBestellerFilter = '';
+  }
+  if (bestellung?.status === 'anprobe') {
+    renderPositionenCard();
+  }
+});
+
+document.getElementById('sel-anprobe-besteller-filter')?.addEventListener('change', event => {
+  anprobeBestellerFilter = event.target.value || '';
+  if (bestellung?.status === 'anprobe') {
+    renderPositionenCard();
+  }
+});
+
+window.addEventListener('beforeunload', event => {
+  if (anprobeSpeicherOffen <= 0) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
+
 document.getElementById('btn-anprobe-abschliessen').addEventListener('click', async () => {
   if (!darfBestellungAbschliessen()) {
     toast('Du darfst die Anprobe nicht abschließen.', 'error');
     return;
   }
-  const positionen = (bestellung.positionen || []).map(position =>
-    position.typ === 'artikel'
-      ? (() => {
-          const normalisiert = normalisierePosition(position);
-          return {
-            ...normalisiert,
-            zuweisung: normalisiert.zuweisung.filter(z => z.menge > 0),
-          };
-        })()
-      : position
-  );
+  await flushAnprobeUiAenderungen();
+  if (!sindAlleBestellerAbgeschlossen(bestellung)) {
+    toast('Vor dem Gesamtabschluss müssen alle Besteller einzeln abgeschlossen werden.', 'error', 7000);
+    return;
+  }
+  const positionen = normalisiereArtikelPositionen(bestellung.positionen || [], { entferneLeereZuweisungen: true });
 
   const positionsValidierung = validateListe(
     positionen.filter(p => p.typ === 'artikel'),
@@ -1647,7 +2036,16 @@ document.getElementById('btn-anprobe-abschliessen').addEventListener('click', as
     confirmTone: 'primary',
   });
   if (!bestaetigt) return;
-  const abgeschlosseneBestellung = { ...bestellung, status: 'abgeschlossen', positionen };
+  const abgeschlosseneBestellung = {
+    ...bestellung,
+    status: 'abgeschlossen',
+    positionen,
+    anprobeFreigaben: normalisiereAnprobeFreigaben({
+      ...bestellung,
+      status: 'abgeschlossen',
+      positionen,
+    }),
+  };
   const neuerMaterialbestand = verbucheLagerbestandAusBestellung(materialbestand, abgeschlosseneBestellung);
   const gespeichert = await persistiereBestellungUndMaterial(
     abgeschlosseneBestellung,
@@ -1677,6 +2075,7 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
     toast('Du darfst die Bestellung nicht wieder öffnen.', 'error');
     return;
   }
+  await flushAnprobeUiAenderungen();
   const hatLagerbestand = (bestellung.positionen || []).some(
     p => p.typ === 'artikel' && (p.ogBestandMenge || 0) > 0
   );
@@ -1695,6 +2094,7 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
   if (idx < 0) return;
 
   const geoeffneteBestellung = { ...bestellung, status: 'bestellt', positionen: [], rechnungen: [] };
+  delete geoeffneteBestellung.anprobeFreigaben;
   if (bestellung.status === 'abgeschlossen' && hatLagerbestand) {
     const rueckbuchung = storniereLagerbestandAusBestellung(materialbestand, bestellung);
     const gespeichert = await persistiereBestellungUndMaterial(
