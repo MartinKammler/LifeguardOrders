@@ -122,6 +122,7 @@ const STORAGE_KEY_W  = 'lo_wuensche';
 const STORAGE_KEY_E  = 'lo_einstellungen';
 const STORAGE_KEY_A  = 'lo_artikel';
 const NC_PFAD_W      = '/LifeguardOrders/wuensche.json';
+const NC_PFAD_A      = '/LifeguardOrders/artikel.json';
 const SYNC_SCOPE_W   = 'wuensche';
 
 /* ── Zustand ─────────────────────────────────────────────────── */
@@ -281,7 +282,6 @@ async function storniereWunsch(wunschId) {
 
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_W,
-    storageKey: STORAGE_KEY_W,
     data: wuensche,
     client,
     remotePath: NC_PFAD_W,
@@ -426,7 +426,6 @@ async function wunschHinzufuegen() {
 
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_W,
-    storageKey: STORAGE_KEY_W,
     data: wuensche,
     client,
     remotePath: NC_PFAD_W,
@@ -461,7 +460,6 @@ async function init() {
   const [wunschResult, artikelResult] = await Promise.all([
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_W,
-      storageKey: STORAGE_KEY_W,
       client,
       remotePath: NC_PFAD_W,
       isValidRemote: data => isValidWuenscheListe(data),
@@ -469,9 +467,8 @@ async function init() {
     }),
     hydrateJsonFromSync({
       scope: 'artikel',
-      storageKey: STORAGE_KEY_A,
       client,
-      remotePath: '/LifeguardOrders/artikel.json',
+      remotePath: NC_PFAD_A,
       isValidRemote: data => Array.isArray(data),
       defaultData: [],
     }),

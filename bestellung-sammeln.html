@@ -973,7 +973,6 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
 
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: bestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -1011,7 +1010,6 @@ document.getElementById('btn-bestellt').addEventListener('click', async () => {
   bestellungen[idx] = { ...bestellungen[idx], status: 'bestellt' };
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: bestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -1037,7 +1035,6 @@ async function init() {
   const [rB, rA] = await Promise.all([
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_B,
-      storageKey: STORAGE_KEY_B,
       client,
       remotePath: NC_PFAD_B,
       isValidRemote: data => Array.isArray(data),
@@ -1045,7 +1042,6 @@ async function init() {
     }),
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_A,
-      storageKey: STORAGE_KEY_A,
       client,
       remotePath: NC_PFAD_A,
       isValidRemote: data => Array.isArray(data),

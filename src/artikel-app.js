@@ -79,7 +79,6 @@ async function ladeArtikel() {
   if (client) {
     const geladen = await hydrateJsonFromSync({
       scope: SYNC_SCOPE_A,
-      storageKey: STORAGE_KEY_A,
       client,
       remotePath: NC_PFAD_A,
       isValidRemote: data => Array.isArray(data),
@@ -96,7 +95,6 @@ async function ladeArtikel() {
 async function speichereArtikel() {
   return persistJsonWithSync({
     scope: SYNC_SCOPE_A,
-    storageKey: STORAGE_KEY_A,
     data: artikel,
     client,
     remotePath: NC_PFAD_A,

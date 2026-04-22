@@ -335,7 +335,6 @@ async function setzeZahlungsstatus(rechnungId, bestellungId, bezahlt) {
 
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: bestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -361,7 +360,6 @@ async function init() {
   setHTML(document.getElementById('rechnungen-tabelle-container'), '<p class="meta" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>');
   const r = await hydrateJsonFromSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     client,
     remotePath: NC_PFAD_B,
     isValidRemote: data => Array.isArray(data),

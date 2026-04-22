@@ -271,7 +271,7 @@ async function erzeugePdfBytes(rechnung, mitgliedName, einstellungen) {
       const infoY = summaryY + 18;
       drawTextTopPt(
         page,
-        `OG-Förderanteil: ${eur(rechnung.ogAnteil)} → ${rechnung.erwartetEinsatzstunden} Einsatzstunden erwartet`,
+        `OG-Förderanteil: ${eur(rechnung.ogAnteil)} = ${rechnung.erwartetEinsatzstunden} Einsatzstunden erwartet`,
         X_LEFT,
         infoY,
         { font: helvetica, size: 8.5, color: grey, maxWidth: X_RIGHT - X_LEFT }

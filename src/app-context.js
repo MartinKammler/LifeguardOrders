@@ -39,7 +39,6 @@ export async function ladeRemoteEinstellungen(client) {
   if (!client) return { data: null, source: 'auth-required', sync: null };
   const result = await hydrateJsonFromSync({
     scope: SYNC_SCOPE_E,
-    storageKey: STORAGE_KEY_E,
     client,
     remotePath: NC_PFAD_E,
     isValidRemote: data => !!data && typeof data === 'object' && !Array.isArray(data),

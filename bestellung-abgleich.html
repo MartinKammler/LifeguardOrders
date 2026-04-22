@@ -713,7 +713,6 @@ function persistiereBestellung(bestellungNeu, statusText) {
 
   return persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: bestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -748,7 +747,6 @@ async function persistiereBestellungUndMaterial(bestellungNeu, materialNeu, stat
 
   const gespeicherteBestellung = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: bestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -766,7 +764,6 @@ async function persistiereBestellungUndMaterial(bestellungNeu, materialNeu, stat
 
   const gespeichertesMaterial = await persistJsonWithSync({
     scope: SYNC_SCOPE_M,
-    storageKey: STORAGE_KEY_M,
     data: materialbestand,
     client,
     remotePath: NC_PFAD_M,
@@ -779,7 +776,6 @@ async function persistiereBestellungUndMaterial(bestellungNeu, materialNeu, stat
     materialbestand = vorherMaterial;
     rollback = await persistJsonWithSync({
       scope: SYNC_SCOPE_B,
-      storageKey: STORAGE_KEY_B,
       data: vorherBestellungen,
       client,
       remotePath: NC_PFAD_B,
@@ -1639,7 +1635,6 @@ async function erzeugeRechnungFuerMitglied(mitgliedId, opts = {}) {
 
   const gespeichert = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: bestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -2137,7 +2132,6 @@ async function init() {
   const [rB, rA, rM] = await Promise.all([
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_B,
-      storageKey: STORAGE_KEY_B,
       client,
       remotePath: NC_PFAD_B,
       isValidRemote: data => Array.isArray(data),
@@ -2145,7 +2139,6 @@ async function init() {
     }),
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_A,
-      storageKey: STORAGE_KEY_A,
       client,
       remotePath: NC_PFAD_A,
       isValidRemote: data => Array.isArray(data),
@@ -2153,7 +2146,6 @@ async function init() {
     }),
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_M,
-      storageKey: STORAGE_KEY_M,
       client,
       remotePath: NC_PFAD_M,
       isValidRemote: data => Array.isArray(data),

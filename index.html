@@ -173,7 +173,6 @@ async function ladeStartStatistiken() {
   const [artikelResult, bestellResult, materialResult] = await Promise.all([
     hydrateJsonFromSync({
       scope: 'artikel',
-      storageKey: STORAGE_KEY_A,
       client,
       remotePath: NC_PFAD_A,
       isValidRemote: data => Array.isArray(data),
@@ -181,7 +180,6 @@ async function ladeStartStatistiken() {
     }),
     hydrateJsonFromSync({
       scope: 'bestellungen',
-      storageKey: STORAGE_KEY_B,
       client,
       remotePath: NC_PFAD_B,
       isValidRemote: data => Array.isArray(data),
@@ -189,7 +187,6 @@ async function ladeStartStatistiken() {
     }),
     hydrateJsonFromSync({
       scope: 'materialbestand',
-      storageKey: STORAGE_KEY_M,
       client,
       remotePath: NC_PFAD_M,
       isValidRemote: data => Array.isArray(data),

@@ -179,7 +179,7 @@ export async function authentifiziereMitglied({ client, pin, storage, sessionSto
 
   resetMitgliedsPinCooldown(sessionStore);
 
-  const zugriff = await ladeZugriff(client, storage);
+  const zugriff = await ladeZugriff(client);
   if (!zugriff.ok) {
     return {
       ok: false,

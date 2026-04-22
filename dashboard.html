@@ -305,7 +305,6 @@ async function init() {
 
   const r = await hydrateJsonFromSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     client,
     remotePath: NC_PFAD_B,
     isValidRemote: data => Array.isArray(data),

@@ -234,27 +234,23 @@ export function betroffeneMitgliederIdsAusPositionen(positionen = []) {
 }
 
 function signaturProMitglied(position) {
+  // Signatur nur ueber Menge pro Mitglied – ogKostenlos aendert nicht, was das
+  // Mitglied anprobiert/bezahlt hat, sondern nur, wer den Anteil uebernimmt.
+  // Wuerde ogKostenlos in die Signatur einfliessen, wuerde ein Haken-Klick
+  // Anprobe-Status und bereits erzeugte Rechnung des Mitglieds verlieren.
   const map = new Map();
   for (const zuweisung of (position?.zuweisung || [])) {
     if (!zuweisung?.mitgliedId || zuweisung.menge <= 0) continue;
     const key = zuweisung.mitgliedId;
     const liste = map.get(key) || [];
-    liste.push({
-      menge: Number(zuweisung.menge || 0),
-      ogKostenlos: !!zuweisung.ogKostenlos,
-    });
+    liste.push(Number(zuweisung.menge || 0));
     map.set(key, liste);
   }
 
   return new Map(
-    [...map.entries()].map(([mitgliedId, eintraege]) => [
+    [...map.entries()].map(([mitgliedId, mengen]) => [
       mitgliedId,
-      JSON.stringify(
-        eintraege.sort((a, b) => {
-          if (a.ogKostenlos !== b.ogKostenlos) return Number(a.ogKostenlos) - Number(b.ogKostenlos);
-          return a.menge - b.menge;
-        })
-      ),
+      JSON.stringify(mengen.sort((a, b) => a - b)),
     ])
   );
 }

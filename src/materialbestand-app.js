@@ -28,7 +28,6 @@ import {
   syncHinweisText,
 } from './sync.js';
 
-const STORAGE_KEY_E = 'lo_einstellungen';
 const STORAGE_KEY_M = 'lo_materialbestand';
 const STORAGE_KEY_B = 'lo_bestellungen';
 const STORAGE_KEY_A = 'lo_artikel';
@@ -587,7 +586,6 @@ function schliesseVerkaufModal() {
 async function speichereMaterialbestand() {
   return persistJsonWithSync({
     scope: SYNC_SCOPE_M,
-    storageKey: STORAGE_KEY_M,
     data: materialbestand,
     client,
     remotePath: NC_PFAD_M,
@@ -597,7 +595,6 @@ async function speichereMaterialbestand() {
 async function speichereMaterialanfragen() {
   return persistJsonWithSync({
     scope: SYNC_SCOPE_R,
-    storageKey: STORAGE_KEY_R,
     data: materialanfragen,
     client,
     remotePath: NC_PFAD_R,
@@ -607,7 +604,6 @@ async function speichereMaterialanfragen() {
 async function speichereMaterialbestandUndAnfragen(vorherMaterial, vorherAnfragen, statusText = '') {
   const materialResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_M,
-    storageKey: STORAGE_KEY_M,
     data: materialbestand,
     client,
     remotePath: NC_PFAD_M,
@@ -618,7 +614,6 @@ async function speichereMaterialbestandUndAnfragen(vorherMaterial, vorherAnfrage
 
   const anfrageResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_R,
-    storageKey: STORAGE_KEY_R,
     data: materialanfragen,
     client,
     remotePath: NC_PFAD_R,
@@ -633,7 +628,6 @@ async function speichereMaterialbestandUndAnfragen(vorherMaterial, vorherAnfrage
   materialanfragen = cloneData(vorherAnfragen);
   const rollback = await persistJsonWithSync({
     scope: SYNC_SCOPE_M,
-    storageKey: STORAGE_KEY_M,
     data: vorherMaterial,
     client,
     remotePath: NC_PFAD_M,
@@ -644,7 +638,6 @@ async function speichereMaterialbestandUndAnfragen(vorherMaterial, vorherAnfrage
 async function speichereBestellungenUndAnfragen(vorherBestellungen, vorherAnfragen, statusText = '') {
   const bestellResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: bestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -655,7 +648,6 @@ async function speichereBestellungenUndAnfragen(vorherBestellungen, vorherAnfrag
 
   const anfrageResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_R,
-    storageKey: STORAGE_KEY_R,
     data: materialanfragen,
     client,
     remotePath: NC_PFAD_R,
@@ -670,7 +662,6 @@ async function speichereBestellungenUndAnfragen(vorherBestellungen, vorherAnfrag
   materialanfragen = cloneData(vorherAnfragen);
   const rollback = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: vorherBestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -681,7 +672,6 @@ async function speichereBestellungenUndAnfragen(vorherBestellungen, vorherAnfrag
 async function speichereMaterialbestandUndBestellungen(vorherMaterial, vorherBestellungen, statusText = '') {
   const materialResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_M,
-    storageKey: STORAGE_KEY_M,
     data: materialbestand,
     client,
     remotePath: NC_PFAD_M,
@@ -692,7 +682,6 @@ async function speichereMaterialbestandUndBestellungen(vorherMaterial, vorherBes
 
   const bestellResult = await persistJsonWithSync({
     scope: SYNC_SCOPE_B,
-    storageKey: STORAGE_KEY_B,
     data: bestellungen,
     client,
     remotePath: NC_PFAD_B,
@@ -707,7 +696,6 @@ async function speichereMaterialbestandUndBestellungen(vorherMaterial, vorherBes
   bestellungen = cloneData(vorherBestellungen);
   const rollback = await persistJsonWithSync({
     scope: SYNC_SCOPE_M,
-    storageKey: STORAGE_KEY_M,
     data: vorherMaterial,
     client,
     remotePath: NC_PFAD_M,
@@ -1130,7 +1118,6 @@ async function init() {
   const [materialLoaded, bestellungenLoaded, artikelLoaded, anfragenLoaded] = await Promise.all([
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_M,
-      storageKey: STORAGE_KEY_M,
       client,
       remotePath: NC_PFAD_M,
       isValidRemote: data => Array.isArray(data),
@@ -1138,7 +1125,6 @@ async function init() {
     }),
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_B,
-      storageKey: STORAGE_KEY_B,
       client,
       remotePath: NC_PFAD_B,
       isValidRemote: data => Array.isArray(data),
@@ -1146,7 +1132,6 @@ async function init() {
     }),
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_A,
-      storageKey: STORAGE_KEY_A,
       client,
       remotePath: NC_PFAD_A,
       isValidRemote: data => Array.isArray(data),
@@ -1154,7 +1139,6 @@ async function init() {
     }),
     hydrateJsonFromSync({
       scope: SYNC_SCOPE_R,
-      storageKey: STORAGE_KEY_R,
       client,
       remotePath: NC_PFAD_R,
       isValidRemote: data => Array.isArray(data),

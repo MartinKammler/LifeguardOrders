@@ -15,10 +15,7 @@ import {
   persistJsonWithSync,
   syncHinweisText,
 } from './sync.js';
-
-const STORAGE_KEY = 'lo_einstellungen';
-const NC_PFAD     = '/LifeguardOrders/einstellungen.json';
-const SYNC_SCOPE_E = 'einstellungen';
+import { NC_PFAD_E, SYNC_SCOPE_E } from './app-context.js';
 
 const DEFAULTS = {
   nc: {
@@ -243,10 +240,9 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
   while (true) {
     const gespeichert = await persistJsonWithSync({
       scope: SYNC_SCOPE_E,
-      storageKey: STORAGE_KEY,
       data: gesamtOhnePass,
       client,
-      remotePath: NC_PFAD,
+      remotePath: NC_PFAD_E,
     });
     if (gespeichert.ok) {
       zeigeStatus('speichern-status', '✓ Gespeichert', 'ok');
@@ -300,9 +296,8 @@ async function init() {
     const client = ladeClient({ nc: { ...nc, pass: sessionPass } });
     const geladen = await hydrateJsonFromSync({
       scope: SYNC_SCOPE_E,
-      storageKey: STORAGE_KEY,
       client,
-      remotePath: NC_PFAD,
+      remotePath: NC_PFAD_E,
       isValidRemote: data => !!data && typeof data === 'object' && !Array.isArray(data),
       defaultData: null,
     });

@@ -63,7 +63,7 @@ assert('syncHinweisText: conflict enthält remote', syncHinweisText({ mode: 'con
 document.getElementById('out').textContent += '\n── persistJsonWithSync ──\n';
 
 const s1 = mockStorage();
-const r1 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [], client: null, remotePath: '/p', storage: s1 });
+const r1 = await persistJsonWithSync({ scope: 'test', data: [], client: null, remotePath: '/p', storage: s1 });
 assert('kein Client: ok === false', r1.ok === false);
 assert('kein Client: mode === auth-required', r1.sync?.mode === 'auth-required');
 
@@ -73,7 +73,7 @@ const clientFrisch = {
   head: async () => ({ ok: false, missing: true }),
   writeJson: async () => ({ ok: true, etag: 'etag-neu' }),
 };
-const r2 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [1], client: clientFrisch, remotePath: '/p', storage: s2 });
+const r2 = await persistJsonWithSync({ scope: 'test', data: [1], client: clientFrisch, remotePath: '/p', storage: s2 });
 assert('frische 404: ok === true', r2.ok === true);
 assert('frische 404: mode === synced', r2.sync?.mode === 'synced');
 
@@ -84,7 +84,7 @@ const clientMatch = {
   head: async () => ({ ok: true, etag: 'v1', missing: false }),
   writeJson: async () => ({ ok: true, etag: 'v2' }),
 };
-const r3 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [2], client: clientMatch, remotePath: '/p', storage: s3 });
+const r3 = await persistJsonWithSync({ scope: 'test', data: [2], client: clientMatch, remotePath: '/p', storage: s3 });
 assert('ETag-Match: ok === true', r3.ok === true);
 assert('ETag-Match: mode === synced', r3.sync?.mode === 'synced');
 
@@ -94,7 +94,7 @@ s4.save('lo_sync_status', markSyncSuccess({}, 'test', '/p', { etag: 'v1' }));
 const clientKonflikt = {
   head: async () => ({ ok: true, etag: 'v2-remote', missing: false }),
 };
-const r4 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [3], client: clientKonflikt, remotePath: '/p', storage: s4 });
+const r4 = await persistJsonWithSync({ scope: 'test', data: [3], client: clientKonflikt, remotePath: '/p', storage: s4 });
 assert('ETag-Konflikt: ok === false', r4.ok === false);
 assert('ETag-Konflikt: mode === conflict', r4.sync?.mode === 'conflict');
 assert('ETag-Konflikt: remote.conflict === true', r4.remote?.conflict === true);
@@ -106,7 +106,7 @@ const s5 = mockStorage();
 const clientOffline = {
   head: async () => ({ ok: false, missing: false, error: 'Verbindung abgelehnt' }),
 };
-const r5 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [], client: clientOffline, remotePath: '/p', storage: s5 });
+const r5 = await persistJsonWithSync({ scope: 'test', data: [], client: clientOffline, remotePath: '/p', storage: s5 });
 assert('Netzwerkfehler: ok === false', r5.ok === false);
 assert('Netzwerkfehler: mode === offline-readonly', r5.sync?.mode === 'offline-readonly');
 
@@ -116,7 +116,7 @@ const clientPrecondition = {
   head: async () => ({ ok: false, missing: true }),
   writeJson: async () => ({ ok: false, conflict: true, error: '412 Precondition Failed' }),
 };
-const r6 = await persistJsonWithSync({ scope: 'test', storageKey: 'k', data: [], client: clientPrecondition, remotePath: '/p', storage: s6 });
+const r6 = await persistJsonWithSync({ scope: 'test', data: [], client: clientPrecondition, remotePath: '/p', storage: s6 });
 assert('412 Precondition: ok === false', r6.ok === false);
 assert('412 Precondition: mode === conflict', r6.sync?.mode === 'conflict');
 
@@ -125,7 +125,7 @@ document.getElementById('out').textContent += '\n── hydrateJsonFromSync ─�
 
 // kein Client → kein lokaler Fallback
 const s7 = mockStorage();
-const h1 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: null, remotePath: '/p', storage: s7, defaultData: [] });
+const h1 = await hydrateJsonFromSync({ scope: 'test', client: null, remotePath: '/p', storage: s7, defaultData: [] });
 assert('hydrate kein Client: source === auth-required', h1.source === 'auth-required');
 assert('hydrate kein Client: leere Daten zurück', Array.isArray(h1.data) && h1.data.length === 0);
 assert('hydrate kein Client: mode === auth-required', h1.sync?.mode === 'auth-required');
@@ -136,7 +136,7 @@ s8.save('lo_data', [{ id: 'alt' }]);
 const clientRemote = {
   readJson: async () => ({ ok: true, data: [{ id: 'remote' }], etag: 'e1' }),
 };
-const h2 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientRemote, remotePath: '/p', isValidRemote: d => Array.isArray(d), storage: s8 });
+const h2 = await hydrateJsonFromSync({ scope: 'test', client: clientRemote, remotePath: '/p', isValidRemote: d => Array.isArray(d), storage: s8 });
 assert('hydrate Remote: source === remote', h2.source === 'remote');
 assert('hydrate Remote: Remote-Daten zurück', h2.data?.[0]?.id === 'remote');
 assert('hydrate Remote: mode === synced', h2.sync?.mode === 'synced');
@@ -146,7 +146,7 @@ const s9 = mockStorage();
 const clientFehler = {
   readJson: async () => ({ ok: false, error: 'Netzwerk' }),
 };
-const h3 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientFehler, remotePath: '/p', storage: s9, defaultData: [] });
+const h3 = await hydrateJsonFromSync({ scope: 'test', client: clientFehler, remotePath: '/p', storage: s9, defaultData: [] });
 assert('hydrate Fallback: source === remote-required', h3.source === 'remote-required');
 assert('hydrate Fallback: leere Daten zurück', Array.isArray(h3.data) && h3.data.length === 0);
 assert('hydrate Fallback: mode === offline-readonly', h3.sync?.mode === 'offline-readonly');
@@ -156,7 +156,7 @@ const s10 = mockStorage();
 const clientInvalid = {
   readJson: async () => ({ ok: true, data: 'kein-array', etag: 'e2' }),
 };
-const h4 = await hydrateJsonFromSync({ scope: 'test', storageKey: 'lo_data', client: clientInvalid, remotePath: '/p', isValidRemote: d => Array.isArray(d), storage: s10, defaultData: [] });
+const h4 = await hydrateJsonFromSync({ scope: 'test', client: clientInvalid, remotePath: '/p', isValidRemote: d => Array.isArray(d), storage: s10, defaultData: [] });
 assert('hydrate invalid Remote: source === remote-required', h4.source === 'remote-required');
 assert('hydrate invalid Remote: leere Daten zurück', Array.isArray(h4.data) && h4.data.length === 0);
 

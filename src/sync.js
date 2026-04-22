@@ -12,6 +12,9 @@
  *   markSyncSuccess(state, scope, path, meta) → state
  *   persistJsonWithSync(opts)                 → { ok, remote, sync }
  *   hydrateJsonFromSync(opts)                 → { data, source, sync, remote? }
+ *
+ * Seit Sprint 13 (Remote-required): `storageKey` ist kein Parameter mehr –
+ * `persistJsonWithSync` schreibt nicht mehr in localStorage.
  *   syncHinweisText(status, label?)           → string
  */
 
@@ -164,7 +167,6 @@ function markSyncReadSuccess(state, scope, remotePath, meta = {}, now = nowIso()
 
 export async function persistJsonWithSync({
   scope,
-  storageKey,
   data,
   client,
   remotePath,
@@ -232,7 +234,6 @@ export async function persistJsonWithSync({
 
 export async function hydrateJsonFromSync({
   scope,
-  storageKey,
   client,
   remotePath,
   isValidRemote = () => true,

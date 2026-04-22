@@ -893,6 +893,23 @@ test('geaenderteMitgliederIdsZwischenPositionen liefert nur wirklich geaenderte 
   assertEqual(ids.includes('tom'), true, 'Neue Besteller muessen erkannt werden');
 });
 
+test('geaenderteMitgliederIdsZwischenPositionen ignoriert reine ogKostenlos-Umstellung', () => {
+  const ids = geaenderteMitgliederIdsZwischenPositionen(
+    {
+      artikelNr: 'A1',
+      menge: 2,
+      zuweisung: [{ mitgliedId: 'max', menge: 2, ogKostenlos: false }],
+    },
+    {
+      artikelNr: 'A1',
+      menge: 2,
+      zuweisung: [{ mitgliedId: 'max', menge: 2, ogKostenlos: true }],
+    }
+  );
+
+  assertEqual(ids.length, 0, 'OG-uebernimmt-Haken darf Anprobe und Rechnungen nicht invalidieren');
+});
+
 test('erstelleRechnungsDaten beruecksichtigt mehrere Zuweisungen derselben Position fuer ein Mitglied', () => {
   const rechnung = erstelleRechnungsDaten({
     id: 'best1',
@@ -989,7 +1006,6 @@ test('persistJsonWithSync sperrt Schreiben bei Remote-Fehler als offline-readonl
   const storage = createMemoryStorage();
   const result = await persistJsonWithSync({
     scope: 'bestellungen',
-    storageKey: 'lo_bestellungen',
     data: [{ id: 'b1' }],
     client: {
       async head() {
@@ -1024,7 +1040,6 @@ test('persistJsonWithSync erkennt Remote-Konflikte vor dem Upload', async () => 
 
   const result = await hydrateJsonFromSync({
     scope: 'bestellungen',
-    storageKey: 'lo_bestellungen',
     client: {
       async readJson() {
         return { ok: true, data: [{ id: 'lokal' }], etag: '"alt-neu"', lastModified: 'Sat, 19 Apr 2026 10:00:00 GMT' };
@@ -1039,7 +1054,6 @@ test('persistJsonWithSync erkennt Remote-Konflikte vor dem Upload', async () => 
 
   const saveResult = await persistJsonWithSync({
     scope: 'bestellungen',
-    storageKey: 'lo_bestellungen',
     data: [{ id: 'lokal', changed: true }],
     client: {
       async head() {
@@ -1061,7 +1075,6 @@ test('hydrateJsonFromSync liefert bei Remote-Fehler keinen lokalen Fallback und 
   const storage = createMemoryStorage();
   const result = await hydrateJsonFromSync({
     scope: 'bestellungen',
-    storageKey: 'lo_bestellungen',
     client: {
       async readJson() {
         return { ok: false, error: 'Nextcloud nicht erreichbar.' };

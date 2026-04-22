@@ -1,6 +1,3 @@
-import { load, save } from './storage.js';
-
-export const STORAGE_KEY_Z = 'lo_zugriff';
 export const NC_PFAD_Z = '/LifeguardOrders/zugriff.json';
 
 export function defaultZugriff() {
@@ -41,7 +38,7 @@ export function normalizeZugriff(data) {
   };
 }
 
-export async function ladeZugriff(client, storage = { load, save }) {
+export async function ladeZugriff(client) {
   if (!client) {
     return { ok: false, error: 'Zugriffsoverlay kann ohne Nextcloud nicht geladen werden.', data: defaultZugriff(), source: 'auth-required' };
   }
@@ -50,9 +47,7 @@ export async function ladeZugriff(client, storage = { load, save }) {
   if (!remote.ok) {
     const fehlend = String(remote.error || '').toLowerCase().includes('datei nicht gefunden');
     if (fehlend) {
-      const data = defaultZugriff();
-      storage.save(STORAGE_KEY_Z, data);
-      return { ok: true, data, source: 'default' };
+      return { ok: true, data: defaultZugriff(), source: 'default' };
     }
     return {
       ok: false,
@@ -62,9 +57,7 @@ export async function ladeZugriff(client, storage = { load, save }) {
     };
   }
 
-  const data = normalizeZugriff(remote.data);
-  storage.save(STORAGE_KEY_Z, data);
-  return { ok: true, data, source: 'remote' };
+  return { ok: true, data: normalizeZugriff(remote.data), source: 'remote' };
 }
 
 export function findeMitgliedsSperre(zugriff, mitgliedId) {
