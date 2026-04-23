@@ -232,17 +232,19 @@
             <option value="">Variante wählen …</option>
           </select>
         </div>
-        <div class="field">
-          <label for="inp-menge">Menge</label>
-          <input type="number" id="inp-menge" min="1" value="1">
-        </div>
+      <div class="field">
+        <label for="inp-menge">Menge</label>
+        <input type="number" id="inp-menge" min="1" value="1">
       </div>
-      <div class="field" style="margin-top:4px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem">
-          <input type="checkbox" id="chk-og-kostenlos">
-          OG übernimmt Kosten (Mitglied zahlt nichts)
-        </label>
+      <div class="field">
+        <label for="sel-kostenmodus">Kostenmodus</label>
+        <select id="sel-kostenmodus">
+          <option value="normal">Normal (selbst zahlt)</option>
+          <option value="og_mit_stunden">Wache (gegen Helferstunden)</option>
+          <option value="og_ohne_gegenleistung">OG (ohne Gegenleistung)</option>
+        </select>
       </div>
+    </div>
       <div class="mt-8">
         <button class="btn btn-primary btn-sm" id="btn-hinzufuegen">+ Hinzufügen</button>
         <span id="wunsch-fehler" class="text-sm" style="color:var(--red);margin-left:10px;display:none"></span>
@@ -315,12 +317,14 @@
         <label for="inp-menge-edit">Menge</label>
         <input type="number" id="inp-menge-edit" min="1" value="1">
       </div>
-    </div>
-    <div class="field" style="margin-top:4px">
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem">
-        <input type="checkbox" id="chk-og-kostenlos-edit">
-        OG übernimmt Kosten (Mitglied zahlt nichts)
-      </label>
+      <div class="field">
+        <label for="sel-kostenmodus-edit">Kostenmodus</label>
+        <select id="sel-kostenmodus-edit">
+          <option value="normal">Normal (selbst zahlt)</option>
+          <option value="og_mit_stunden">Wache (gegen Helferstunden)</option>
+          <option value="og_ohne_gegenleistung">OG (ohne Gegenleistung)</option>
+        </select>
+      </div>
     </div>
     <div class="flex gap-8 mt-16" style="justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" id="btn-bearbeiten-abbrechen">Abbrechen</button>
@@ -333,6 +337,14 @@
 import { EXTERN_ID, OG_ID }   from './src/konstanten.js';
 import { aggregiereWuensche, berechneBestellsummen, exportiereCSV, validiereWunsch, mergeWuensche } from './src/sammlung.js';
 import { html, raw, setHTML } from './src/dom.js';
+import {
+  KOSTENMODUS_NORMAL,
+  KOSTENMODUS_OG_MIT_STUNDEN,
+  KOSTENMODUS_OG_OHNE_GEGENLEISTUNG,
+  kostenmodusBadgeKlasse,
+  kostenmodusLabel,
+  leseKostenmodus,
+} from './src/kostenmodus.js';
 import { getSession }         from './src/session.js';
 import { darfAktion }         from './src/authz.js';
 import { confirmDialog, renderSyncBanner, toast } from './src/ui-feedback.js';
@@ -393,6 +405,21 @@ function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function istNichtNormalerKostenmodus(wunsch) {
+  return leseKostenmodus(wunsch) !== KOSTENMODUS_NORMAL;
+}
+
+function naechsterKostenmodus(aktuellerModus) {
+  switch (leseKostenmodus({ kostenmodus: aktuellerModus })) {
+    case KOSTENMODUS_NORMAL:
+      return KOSTENMODUS_OG_MIT_STUNDEN;
+    case KOSTENMODUS_OG_MIT_STUNDEN:
+      return KOSTENMODUS_OG_OHNE_GEGENLEISTUNG;
+    default:
+      return KOSTENMODUS_NORMAL;
+  }
+}
+
 function updateSyncBanner() {
   const state = getSyncState();
   const bestellStatus = getScopeSyncStatus(state, SYNC_SCOPE_B);
@@ -418,6 +445,14 @@ function mitgliedName(id) {
   if (id === EXTERN_ID) return 'Extern';
   const m = mitglieder.find(m => m.id === id);
   return m ? m.name : id;
+}
+
+function normalisiereWunschFuerPersistenz(wunsch) {
+  const { ogKostenlos, ...rest } = wunsch || {};
+  return {
+    ...rest,
+    kostenmodus: leseKostenmodus(wunsch),
+  };
 }
 
 function vergleichWunschSortierung(a, b) {
@@ -536,7 +571,7 @@ function renderWunschliste() {
       <td>${mitgliedName(w.mitgliedId)}</td>
       <td>
         ${w.name}
-        ${w.ogKostenlos ? raw('<span class="badge badge-amber" style="font-size:.72rem;margin-left:4px;vertical-align:middle">OG-kostenlos</span>') : raw('')}
+        ${raw(html`<span class="${kostenmodusBadgeKlasse(w)}" style="font-size:.72rem;margin-left:4px;vertical-align:middle">${kostenmodusLabel(w)}</span>`)}
       </td>
       <td><span class="badge badge-blue">${w.variante || '–'}</span></td>
       <td style="text-align:right;white-space:nowrap">
@@ -545,9 +580,9 @@ function renderWunschliste() {
         <button class="btn btn-ghost btn-sm" data-action="plus"  data-id="${w.id}" style="padding:2px 8px">+</button>
       </td>
       <td style="text-align:right;white-space:nowrap">
-        <button class="btn btn-ghost btn-sm" data-action="og-toggle" data-id="${w.id}"
-          title="OG übernimmt Kosten ein/aus"
-          style="padding:2px 8px;${w.ogKostenlos ? 'color:var(--amber);font-weight:700' : ''}">OG</button>
+        <button class="btn btn-ghost btn-sm" data-action="kostenmodus-toggle" data-id="${w.id}"
+          title="Kostenmodus wechseln"
+          style="padding:2px 8px;${leseKostenmodus(w) === KOSTENMODUS_OG_OHNE_GEGENLEISTUNG ? 'color:var(--green);font-weight:700' : leseKostenmodus(w) === KOSTENMODUS_OG_MIT_STUNDEN ? 'color:var(--amber);font-weight:700' : 'color:var(--blue);font-weight:700'}">Modus</button>
         <button class="btn btn-ghost btn-sm" data-action="bearbeiten" data-id="${w.id}"
           style="padding:2px 8px" title="Bearbeiten">✎</button>
         <button class="btn btn-danger btn-sm" data-action="loeschen" data-id="${w.id}">×</button>
@@ -602,7 +637,7 @@ function renderWunschliste() {
       </div>
       <div class="bestellsumme-hinweis">
         Förderung gesamt: Bund ${eur(summen.bv)}, Land ${eur(summen.lv)}, OG ${eur(summen.og)}.
-        OG-kostenlos-Markierungen einzelner Wünsche werden für diese Gesamtsumme bewusst ignoriert.
+        Kostenmodus-Markierungen einzelner Wünsche werden für diese Gesamtsumme bewusst ignoriert.
       </div>
     </div>`);
 
@@ -763,7 +798,7 @@ function oeffneBearbeitenModal(id) {
   }
 
   document.getElementById('inp-menge-edit').value          = gefundener.menge;
-  document.getElementById('chk-og-kostenlos-edit').checked = !!gefundener.ogKostenlos;
+  document.getElementById('sel-kostenmodus-edit').value    = leseKostenmodus(gefundener);
 
   document.getElementById('modal-bearbeiten').classList.add('open');
   selMitglied.focus();
@@ -787,7 +822,7 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
   const basisKey    = document.getElementById('sel-artikel-basis-edit').value;
   const variante    = gewaehlteVariante('sel-artikel-variante-edit');
   const menge       = parseInt(document.getElementById('inp-menge-edit').value, 10);
-  const ogKostenlos = document.getElementById('chk-og-kostenlos-edit').checked;
+  const kostenmodus = document.getElementById('sel-kostenmodus-edit').value;
 
   const artikel = findeArtikelZuAuswahl(basisKey, variante);
   if (!artikel) {
@@ -809,7 +844,7 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
       variante:   artikel.variante || '',
       name:       artikel.name,
       menge,
-      ogKostenlos,
+      kostenmodus,
     };
   });
   const geaendert = neuerWunsch.find(w => w.id === bearbeitenId);
@@ -896,7 +931,7 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
     variante:   artikel.variante || '',
     name:       artikel.name,
     menge:      isNaN(menge) ? 1 : menge,
-    ogKostenlos: document.getElementById('chk-og-kostenlos').checked,
+    kostenmodus: document.getElementById('sel-kostenmodus').value,
   };
 
   const validierung = validiereWunsch(neuerWunsch);
@@ -916,7 +951,7 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
   renderVariantenAuswahl('sel-artikel-variante', '');
   schliesseDropdown();
   document.getElementById('inp-menge').value         = 1;
-  document.getElementById('chk-og-kostenlos').checked = false;
+  document.getElementById('sel-kostenmodus').value   = KOSTENMODUS_NORMAL;
 });
 
 /* ── CSV kopieren ────────────────────────────────────────────── */
@@ -960,7 +995,7 @@ document.getElementById('btn-speichern').addEventListener('click', async () => {
     datum,
     bezeichnung,
     status:    bestehendeIdx >= 0 ? (bestellungen[bestehendeIdx].status || 'sammlung') : 'sammlung',
-    wuensche,
+    wuensche: wuensche.map(normalisiereWunschFuerPersistenz),
     positionen: bestehendeIdx >= 0 ? (bestellungen[bestehendeIdx].positionen || []) : [],
     rechnungen: bestehendeIdx >= 0 ? (bestellungen[bestehendeIdx].rechnungen  || []) : [],
   };
@@ -1068,7 +1103,7 @@ async function init() {
       document.title = 'Bestellung bearbeiten – LifeguardOrders';
       document.getElementById('inp-datum').value            = bestehend.datum;
       document.getElementById('inp-bezeichnung').value      = bestehend.bezeichnung;
-      wuensche = bestehend.wuensche || [];
+      wuensche = (bestehend.wuensche || []).map(normalisiereWunschFuerPersistenz);
       // "Als bestellt markieren" nur bei existierender Bestellung
       const btnBestellt = document.getElementById('btn-bestellt');
       btnBestellt.style.display = '';
@@ -1109,8 +1144,10 @@ async function init() {
         if (w.id !== id) return w;
         return w.menge > 1 ? { ...w, menge: w.menge - 1 } : null;
       }).filter(Boolean);
-    } else if (action === 'og-toggle') {
-      wuensche = wuensche.map(w => w.id === id ? { ...w, ogKostenlos: !w.ogKostenlos } : w);
+    } else if (action === 'kostenmodus-toggle') {
+      wuensche = mergeWuensche(wuensche.map(w => w.id === id
+        ? { ...w, kostenmodus: naechsterKostenmodus(leseKostenmodus(w)) }
+        : w));
     } else if (action === 'bearbeiten') {
       oeffneBearbeitenModal(id);
       return; // kein renderWunschliste() — Modal übernimmt nach Speichern

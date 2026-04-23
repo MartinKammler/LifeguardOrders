@@ -1,5 +1,11 @@
 import { berechneFoerderung } from './berechnung.js';
 import { EXTERN_ID, OG_ID } from './konstanten.js';
+import {
+  kostenmodusLabel,
+  istOgMitStunden,
+  istOgOhneGegenleistung,
+  leseKostenmodus,
+} from './kostenmodus.js';
 
 function runde(v) {
   return Math.round((v || 0) * 100) / 100;
@@ -30,8 +36,9 @@ export function berechneKassenwartZeilen(bestellungen, artikelListe, mitglieder)
         if (zuweisung.menge === 0) continue;
 
         const quelle = waehleFoerderQuelle(position, artikel);
+        const kostenmodus = leseKostenmodus(zuweisung);
         const foerderung = berechneFoerderung(quelle, zuweisung.menge, {
-          ogKostenlos: !!zuweisung.ogKostenlos,
+          kostenmodus,
         });
 
         const rechnung = (bestellung.rechnungen || []).find(r => r.mitgliedId === zuweisung.mitgliedId);
@@ -47,9 +54,13 @@ export function berechneKassenwartZeilen(bestellungen, artikelListe, mitglieder)
           menge:          zuweisung.menge,
           einzelpreis:    position.einzelpreis || 0,
           brutto:         runde((position.einzelpreis || 0) * zuweisung.menge),
+          kostenmodus,
+          kostenmodusLabel: kostenmodusLabel(kostenmodus),
           bv:             foerderung.bv,
           lv:             foerderung.lv,
           og:             foerderung.og,
+          ogMitStunden:   istOgMitStunden(kostenmodus) ? foerderung.og : 0,
+          ogOhneGegenleistung: istOgOhneGegenleistung(kostenmodus) ? foerderung.og : 0,
           anteil:         foerderung.mitglied,
           bezahlt:        rechnung?.bezahlt ?? false,
           rechnungNummer: rechnung?.nummer ?? '',

@@ -1,12 +1,15 @@
 # Plan: DLRG Bestellsystem (LifeguardOrders)
 
+**Status:** laufender Gesamtplan; die unten genannten Phasen 1–5 sind abgeschlossen, spätere
+Erweiterungen und Härtungen sind eingearbeitet.
+
 ## Architectural Decisions
 
 | Entscheidung | Festlegung |
 |---|---|
 | **Seitenstruktur** | Eine HTML-Datei pro Seite (kein SPA-Router), konsistent mit Stempeluhr |
-| **JS-Module** | Pro Seite eine `*-app.js`; geteilte Logik in: `webdav.js`, `parser.js`, `berechnung.js`, `mitglieder.js`, `pdf.js`, `sammlung.js`, `abgleich.js`, `stunden.js`, `defaults.js` |
-| **Datenhaltung** | JSON-Dateien auf Nextcloud: `artikel.json`, `bestellungen.json`, `einstellungen.json` |
+| **JS-Module** | Pro Seite eine `*-app.js`; geteilte Logik u. a. in `webdav.js`, `sync.js`, `berechnung.js`, `kostenmodus.js`, `sammlung.js`, `abgleich.js`, `pdf.js`, `stunden.js`, `authz.js` |
+| **Datenhaltung** | JSON-Dateien auf Nextcloud: `artikel.json`, `bestellungen.json`, `materialbestand.json`, `materialanfragen.json`, `wuensche.json`, `zugriff.json`, `benutzer.json`, `audit.log.json`, `einstellungen.json` |
 | **Offline-Cache** | Kein fachlicher Lese-Fallback für JSON-Daten; `localStorage` nur für minimale Login-Hilfe, Session-nahe Zustände und technische Marker |
 | **WebDAV** | Alle NC-Zugriffe laufen durch `webdav.js`; Fehler als strukturierte Objekte, keine Exceptions; Factory-Pattern für Testbarkeit |
 | **PDF** | pdf-lib im Browser (lokal in `lib/`); Template-basiert (`Rechnung _Template.pdf`); kein CDN, kein NC-Upload |
@@ -21,6 +24,7 @@
 
 ```powershell
 run-tests.bat
+npm test
 node tests\run-html-tests.mjs
 node tests\review-regression.mjs
 ```
@@ -105,7 +109,7 @@ und verfolgt Zahlungen.
 
 **Erreicht:**
 - `src/stunden.js`: `berechneStunden`, `verechneSchuld`, `fristDerAeltestenOffenenSchuld`, `ampelStatus`, `schuldFrist` mit Tests
-- `src/kassenwart.js`: Kassenwart-Zeilen aus gespeicherten Positions-Snapshots, `ogKostenlos`-Berücksichtigung
+- `src/kassenwart.js`: Kassenwart-Zeilen aus gespeicherten Positions-Snapshots, getrennte Ausweisung von `og_mit_stunden` und `og_ohne_gegenleistung`
 - `kassenwart.html`: Tabelle mit Förderanteilen, Summenzeilen, Jahresfilter, CSV/PDF-Export
 - `dashboard.html`: Ampel-Karten je Mitglied, automatischer LifeguardClock-Import, Ausblenden ohne OG-Schuld
 - Nachschärfung: LifeguardClock-Matching via `userId` oder normalisiertem `nutzer`; Frist aus ältester noch offener Schuld
@@ -124,6 +128,10 @@ und verfolgt Zahlungen.
 - **Lagerverkauf:** Materialseite kann Bestand direkt an ein Mitglied verkaufen; dabei entstehen Bestandsabgang, abgeschlossene Bestellung und Rechnung in einem Schritt auf Basis des aktuellen Katalogpreises
 - **Lehrgänge als Artikel** in `data/artikel.json`: 16 Einträge (8 Lehrgänge × Mitglied/Nichtmitglied, Präfix `LG-`)
 - **Mitglieder-Import JSON-Format** (`src/mitglieder.js`): Parser erkennt jetzt auch JSON-Schlüssel in Anführungszeichen (`"id": "value"`) zusätzlich zum JS-Literal-Format (`id: 'value'`)
+- **Mehrnutzer-Grundlage:** Login-Split in Mitgliedslogin über Stempeluhr-PIN und Funktionslogin für `admin`, `finanzen`, `materialwart`
+- **Wunschqueue:** `wuensche.json` und getrennte Mitgliederseiten (`mitglied.html`, `wuensche.html`, `wunsch-queue.html`)
+- **Teilabschluss Anprobe:** Besteller können in der Anprobe einzeln abgeschlossen und abgerechnet werden
+- **Kostenmodi statt Einzel-Checkbox:** `normal`, `og_mit_stunden`, `og_ohne_gegenleistung`
 
 ---
 
@@ -135,10 +143,11 @@ und verfolgt Zahlungen.
 - **XSS-Schutz:** `src/dom.js` mit `html\`\`` tagged template, `raw()`, `setHTML()` — `innerHTML` direkt wird nirgends mehr verwendet
 - **Keine CDN-Abhängigkeiten:** `pdf-lib` lokal (`lib/pdf-lib.esm.min.js`), war vorher jsPDF von CDN
 - **PDF-Neubau:** `src/pdf.js` komplett auf pdf-lib umgestellt; Template-basiert; EXTERN_ID-Fix; Stunden-Formel korrigiert
-- **Sync-Architektur:** `src/sync.js` mit Pending-State, Startseiten-Banner für offene Scopes, WebDAV-Ladeindikator auf rechnungen.html und kassenwart.html
+- **Sync-Architektur:** `src/sync.js` arbeitet remote-required mit ETag-/Versionsprüfung, Konfliktsperren und ohne fachlichen Offline-Fallback
 - **Einstellungen-Sicherheit:** NC-Passwort nur in sessionStorage; keine automatische `einstellungen.json`-Standarddatei vom Webserver
+- **Login/RBAC:** Session-Guard, Rollenmatrix, Funktionslogin mit handelnder Person, Mitgliedslogin über Stempeluhr-PIN
 - **Mobile Nav:** Breakpoint `@media (max-width: 600px)` in `src/style.css`
-- **UX:** Bestätigungsdialog vor Wunschlöschung; Redirect + Toast nach Speichern; `confirm()` vor Mehrfach-PDF-Download (>1 Rechnung)
-- **Abgleich-Fix:** `normalisierePosition` nutzt Composite-Key `mitgliedId + '\x00' + ogKostenlos`; `ogAnteil` wird bei Merge korrekt summiert
+- **UX:** Toaster, Dialoge und Sync-Banner statt roher `alert()`/`confirm()`-Pfade
+- **Abgleich-Fix:** `normalisierePosition` nutzt heute den Composite-Key `mitgliedId + '\x00' + kostenmodus`; Moduswechsel invalidiert Teilabschluss und Rechnung sauber
 - **`artikelBasisKey`-Separator:** `\x00` → `|||` (Null-Bytes in HTML-Attributen werden vom Browser ignoriert)
 - **Testrunner:** `cleanupLeftovers()` entfernt `.tmp_boot_*` in Projektwurzel und `.tmp_test_*` in `tests/` bei jedem Teststart

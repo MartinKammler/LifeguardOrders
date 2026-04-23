@@ -139,7 +139,7 @@ src/
 **Problem:** Inkonsistente Zustände und stille Überschreibungen
 
 - [ ] `src/webdav.js` um `ETag`/Remote-Metadaten erweitern
-- [ ] `src/sync.js` auf Zustände umstellen: `synced` | `conflict` | `offline-readonly` | `auth-required`
+- [ ] `src/sync.js` auf klare Remote-Zustände umstellen: `synced` | `conflict` | `auth-required` | `remote-unavailable`
 - [ ] Vor jedem Upload Remote-Version prüfen
 - [ ] Schreiben bei Konflikt oder Remote-Ausfall sperren
 - [ ] Startseite und Fachseiten zeigen Konflikt-/Remote-Status sichtbar an

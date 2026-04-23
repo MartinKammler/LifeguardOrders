@@ -4,6 +4,7 @@
  */
 
 import { OG_ID } from './konstanten.js';
+import { leseKostenmodus } from './kostenmodus.js';
 import { validatePosition } from './validation.js';
 
 /**
@@ -198,13 +199,14 @@ export function normalisierePosition(position) {
   for (const eintrag of (position?.zuweisung || [])) {
     if (!eintrag?.mitgliedId) continue;
     const menge = Number.isInteger(eintrag.menge) ? Math.max(0, eintrag.menge) : 0;
-    const key = `${eintrag.mitgliedId}\x00${eintrag.ogKostenlos ? '1' : '0'}`;
+    const kostenmodus = leseKostenmodus(eintrag);
+    const key = `${eintrag.mitgliedId}\x00${kostenmodus}`;
     if (!map.has(key)) {
       map.set(key, {
         mitgliedId: eintrag.mitgliedId,
         menge,
         ogAnteil: eintrag.ogAnteil || 0,
-        ogKostenlos: !!eintrag.ogKostenlos,
+        kostenmodus,
       });
       continue;
     }
@@ -234,16 +236,15 @@ export function betroffeneMitgliederIdsAusPositionen(positionen = []) {
 }
 
 function signaturProMitglied(position) {
-  // Signatur nur ueber Menge pro Mitglied – ogKostenlos aendert nicht, was das
-  // Mitglied anprobiert/bezahlt hat, sondern nur, wer den Anteil uebernimmt.
-  // Wuerde ogKostenlos in die Signatur einfliessen, wuerde ein Haken-Klick
-  // Anprobe-Status und bereits erzeugte Rechnung des Mitglieds verlieren.
+  // Signatur ueber Menge und Kostenmodus pro Mitglied.
+  // Ein Moduswechsel aendert Rechnungsbetrag und Stundenpflicht und muss
+  // daher Teilabschluss/Rechnung des Mitglieds invalidieren.
   const map = new Map();
   for (const zuweisung of (position?.zuweisung || [])) {
     if (!zuweisung?.mitgliedId || zuweisung.menge <= 0) continue;
     const key = zuweisung.mitgliedId;
     const liste = map.get(key) || [];
-    liste.push(Number(zuweisung.menge || 0));
+    liste.push(`${Number(zuweisung.menge || 0)}:${leseKostenmodus(zuweisung)}`);
     map.set(key, liste);
   }
 
@@ -332,7 +333,7 @@ export function verteileGelieferteMenge(wuensche, artikelNr, variante, geliefert
       mitgliedId: w.mitgliedId,
       wunschMenge: 0,
       zugeteiltMenge: 0,
-      ogKostenlos: !!w.ogKostenlos,
+      kostenmodus: leseKostenmodus(w),
     }));
   }
 
@@ -340,7 +341,7 @@ export function verteileGelieferteMenge(wuensche, artikelNr, variante, geliefert
     mitgliedId: w.mitgliedId,
     wunschMenge: w.menge,
     zugeteiltMenge: Math.floor(geliefertMenge * w.menge / gesamtGewuenscht),
-    ogKostenlos: !!w.ogKostenlos,
+    kostenmodus: leseKostenmodus(w),
   }));
 
   const bereitsZugewiesen = verteilung.reduce((summe, eintrag) => summe + eintrag.zugeteiltMenge, 0);
@@ -430,7 +431,7 @@ function baueArtikelPosition(position, wuensche, artikelListe, wunschVariante) {
       mitgliedId: eintrag.mitgliedId,
       menge: eintrag.zugeteiltMenge,
       ogAnteil: 0,
-      ogKostenlos: eintrag.ogKostenlos,
+      kostenmodus: leseKostenmodus(eintrag),
     })),
   };
 }

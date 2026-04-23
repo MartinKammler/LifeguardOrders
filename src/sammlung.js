@@ -4,6 +4,7 @@
  */
 
 import { berechneFoerderung } from './berechnung.js';
+import { leseKostenmodus } from './kostenmodus.js';
 import { validateWunsch } from './validation.js';
 
 /**
@@ -56,10 +57,10 @@ export function exportiereCSV(aggregiert) {
 /**
  * Ermittelt Gesamtstückzahl und Preissummen einer Sammelbestellung.
  *
- * Die Summe ignoriert bewusst das Wunsch-Flag ogKostenlos, damit sie die
+ * Die Summe ignoriert bewusst den Wunsch-Kostenmodus, damit sie die
  * Bestellung fachlich immer nach Katalogpreis und regulärer Förderung zeigt.
  *
- * @param {Array<{artikelNr: string, variante: string, menge: number, ogKostenlos?: boolean}>} wuensche
+ * @param {Array<{artikelNr: string, variante: string, menge: number, kostenmodus?: string, ogKostenlos?: boolean}>} wuensche
  * @param {Array<{artikelNr: string, variante: string, einzelpreis: number, bvFoerderung?: number, lvFoerderung?: number, ogFoerderung?: number, ogUebernimmtRest?: boolean}>} artikelListe
  * @returns {{ gegenstaende: number, normalpreis: number, bv: number, lv: number, og: number, preisNachFoerderung: number }}
  */
@@ -83,7 +84,7 @@ export function berechneBestellsummen(wuensche, artikelListe) {
     );
     if (!artikel) continue;
 
-    const foerderung = berechneFoerderung(artikel, menge, { ogKostenlos: false });
+    const foerderung = berechneFoerderung(artikel, menge, { kostenmodus: 'normal' });
     summen.normalpreis += foerderung.gesamt;
     summen.bv += foerderung.bv;
     summen.lv += foerderung.lv;
@@ -105,8 +106,8 @@ export function validiereWunsch(wunsch) {
 }
 
 /**
- * Fasst Wünsche mit gleicher mitgliedId + artikelNr + variante + ogKostenlos zusammen.
- * Die Menge wird summiert. Id, name, ogKostenlos und alle anderen Felder
+ * Fasst Wünsche mit gleicher mitgliedId + artikelNr + variante + kostenmodus zusammen.
+ * Die Menge wird summiert. Id, name, kostenmodus und alle anderen Felder
  * vom ersten Eintrag behalten.
  *
  * Im Gegensatz zu aggregiereWuensche bleibt mitgliedId erhalten und
@@ -114,18 +115,20 @@ export function validiereWunsch(wunsch) {
  * (Map-Insertion-Order). Kein Sortieren — die Nutzer-Eingabereihenfolge
  * soll im UI sichtbar bleiben.
  *
- * @param {Array<{id: string, mitgliedId: string, artikelNr: string, variante: string, name: string, menge: number, ogKostenlos?: boolean}>} wuensche
+ * @param {Array<{id: string, mitgliedId: string, artikelNr: string, variante: string, name: string, menge: number, kostenmodus?: string, ogKostenlos?: boolean}>} wuensche
  * @returns {Array}
  */
 export function mergeWuensche(wuensche) {
   const map = new Map();
 
   for (const w of wuensche) {
-    const key = `${w.mitgliedId}\x00${w.artikelNr}\x00${w.variante}\x00${w.ogKostenlos ? '1' : '0'}`;
+    const kostenmodus = leseKostenmodus(w);
+    const key = `${w.mitgliedId}\x00${w.artikelNr}\x00${w.variante}\x00${kostenmodus}`;
     if (map.has(key)) {
       map.get(key).menge += w.menge;
     } else {
-      map.set(key, { ...w });
+      const { ogKostenlos, ...rest } = w;
+      map.set(key, { ...rest, kostenmodus });
     }
   }
 

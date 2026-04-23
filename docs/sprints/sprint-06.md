@@ -38,7 +38,7 @@ Nextcloud und bereitet den Mehrnutzerbetrieb über ein App-Login vor.
 - [x] Bei Remote-Abweichung entsteht ein sichtbarer Konfliktstatus
 - [x] Konflikte blockieren das Speichern hart; kein stilles Überschreiben
 - [x] Erste Konfliktaktionen sind: `Remote neu laden`, `lokale Kopie exportieren`, `Abbrechen`
-- [x] Offline ohne Remote ist lesbar, aber für fachliche Schreibvorgänge gesperrt
+- [x] Ohne Remote/WebDAV werden fachliche Daten weder lesend noch schreibend aus lokalem Cache betrieben
 
 ### Login & Rollen
 
@@ -72,7 +72,7 @@ Nextcloud und bereitet den Mehrnutzerbetrieb über ein App-Login vor.
 
 ## Technische Leitplanken
 
-- `sync.js` kennt nur noch klare Zustände wie `synced`, `conflict`, `offline-readonly`, `auth-required`
+- `sync.js` kennt klare Remote-Zustände wie `synced`, `conflict`, `auth-required`, `remote-unavailable`
 - Fachliche Daten werden ohne erreichbares WebDAV nicht mehr aus lokalem Cache geladen
 - `writeJson()` nutzt `If-Match` bzw. Remote-Metadaten, um Race Conditions sichtbar zu machen
 - Auto-Merge ist nur für append-only Daten wie Audit später erlaubt, nicht für Bestellungen oder Einstellungen

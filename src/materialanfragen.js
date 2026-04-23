@@ -1,6 +1,8 @@
 function err(fehler) { return { ok: false, fehler }; }
 const OK = { ok: true };
 
+import { leseKostenmodus } from './kostenmodus.js';
+
 export const MATERIAL_ANFRAGE_STATUS = ['offen', 'abgerechnet', 'abgelehnt'];
 
 function leer(value) {
@@ -27,6 +29,7 @@ function nowIso() {
 }
 
 export function normalisiereMaterialanfrage(anfrage) {
+  const kostenmodus = leseKostenmodus(anfrage);
   return {
     id: String(anfrage?.id || uuid()),
     status: MATERIAL_ANFRAGE_STATUS.includes(anfrage?.status) ? anfrage.status : 'offen',
@@ -42,14 +45,14 @@ export function normalisiereMaterialanfrage(anfrage) {
     angelegtAm: String(anfrage?.angelegtAm || nowIso()),
     angelegtVonRolle: String(anfrage?.angelegtVonRolle || '').trim(),
     angelegtVonName: String(anfrage?.angelegtVonName || '').trim(),
-    entscheidung: ['normal', 'og', 'abgelehnt'].includes(anfrage?.entscheidung) ? anfrage.entscheidung : '',
+    entscheidung: ['normal', 'og_mit_stunden', 'og_ohne_gegenleistung', 'og', 'abgelehnt'].includes(anfrage?.entscheidung) ? anfrage.entscheidung : '',
     entschiedenAm: String(anfrage?.entschiedenAm || '').trim(),
     entschiedenVonRolle: String(anfrage?.entschiedenVonRolle || '').trim(),
     entschiedenVonName: String(anfrage?.entschiedenVonName || '').trim(),
     bestellungId: String(anfrage?.bestellungId || '').trim(),
     rechnungId: String(anfrage?.rechnungId || '').trim(),
     rechnungsnummer: String(anfrage?.rechnungsnummer || '').trim(),
-    ogKostenlos: anfrage?.ogKostenlos === true,
+    kostenmodus,
   };
 }
 
@@ -71,4 +74,3 @@ export function sortiereMaterialanfragen(anfragen) {
     String(b.angelegtAm || '').localeCompare(String(a.angelegtAm || ''))
   );
 }
-

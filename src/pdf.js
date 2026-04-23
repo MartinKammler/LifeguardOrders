@@ -11,6 +11,7 @@ import {
   naechsteRechnungsnummer,
   rechnungsnummerMitLaufnummer,
 } from './berechnung.js';
+import { erzeugtStundenpflicht, leseKostenmodus } from './kostenmodus.js';
 
 const TEMPLATE_URL = new URL('../Rechnung _Template.pdf', import.meta.url);
 const MM_TO_PT = 72 / 25.4;
@@ -181,7 +182,7 @@ async function erzeugePdfBytes(rechnung, mitgliedName, einstellungen) {
   const GREETING_GAP_COMPACT = mm(10);
   const PAYMENT_BLOCK_HEIGHT = 58;
   const GREETING_BLOCK_HEIGHT = 42;
-  const SUMMARY_BLOCK_HEIGHT = rechnung.ogAnteil > 0 ? 42 : 14;
+  const SUMMARY_BLOCK_HEIGHT = (rechnung.ogAnteilMitStunden || 0) > 0 ? 42 : 14;
   const SUBTOTAL_BLOCK_HEIGHT = 14;
   const FOLLOW_CARRY_Y = FOLLOW_ROW0_Y + 4;
   const FOLLOW_ROW0_WITH_CARRY_Y = FOLLOW_ROW0_Y + 20;
@@ -267,11 +268,11 @@ async function erzeugePdfBytes(rechnung, mitgliedName, einstellungen) {
   function drawSummary(page, startY) {
     const { summaryY } = drawSummenZeile(page, startY, 'Eigenanteil gesamt', rechnung.gesamtbetrag);
     let bottomY = summaryY + 12;
-    if (rechnung.ogAnteil > 0) {
+    if ((rechnung.ogAnteilMitStunden || 0) > 0) {
       const infoY = summaryY + 18;
       drawTextTopPt(
         page,
-        `OG-Förderanteil: ${eur(rechnung.ogAnteil)} = ${rechnung.erwartetEinsatzstunden} Einsatzstunden erwartet`,
+        `OG-Förderanteil mit Wachstunden: ${eur(rechnung.ogAnteilMitStunden)} = ${rechnung.erwartetEinsatzstunden} Einsatzstunden erwartet`,
         X_LEFT,
         infoY,
         { font: helvetica, size: 8.5, color: grey, maxWidth: X_RIGHT - X_LEFT }
@@ -514,7 +515,10 @@ export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, ar
       let eigenanteil;
       let ogAnteilPos;
       if (katalogArtikel) {
-        const f = berechneFoerderung(katalogArtikel, zuw.menge, { ogKostenlos: zuw.ogKostenlos || false });
+        const f = berechneFoerderung(katalogArtikel, zuw.menge, {
+          kostenmodus: leseKostenmodus(zuw),
+          einstellungen,
+        });
         eigenanteil = f.mitglied;
         ogAnteilPos = f.og;
       } else {
@@ -522,8 +526,14 @@ export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, ar
         const bv = runde((pos.bvFoerderung || 0) * zuw.menge);
         const lv = runde((pos.lvFoerderung || 0) * zuw.menge);
         const og = runde((pos.ogFoerderung || 0) * zuw.menge);
-        eigenanteil = Math.max(0, runde(ep * zuw.menge - bv - lv - og));
-        ogAnteilPos = og;
+        const kostenmodus = leseKostenmodus(zuw);
+        if (kostenmodus !== 'normal') {
+          eigenanteil = 0;
+          ogAnteilPos = Math.max(0, runde(ep * zuw.menge - bv - lv));
+        } else {
+          eigenanteil = Math.max(0, runde(ep * zuw.menge - bv - lv - og));
+          ogAnteilPos = og;
+        }
       }
 
       meinePositionen.push({
@@ -534,6 +544,7 @@ export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, ar
         einzelpreis: pos.einzelpreis || 0,
         eigenanteil,
         ogAnteil: ogAnteilPos,
+        kostenmodus: leseKostenmodus(zuw),
       });
     }
   }
@@ -542,10 +553,13 @@ export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, ar
 
   const gesamtbetrag = runde(meinePositionen.reduce((summe, position) => summe + position.eigenanteil, 0));
   const ogAnteil = runde(meinePositionen.reduce((summe, position) => summe + position.ogAnteil, 0));
+  const ogAnteilMitStunden = runde(meinePositionen
+    .filter(position => erzeugtStundenpflicht(position.kostenmodus))
+    .reduce((summe, position) => summe + position.ogAnteil, 0));
 
   const sr = einstellungen?.stundenRate || { stunden: 3, euro: 10 };
-  const erwartetEinsatzstunden = (ogAnteil > 0 && mitgliedId !== EXTERN_ID)
-    ? Math.ceil(ogAnteil / sr.euro * sr.stunden)
+  const erwartetEinsatzstunden = (ogAnteilMitStunden > 0 && mitgliedId !== EXTERN_ID)
+    ? Math.ceil(ogAnteilMitStunden / sr.euro * sr.stunden)
     : 0;
 
   const datum = opts.datum instanceof Date
@@ -567,6 +581,7 @@ export function erstelleRechnungsDaten(bestellung, mitgliedId, einstellungen, ar
     positionen: meinePositionen,
     gesamtbetrag,
     ogAnteil,
+    ogAnteilMitStunden,
     erwartetEinsatzstunden,
     bezahlt: false,
     bezahltDatum: null,

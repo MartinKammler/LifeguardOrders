@@ -1,5 +1,9 @@
 # Discovery: DLRG Bestellsystem (LifeguardOrders)
 
+**Hinweis:** Dieses Discovery-Dokument beschreibt den fachlichen Ursprung des Projekts.
+Es ist auf den aktuellen Zielkurs nachgezogen, ersetzt aber nicht die detaillierte
+[PRD](../prd/bestellsystem.md).
+
 ## Problem Statement
 
 Die DLRG Ortsgruppe Schellbronn e.V. verwaltet Sammelbestellungen von Einsatzkleidung und
@@ -19,11 +23,13 @@ System, das:
 
 | Rolle | Beschreibung |
 |---|---|
-| **Admin / Gruppenleiter** | Einziger Nutzer im MVP. Verwaltet Artikel, importiert Bestellungen, weist Positionen zu, erstellt Rechnungen, markiert Zahlungen, sieht Dashboard. |
-| *(Kassenwart)* | Kein separater Login im MVP — Admin erzeugt Kassenwart-Übersicht. |
-| *(Mitglieder)* | Kein Self-Service-Zugang im MVP. |
+| **Admin** | Vollzugriff auf Artikel, Bestellungen, Wunschqueue, Rechnungen, Rollen und Einstellungen. |
+| **Finanzen** | Verantwortlich für Rechnungen, Zahlstatus, Förderentscheidungen und Sperren. |
+| **Materialwart** | Pflegt Lagerbestand, Zugänge/Abgänge und operative Lagerausgaben. |
+| **Mitglied** | Nutzt Wunschqueue und eigenes Dashboard über Stempeluhr-PIN-Login. |
 
-**Geplante Erweiterung:** Multi-User-Login und E-Mail-Versand in späteren Versionen explizit vorgesehen, aber nicht Teil des MVP.
+**Aktueller Zielkurs:** getrennte Login-Wege für Mitglieder und Funktionskonten,
+Wunschqueue vor der offiziellen Sammelbestellung und WebDAV als Pflichtquelle.
 
 ---
 
@@ -63,9 +69,9 @@ System, das:
     damit ich keine Bestellung vergesse.
 14. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können
     (z. B. März und Oktober desselben Jahres), damit der Jahresablauf der OG abgebildet wird.
-15. Als Admin möchte ich einen Wunsch als "OG übernimmt Kosten" markieren können,
-    damit Mitgliedsanteil, Rechnung und Kassenwart-Auswertung konsistent 0 € für das
-    Mitglied und den Rest als OG-Anteil ausweisen.
+15. Als Admin möchte ich einen Wunsch als `Normal`, `OG übernimmt mit Wachstunden`
+    oder `OG übernimmt ohne Gegenleistung` markieren können, damit Mitgliedsanteil,
+    Stundenpflicht und Kassenwart-Auswertung fachlich korrekt getrennt bleiben.
 16. Als Admin möchte ich nach dem Wareneingang eine eigene Anprobe-Phase haben, in der
     ich die finale Verteilung unabhängig vom ursprünglichen Besteller anpassen kann.
 17. Als Admin möchte ich in der Anprobe Teilmengen als Retoure oder Lagerbestand markieren
@@ -167,7 +173,7 @@ System, das:
 
 - **Tech-Stack:** Vanilla JS, reines HTML/CSS — kein Framework, kein Build-System (konsistent mit Stempeluhr)
 - **Datenhaltung:** JSON-Dateien auf Nextcloud (`/LifeguardOrders/`) via WebDAV
-- **Offline-Fähigkeit:** PWA — nach erstem Laden ohne Internetverbindung nutzbar (Daten aus Cache)
+- **Datenzugriff:** Für fachliche Daten ist eine erreichbare Nextcloud/WebDAV-Verbindung Pflicht
 - **PDF-Erzeugung:** Im Browser, keine serverseitige Abhängigkeit
 - **Kein eigener Server:** Nur WebDAV-Zugriff auf `cloud.goddyhome.de`
 - **Nextcloud:** URL `https://cloud.goddyhome.de`, User `martin`
@@ -185,13 +191,11 @@ System, das:
 
 ---
 
-## Out of Scope (MVP)
+## Out of Scope
 
-- Self-Service-Portal für Mitglieder (kein Login für Mitglieder)
 - Direktanbindung an DLRG-Bundesshop / Materialstelle API
 - DATEV- oder Buchhaltungsexport
 - E-Mail-Versand von Rechnungen *(explizit als spätere Erweiterung geplant)*
-- Multi-User-Login / Rollenverwaltung *(explizit als spätere Erweiterung geplant)*
 - Native Mobile App
 
 ---

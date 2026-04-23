@@ -1,4 +1,5 @@
 import { erstelleRechnungsDaten } from './pdf.js';
+import { leseKostenmodus } from './kostenmodus.js';
 
 function heuteIso() {
   return new Date().toISOString().slice(0, 10);
@@ -13,6 +14,7 @@ export function findeArtikelFuerBestand(artikelListe, bestandseintrag) {
 
 export function erstelleLagerverkauf(bestandseintrag, artikel, mitgliedId, mitgliedName, einstellungen, alleRechnungen, opts = {}) {
   const datum = heuteIso();
+  const kostenmodus = leseKostenmodus(opts);
   const bezeichnung = [
     'Lagerverkauf',
     mitgliedName || mitgliedId,
@@ -44,7 +46,7 @@ export function erstelleLagerverkauf(bestandseintrag, artikel, mitgliedId, mitgl
         retoureMenge: 0,
         ogBestandMenge: 0,
         zuweisung: [
-          { mitgliedId, menge: bestandseintrag.menge, ogKostenlos: !!opts.ogKostenlos },
+          { mitgliedId, menge: bestandseintrag.menge, kostenmodus },
         ],
       },
     ],

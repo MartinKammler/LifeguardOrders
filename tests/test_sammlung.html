@@ -172,22 +172,30 @@ await test('leeres Array → leeres Array', () => {
   assertDeepEqual(mergeWuensche([]), []);
 });
 
-await test('ogKostenlos-Flag bleibt erhalten nach Merge', () => {
+await test('kostenmodus bleibt erhalten nach Merge', () => {
   const result = mergeWuensche([
-    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: '', name: 'X', menge: 1, ogKostenlos: true },
-    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: '', name: 'X', menge: 2, ogKostenlos: true },
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: '', name: 'X', menge: 1, kostenmodus: 'og_mit_stunden' },
+    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: '', name: 'X', menge: 2, kostenmodus: 'og_mit_stunden' },
   ]);
-  assertEqual(result[0].ogKostenlos, true);
+  assertEqual(result[0].kostenmodus, 'og_mit_stunden');
 });
 
-await test('gleicher Artikel mit unterschiedlichem ogKostenlos bleibt getrennt', () => {
+await test('legacy ogKostenlos wird beim Merge explizit zu kostenmodus normalisiert', () => {
   const result = mergeWuensche([
-    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1, ogKostenlos: true },
-    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1, ogKostenlos: false },
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: '', name: 'X', menge: 1, ogKostenlos: true },
+  ]);
+  assertEqual(result[0].kostenmodus, 'og_mit_stunden');
+  assertEqual('ogKostenlos' in result[0], false);
+});
+
+await test('gleicher Artikel mit unterschiedlichem Kostenmodus bleibt getrennt', () => {
+  const result = mergeWuensche([
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1, kostenmodus: 'og_mit_stunden' },
+    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1, kostenmodus: 'og_ohne_gegenleistung' },
   ]);
   assertEqual(result.length, 2);
-  assertEqual(result[0].ogKostenlos, true);
-  assertEqual(result[1].ogKostenlos, false);
+  assertEqual(result[0].kostenmodus, 'og_mit_stunden');
+  assertEqual(result[1].kostenmodus, 'og_ohne_gegenleistung');
 });
 
 await test('Reihenfolge bleibt erhalten (Eingabereihenfolge, kein Sort)', () => {
@@ -261,9 +269,9 @@ await test('berechnet Normalpreis und Preis nach Förderung aus dem Artikelkatal
   assertEqual(summen.preisNachFoerderung, 63);
 });
 
-await test('ignoriert ogKostenlos-Flags bewusst für die Gesamtsumme', () => {
+await test('ignoriert Kostenmodus bewusst für die Gesamtsumme', () => {
   const summen = berechneBestellsummen([
-    { artikelNr: 'A001', variante: 'M', menge: 2, ogKostenlos: true },
+    { artikelNr: 'A001', variante: 'M', menge: 2, kostenmodus: 'og_mit_stunden' },
   ], [
     { artikelNr: 'A001', variante: 'M', einzelpreis: 10, bvFoerderung: 1, lvFoerderung: 2, ogFoerderung: 3 },
   ]);

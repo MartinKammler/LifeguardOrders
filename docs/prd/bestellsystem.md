@@ -50,7 +50,9 @@ einstellungen.html        ← Konfiguration (NC, OG-Stammdaten, Mitglieder, Stun
 Phase 1 — Sammlung:
   Admin legt Sammelbestellung an →
   Erfasst Wünsche: Mitglied + Basisartikel (Nummer + Bezeichnung aus Katalog) + Variante + Menge →
-  Optional: markiert Wunsch als "OG übernimmt Kosten" →
+  Optional: markiert Wunsch als
+    - "OG übernimmt mit Wachstunden" oder
+    - "OG übernimmt ohne Gegenleistung" →
   System aggregiert: Artikel XL: 3 Stk. gesamt →
   CSV-Export: "18507110,XL,3" pro Zeile → Admin kopiert in Materialstelle-Bestellformular
 
@@ -139,6 +141,9 @@ werden — der Parser versteht beide Formate.
 11. Als Admin möchte ich, dass Artikel mit Menge 0 beim Import automatisch übersprungen werden.
 12. Als Admin möchte ich die OG-Förderung pro Artikel als festen Betrag oder als Checkbox
     "OG übernimmt Rest" festlegen können.
+    Zusätzlich soll das System bei der Bestellung zwischen `Normal`,
+    `OG übernimmt mit Wachstunden` und `OG übernimmt ohne Gegenleistung`
+    unterscheiden können.
 13. Als Admin möchte ich Artikel manuell neu anlegen (Formular mit allen Feldern inkl. Variante).
 14. Als Admin möchte ich Artikel bearbeiten und löschen können.
 15. Als Admin möchte ich bei einem leeren Artikelkatalog einen deutlichen Hinweistext sehen.
@@ -160,8 +165,10 @@ werden — der Parser versteht beide Formate.
     (Wünsche hinzufügen, ändern, löschen), solange Phase 2 noch nicht begonnen hat;
     dabei soll dieselbe Artikel-/Varianten-Auswahl gelten wie beim Neuanlegen.
 22. Als Admin möchte ich mehrere Sammelbestellungen gleichzeitig offen haben können.
-23. Als Admin möchte ich einen Wunsch als "OG übernimmt Kosten" markieren können,
-    damit der Mitgliedsanteil auf 0 € gesetzt und der Rest vollständig der OG zugerechnet wird.
+23. Als Admin möchte ich einen Wunsch als `Normal`, `OG übernimmt mit Wachstunden`
+    oder `OG übernimmt ohne Gegenleistung` markieren können, damit der
+    Mitgliedsanteil und die spätere Stundenpflicht fachlich korrekt getrennt
+    behandelt werden.
 
 ### Sammelbestellung — Phase 2: Eingang & Abgleich
 
@@ -279,8 +286,9 @@ werden — der Parser versteht beide Formate.
     Sammelbestellung übernehmen können.
 74. Als Admin möchte ich Wünsche im Auftrag eines Mitglieds ändern können
     (z. B. nach WhatsApp-Rückmeldung), wobei diese Änderung auditiert wird.
-75. Als Admin oder Finanzen möchte ich OG-Förderung bis zur Rechnungserzeugung setzen
-    oder entziehen können.
+75. Als Admin oder Finanzen möchte ich den Kostenmodus bis zur Rechnungserzeugung
+    setzen oder ändern können (`Normal`, `OG übernimmt mit Wachstunden`,
+    `OG übernimmt ohne Gegenleistung`).
 76. Als Admin oder Finanzen möchte ich globale Sperren für neue geförderte Wünsche
     und neue geförderte Lageranfragen setzen können.
 77. Als Admin oder Finanzen möchte ich einzelne Mitglieder für neue geförderte Wünsche
@@ -328,7 +336,7 @@ wuensche[]              — Phase 1: Mitgliederwünsche
   variante    string
   name        string
   menge       number
-  ogKostenlos boolean   — true = Mitglied zahlt 0 €, OG übernimmt den Rest
+  kostenmodus enum      — "normal" | "og_mit_stunden" | "og_ohne_gegenleistung"
 positionen[]            — Phase 2+3: aus Rechnungsimport, danach finale Verteilung in der Anprobe
   id          string
   artikelNr   string
@@ -347,7 +355,7 @@ positionen[]            — Phase 2+3: aus Rechnungsimport, danach finale Vertei
   zuweisung[]           — Verteilung auf Mitglieder
     mitgliedId string
     menge      number
-    ogKostenlos boolean
+    kostenmodus enum    — "normal" | "og_mit_stunden" | "og_ohne_gegenleistung"
 rechnungen[]
   id          string
   nummer      string    — "R_YYYY_MM_NNN"
@@ -461,14 +469,14 @@ foerderwunsch       boolean  — Materialwart fordert Finanz-/Förderentscheidun
 angelegtAm          string   — ISO-Zeitstempel
 angelegtVonRolle    string
 angelegtVonName     string
-entscheidung        enum     — "" | "normal" | "og" | "abgelehnt"
+entscheidung        enum     — "" | "normal" | "og_mit_stunden" | "og_ohne_gegenleistung" | "abgelehnt"
 entschiedenAm       string   — optional, ISO-Zeitstempel
 entschiedenVonRolle string   — optional
 entschiedenVonName  string   — optional
 bestellungId        string   — optional, nach Freigabe
 rechnungId          string   — optional, nach Freigabe
 rechnungsnummer     string   — optional, nach Freigabe
-ogKostenlos         boolean
+kostenmodus         enum     — "normal" | "og_mit_stunden" | "og_ohne_gegenleistung"
 ```
 
 **Artikel-/Varianten-Auswahl in der UI**
@@ -483,7 +491,8 @@ ogKostenlos         boolean
 - die Ausgabe landet zunächst in `materialanfragen.json` mit Status `offen`
 - `admin` oder `finanzen` entscheiden anschließend:
   - normal abrechnen
-  - `OG übernimmt`
+  - `OG übernimmt mit Wachstunden`
+  - `OG übernimmt ohne Gegenleistung`
   - ablehnen und Bestand zurückbuchen
 - erst mit dieser Freigabe entsteht die abrechnungswirksame Bestellung samt Rechnung
 
@@ -554,11 +563,36 @@ für Sonderfälle erlaubt.
 - Rechnungen dürfen erst nach Status `abgeschlossen` erzeugt werden
 - Abgerechnet werden ausschließlich die finalen `zuweisung[]`-Mengen der Bestellung
 
-### Förderberechnung
+### Kostenmodus & Förderberechnung
 
-`berechneFoerderung(artikel, menge, opts?) → { bv, lv, og, mitglied, gesamt }`.
-`ogUebernimmtRest: true` → `og = einzelpreis − bv − lv`.
-`ogKostenlos: true` → `mitglied = 0`, OG übernimmt den verbleibenden Rest. Auf 2 Dezimalstellen gerundet.
+Bestellwünsche, finale Zuweisungen und Lagerfreigaben kennen künftig drei
+Kostenmodi:
+
+- `normal`
+- `og_mit_stunden`
+- `og_ohne_gegenleistung`
+
+`berechneFoerderung(artikel, menge, opts?) → { bv, lv, og, mitglied, gesamt, erwartetEinsatzstunden }`
+arbeitet damit wie folgt:
+
+- `normal`
+  - Mitglied zahlt den regulären Restbetrag nach BV/LV/OG-Förderung
+- `og_mit_stunden`
+  - Mitglied zahlt `0 €`
+  - OG übernimmt den verbleibenden Rest
+  - daraus entsteht `erwartetEinsatzstunden`
+- `og_ohne_gegenleistung`
+  - Mitglied zahlt `0 €`
+  - OG übernimmt den verbleibenden Rest
+  - `erwartetEinsatzstunden = 0`
+
+`ogUebernimmtRest: true` auf dem Artikel bleibt davon unberührt und steuert nur,
+wie sich der OG-Anteil des Artikels selbst berechnet.
+
+Alt-Datenmigration:
+
+- `ogKostenlos: true` ohne `kostenmodus` wird als `og_mit_stunden` interpretiert
+- fehlender Modus sonst als `normal`
 
 ### Einsatzstunden-Berechnung
 
@@ -569,12 +603,17 @@ Schulden-Verrechnung: `verechneSchuld(mitgliedId, bestellungen[], geleisteteStun
 → chronologisch, älteste Schuld zuerst. Die Ampel-Frist richtet sich nach der ältesten
 noch offenen Schuld.
 
+Wichtig: Nur Rechnungen bzw. Zuweisungen mit `kostenmodus = "og_mit_stunden"`
+erzeugen eine Stundenschuld. `og_ohne_gegenleistung` ist ein echter Zuschuss
+ohne spätere Gegenleistung.
+
 ### PDF-Erzeugung
 
 Im Browser via `pdf-lib` (lokal in `lib/pdf-lib.esm.min.js`, kein CDN).
 Layout basiert auf Template-PDF `Rechnung _Template.pdf`, das als Basis-Seite eingelesen wird.
 Mehrseitige Rechnungen mit Übertragssummen werden unterstützt.
-Rechnung zeigt: Mitgliedsanteil (nach Förderabzug) + erwartete Einsatzstunden für OG-Anteil.
+Rechnung zeigt: Mitgliedsanteil (nach Förderabzug) + erwartete Einsatzstunden nur
+für Positionen mit `kostenmodus = "og_mit_stunden"`.
 Externe Käufer (`EXTERN_ID`) erhalten keine Stundenpflicht auf der Rechnung.
 
 ### Rechnungsnummerierung
@@ -616,7 +655,7 @@ strukturierte Objekte (`{ ok: false, error }`), keine Exceptions.
   - darf ungeförderte Lagerausgaben zum Katalogpreis erfassen
   - darf keine Preisabweichungen oder OG-Förderungen finalisieren
 - `finanzen`
-  - darf OG-Förderung setzen und entziehen
+  - darf Kostenmodus/Förderart setzen und entziehen
   - darf Rechnungen erzeugen, drucken und Zahlstatus pflegen
   - darf globale und individuelle Sperren setzen
   - darf keine Benutzer, Rollen oder Systemeinstellungen verwalten
@@ -633,8 +672,8 @@ strukturierte Objekte (`{ ok: false, error }`), keine Exceptions.
 - Sperren verhindern nur **neue** Wünsche und **neue** Lageranfragen
 - Dasselbe gilt für geförderte Lagerfälle
 - Änderungen durch Admin bleiben auditierbar und werden dem Mitglied im Dashboard kenntlich gemacht
-- OG-Förderung darf durch `admin` oder `finanzen` bis zur Rechnungserzeugung gesetzt
-  oder entzogen werden; danach nur über bewussten Korrekturpfad
+- Der Kostenmodus darf durch `admin` oder `finanzen` bis zur Rechnungserzeugung gesetzt
+  oder geändert werden; danach nur über bewussten Korrekturpfad
 
 ### Benutzer-Dashboard (Zielbild)
 
@@ -684,10 +723,10 @@ Tests prüfen externes Verhalten durch öffentliche Funktionen — überleben Re
 **Prioritäre Testbereiche:**
 
 1. **Import-Parser** — alle drei Formate, LV-Erkennung, Variantenzeile, Menge-0, ogKosten
-2. **Förderberechnung** — ogUebernimmtRest, Rundung, Menge > 1
+2. **Förderberechnung** — `ogUebernimmtRest`, Kostenmodus, Rundung, Menge > 1
 3. **Abgleich** — Match, Mengenabweichung, nicht bestellt, nicht geliefert, `uebernehmen` vs. `ignorieren`
 4. **Stunden-Matching** — anwesenheit nicht zählen, unbekannte Nutzer, `nutzer`-Fallback
-5. **Schulden-Verrechnung** — chronologische Tilgung, Teilerfüllung, Frist der ältesten offenen Schuld
+5. **Schulden-Verrechnung** — chronologische Tilgung, Teilerfüllung, Frist der ältesten offenen Schuld, nur für `og_mit_stunden`
 6. **Kassenwart-Snapshots** — gespeicherte Förderwerte vor Live-Katalog
 7. **Rechnungsnummerierung** — Monatsreset, fortlaufend
 8. **Materialbestand** — Normalisierung, Statuswechsel und Bestands-Summen

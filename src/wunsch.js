@@ -16,6 +16,8 @@
  *   isValidWuenscheListe(data)          → boolean
  */
 
+import { leseKostenmodus } from './kostenmodus.js';
+
 // ── Konstanten ──────────────────────────────────────────────────────
 
 const GUELTIGE_STATI = [
@@ -76,6 +78,7 @@ export function erstelleWunsch(felder = {}) {
     variante:         felder.variante     ?? '',
     name:             felder.name         ?? '',
     menge:            felder.menge        ?? 0,
+    kostenmodus:      leseKostenmodus(felder),
     status:           'offen',
     erstelltAm:       jetzt,
     geaendertAm:      jetzt,
@@ -261,6 +264,7 @@ export function normalizeWunsch(w = {}) {
     variante:         typeof w.variante         === 'string' ? w.variante         : '',
     name:             typeof w.name             === 'string' ? w.name             : '',
     menge:            typeof w.menge            === 'number' ? w.menge            : 0,
+    kostenmodus:      leseKostenmodus(w),
     status:           GUELTIGE_STATI.includes(w.status)      ? w.status           : 'offen',
     erstelltAm:       typeof w.erstelltAm       === 'string' ? w.erstelltAm       : jetzt,
     geaendertAm:      typeof w.geaendertAm      === 'string' ? w.geaendertAm      : jetzt,

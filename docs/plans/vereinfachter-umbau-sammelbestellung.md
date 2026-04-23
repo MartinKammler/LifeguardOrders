@@ -209,7 +209,7 @@ Rechnungen, Kassenwart-Uebersicht und gespeicherte Bestelldaten greifen auf dies
 ### Tests
 
 - dieselbe Position ergibt in Rechnung und Kassenuebersicht konsistente Werte
-- `ogKostenlos`
+- `kostenmodus`
 - gespeicherte historische Foerderwerte bleiben stabil
 
 ---

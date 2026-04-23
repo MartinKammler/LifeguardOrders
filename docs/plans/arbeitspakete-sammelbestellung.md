@@ -311,7 +311,7 @@ Weniger Risiko fuer widerspruechliche Zahlen in Rechnung und Kassenansicht.
 
 ### Akzeptanz
 
-- `ogKostenlos` konsistent
+- `kostenmodus` konsistent
 - gespeicherte Foerderwerte konsistent
 - Kassenwart- und Rechnungslogik liefern dieselbe fachliche Sicht
 

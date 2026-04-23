@@ -29,6 +29,7 @@ document.getElementById('out').textContent += '\n── erstelleWunsch ──\n'
 const w1 = erstelleWunsch({ mitgliedId: 'max', artikelNr: 'A001', name: 'T-Shirt', menge: 2 });
 assert('erstelleWunsch: gibt Objekt zurück', typeof w1 === 'object' && w1 !== null);
 assert('erstelleWunsch: status ist offen', w1.status === 'offen');
+assert('erstelleWunsch: kostenmodus defaultet auf normal', w1.kostenmodus === 'normal');
 assert('erstelleWunsch: erstelltAm ist ISO-String', typeof w1.erstelltAm === 'string' && w1.erstelltAm.includes('T'));
 assert('erstelleWunsch: id ist nicht leer', typeof w1.id === 'string' && w1.id.length > 0);
 const w2 = erstelleWunsch({ mitgliedId: 'max', artikelNr: 'A001', name: 'T-Shirt', menge: 1 });
@@ -194,6 +195,10 @@ assert('normalizeWunsch: vorhandene Felder bleiben erhalten', norm.mitgliedId ==
 const vollstaendig = { id: 'uuid-123', mitgliedId: 'anna', artikelNr: 'B002', variante: 'rot', name: 'Pullover', menge: 2, status: 'abgelehnt', erstelltAm: '2025-01-01T00:00:00.000Z', geaendertAm: '2025-01-02T00:00:00.000Z', geaendertVon: 'admin', kommentar: 'Kein Bedarf', mengeUebernommen: 0, bestellungId: '' };
 const normVoll = normalizeWunsch(vollstaendig);
 assert('normalizeWunsch: vollständiges Objekt bleibt erhalten', normVoll.id === 'uuid-123' && normVoll.status === 'abgelehnt' && normVoll.variante === 'rot');
+const normLegacy = normalizeWunsch({ ...roh, ogKostenlos: true });
+assert('normalizeWunsch: legacy ogKostenlos wird zu og_mit_stunden', normLegacy.kostenmodus === 'og_mit_stunden');
+const normOg = normalizeWunsch({ ...roh, kostenmodus: 'og_ohne_gegenleistung' });
+assert('normalizeWunsch: kostenmodus bleibt erhalten', normOg.kostenmodus === 'og_ohne_gegenleistung');
 
 // ── isValidWuenscheListe ────────────────────────────────────────────
 document.getElementById('out').textContent += '\n── isValidWuenscheListe ──\n';

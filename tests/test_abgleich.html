@@ -262,23 +262,23 @@ await test('offeneMenge berücksichtigt Zuweisung, Retoure und Lagerbestand', ()
   assertEqual(rest, 1);
 });
 
-await test('normalisierePosition merged nur doppelte Mitglieder-Zuweisungen mit gleichem ogKostenlos-Status', () => {
+await test('normalisierePosition merged nur doppelte Mitglieder-Zuweisungen mit gleichem Kostenmodus', () => {
   const position = normalisierePosition({
     menge: 4,
     retoureMenge: 0,
     ogBestandMenge: 0,
     zuweisung: [
-      { mitgliedId: 'a', menge: 1, ogKostenlos: false },
-      { mitgliedId: 'a', menge: 2, ogKostenlos: true },
-      { mitgliedId: 'a', menge: 1, ogKostenlos: true },
-      { mitgliedId: 'b', menge: 1, ogKostenlos: false },
+      { mitgliedId: 'a', menge: 1, kostenmodus: 'normal' },
+      { mitgliedId: 'a', menge: 2, kostenmodus: 'og_mit_stunden' },
+      { mitgliedId: 'a', menge: 1, kostenmodus: 'og_mit_stunden' },
+      { mitgliedId: 'b', menge: 1, kostenmodus: 'normal' },
     ],
   });
   assertEqual(position.zuweisung.length, 3);
   assertEqual(position.zuweisung[0].menge, 1);
-  assertEqual(position.zuweisung[0].ogKostenlos, false);
+  assertEqual(position.zuweisung[0].kostenmodus, 'normal');
   assertEqual(position.zuweisung[1].menge, 3);
-  assertEqual(position.zuweisung[1].ogKostenlos, true);
+  assertEqual(position.zuweisung[1].kostenmodus, 'og_mit_stunden');
 });
 
 await test('normalisiereAnprobeFreigaben initialisiert in Anprobe offene Freigaben pro Besteller', () => {

@@ -65,6 +65,8 @@
     <div class="stat-card"><div class="stat-label">BV-Förderung</div><div class="stat-wert" id="s-bv">–</div></div>
     <div class="stat-card"><div class="stat-label">LV-Förderung</div><div class="stat-wert" id="s-lv">–</div></div>
     <div class="stat-card"><div class="stat-label">OG-Förderung</div><div class="stat-wert" id="s-og">–</div></div>
+    <div class="stat-card"><div class="stat-label">OG mit Stunden</div><div class="stat-wert" id="s-og-mit-stunden">–</div></div>
+    <div class="stat-card"><div class="stat-label">OG ohne Gegenleistung</div><div class="stat-wert" id="s-og-ohne">–</div></div>
     <div class="stat-card"><div class="stat-label">Mitglieder offen</div><div class="stat-wert" style="color:var(--amber)" id="s-offen">–</div></div>
     <div class="stat-card"><div class="stat-label">Mitglieder bezahlt</div><div class="stat-wert" style="color:var(--green)" id="s-bezahlt">–</div></div>
     <div class="stat-card"><div class="stat-label">Retoure</div><div class="stat-wert" style="color:var(--amber)" id="s-retoure">–</div></div>
@@ -95,6 +97,7 @@
               <th class="preis">BV</th>
               <th class="preis">LV</th>
               <th class="preis">OG</th>
+              <th>Kostenmodus</th>
               <th class="preis">Anteil</th>
               <th>Status</th>
             </tr>
@@ -211,6 +214,8 @@ function aktualisiereStatistik(zeilen) {
   document.getElementById('s-bv').textContent      = eur(sum('bv'));
   document.getElementById('s-lv').textContent      = eur(sum('lv'));
   document.getElementById('s-og').textContent      = eur(sum('og'));
+  document.getElementById('s-og-mit-stunden').textContent = eur(sum('ogMitStunden'));
+  document.getElementById('s-og-ohne').textContent = eur(sum('ogOhneGegenleistung'));
 
   const mitgliederIds = [...new Set(zeilen.map(z => z.mitgliedId))];
   // Pro Mitglied schauen ob alle Rechnungen bezahlt
@@ -300,6 +305,7 @@ function renderTabelle() {
         <td class="preis" style="color:var(--text-2)">${z.bv ? eur(z.bv) : '–'}</td>
         <td class="preis" style="color:var(--text-2)">${z.lv ? eur(z.lv) : '–'}</td>
         <td class="preis" style="color:var(--text-2)">${z.og ? eur(z.og) : '–'}</td>
+        <td>${z.kostenmodusLabel}</td>
         <td class="preis" style="font-weight:600">${eur(z.anteil)}</td>
         <td><span class="${z.bezahlt ? 'badge-bezahlt' : 'badge-offen'}">${z.bezahlt ? 'Bezahlt' : 'Offen'}</span></td>
       </tr>`)}`);
@@ -313,6 +319,7 @@ function renderTabelle() {
         <td class="preis">${eur(sum('bv'))}</td>
         <td class="preis">${eur(sum('lv'))}</td>
         <td class="preis">${eur(sum('og'))}</td>
+        <td></td>
         <td class="preis">${eur(sum('anteil'))}</td>
         <td></td>
       </tr>`);
@@ -326,10 +333,10 @@ document.getElementById('btn-csv').addEventListener('click', () => {
   const zeilen = gefiltert();
   if (!zeilen.length) { toast('Keine Daten zum Exportieren.', 'warn'); return; }
 
-  const header = 'Mitglied;Bestellung;Artikel;Größe;Menge;Brutto;BV;LV;OG;Anteil;Status';
+  const header = 'Mitglied;Bestellung;Artikel;Größe;Menge;Brutto;BV;LV;OG;Kostenmodus;Anteil;Status';
   const csvZeilen = zeilen.map(z =>
     [z.mitgliedName, z.bestellungBez, z.artikelName, z.variante, z.menge,
-     z.brutto, z.bv, z.lv, z.og, z.anteil,
+     z.brutto, z.bv, z.lv, z.og, z.kostenmodusLabel, z.anteil,
      z.bezahlt ? 'Bezahlt' : 'Offen'
     ].map(v => String(v ?? '').replace(/;/g, ',')).join(';')
   );
@@ -360,8 +367,8 @@ document.getElementById('btn-pdf').addEventListener('click', () => {
   doc.setTextColor(0, 0, 0);
 
   // Tabelle
-  const cols   = [30, 35, 55, 10, 10, 18, 14, 14, 14, 18, 16];
-  const header = ['Mitglied', 'Bestellung', 'Artikel', 'Gr.', 'Menge', 'Brutto', 'BV', 'LV', 'OG', 'Anteil', 'Status'];
+  const cols   = [28, 34, 48, 10, 10, 18, 14, 14, 14, 26, 18, 16];
+  const header = ['Mitglied', 'Bestellung', 'Artikel', 'Gr.', 'Menge', 'Brutto', 'BV', 'LV', 'OG', 'Modus', 'Anteil', 'Status'];
   const PL = 14; let y = 28;
   const ROW_H = 6;
 
@@ -396,7 +403,7 @@ document.getElementById('btn-pdf').addEventListener('click', () => {
       z.mitgliedName, z.bestellungBez, z.artikelName, z.variante || '–',
       String(z.menge),
       z.brutto.toFixed(2), z.bv ? z.bv.toFixed(2) : '–', z.lv ? z.lv.toFixed(2) : '–',
-      z.og ? z.og.toFixed(2) : '–', z.anteil.toFixed(2),
+      z.og ? z.og.toFixed(2) : '–', z.kostenmodusLabel, z.anteil.toFixed(2),
       z.bezahlt ? 'Bezahlt' : 'Offen',
     ];
     vals.forEach((v, i) => { cell(v, x, cols[i]); x += cols[i]; });
@@ -410,10 +417,12 @@ document.getElementById('btn-pdf').addEventListener('click', () => {
   const offsets = cols.slice(0, 5).reduce((a, b) => a + b, 0);
   const sum = (f) => zeilen.reduce((s, z) => s + (z[f] || 0), 0);
   let sx = PL + offsets;
-  [sum('brutto'), sum('bv'), sum('lv'), sum('og'), sum('anteil')].forEach((v, i) => {
+  [sum('brutto'), sum('bv'), sum('lv'), sum('og')].forEach((v, i) => {
     doc.text(v.toFixed(2), sx + cols[5 + i] - 1, y + 4, { align: 'right' });
     sx += cols[5 + i];
   });
+  sx += cols[9];
+  doc.text(sum('anteil').toFixed(2), sx + cols[10] - 1, y + 4, { align: 'right' });
 
   doc.save('kassenwart.pdf');
 });

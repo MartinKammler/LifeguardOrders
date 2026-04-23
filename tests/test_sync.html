@@ -88,18 +88,39 @@ const r3 = await persistJsonWithSync({ scope: 'test', data: [2], client: clientM
 assert('ETag-Match: ok === true', r3.ok === true);
 assert('ETag-Match: mode === synced', r3.sync?.mode === 'synced');
 
-// ETag-Konflikt (Remote hat sich geändert)
+// ETag-Wechsel vor dem Upload blockiert nicht mehr pauschal
 const s4 = mockStorage();
 s4.save('lo_sync_status', markSyncSuccess({}, 'test', '/p', { etag: 'v1' }));
+let konfliktWriteEtag = '';
 const clientKonflikt = {
   head: async () => ({ ok: true, etag: 'v2-remote', missing: false }),
+  writeJson: async (path, data, opts = {}) => {
+    konfliktWriteEtag = opts.ifMatch || '';
+    return { ok: true, etag: 'v3-remote' };
+  },
 };
 const r4 = await persistJsonWithSync({ scope: 'test', data: [3], client: clientKonflikt, remotePath: '/p', storage: s4 });
-assert('ETag-Konflikt: ok === false', r4.ok === false);
-assert('ETag-Konflikt: mode === conflict', r4.sync?.mode === 'conflict');
-assert('ETag-Konflikt: remote.conflict === true', r4.remote?.conflict === true);
-assert('ETag-Konflikt: isConflictSync erkannt', isConflictSync(s4.load('lo_sync_status'), 'test') === true);
-assert('ETag-Konflikt: isWriteBlockedSync auf gespeichertem Status', isWriteBlockedSync(s4.load('lo_sync_status')?.test) === true);
+assert('ETag-Wechsel: ok === true', r4.ok === true);
+assert('ETag-Wechsel: schreibt gegen aktuellen Remote-ETag', konfliktWriteEtag === 'v2-remote');
+assert('ETag-Wechsel: Sync bleibt synced', r4.sync?.mode === 'synced');
+
+// echter Konflikt nur noch wenn zwischen HEAD und PUT ein 412 auftritt
+const s4b = mockStorage();
+s4b.save('lo_sync_status', markSyncSuccess({}, 'test', '/p', { etag: 'v1' }));
+const r4b = await persistJsonWithSync({
+  scope: 'test',
+  data: [4],
+  client: {
+    head: async () => ({ ok: true, etag: 'v2-remote', missing: false }),
+    writeJson: async () => ({ ok: false, conflict: true, error: '412 Precondition Failed' }),
+  },
+  remotePath: '/p',
+  storage: s4b,
+});
+assert('412-Konflikt: ok === false', r4b.ok === false);
+assert('412-Konflikt: mode === conflict', r4b.sync?.mode === 'conflict');
+assert('412-Konflikt: isConflictSync erkannt', isConflictSync(s4b.load('lo_sync_status'), 'test') === true);
+assert('412-Konflikt: isWriteBlockedSync auf gespeichertem Status', isWriteBlockedSync(s4b.load('lo_sync_status')?.test) === true);
 
 // Netzwerkfehler beim HEAD
 const s5 = mockStorage();
