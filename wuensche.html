@@ -80,6 +80,12 @@
         <input type="number" id="input-menge" min="1" value="1" style="width:90px">
       </div>
     </div>
+    <div id="paket-konfigurator" style="display:none" class="form-group">
+      <div style="border:1px solid var(--border);border-radius:8px;padding:12px">
+        <label style="font-size:.78rem;color:var(--text-2);font-weight:600;text-transform:uppercase;letter-spacing:.06em">Paket konfigurieren</label>
+        <div id="paket-komponenten-ui" style="margin-top:8px"></div>
+      </div>
+    </div>
     <div id="artikel-ausgewaehlt" class="hinweis hinweis-info" style="display:none;margin-bottom:10px"></div>
     <button id="btn-wunsch-hinzufuegen" class="btn btn-primary">Wunsch eintragen</button>
     <div id="wunsch-fehler" class="hinweis hinweis-warn" style="display:none;margin-top:10px"></div>
@@ -128,18 +134,18 @@ let client          = null;
 let session         = null;
 let artikelKatalog  = [];
 let gewaehltArtikel = null;
+let paketKonfiguration = [];
+
+function istPaketArtikel(artikel) {
+  return artikel?.istPaket === true;
+}
+
+function paketKonfigurationVollstaendig() {
+  return paketKonfiguration.length === 0 || paketKonfiguration.every(k => k.variante !== '');
+}
 
 /* ── Session prüfen ──────────────────────────────────────────── */
 session = getSession();
-if (!session || !isMemberSession(session)) {
-  const container = document.querySelector('.container');
-  setHTML(container, html`
-    <div class="hinweis hinweis-warn" style="margin-top:32px">
-      <strong>Kein Zugriff.</strong> Diese Seite ist nur für Mitglieder zugänglich.
-      <br><a href="login.html" style="margin-top:8px;display:inline-block">Zum Login</a>
-    </div>`);
-  return;
-}
 
 /* ── Hilfsfunktionen ─────────────────────────────────────────── */
 function mitgliedId() {
@@ -181,6 +187,57 @@ function formatDatum(iso) {
   } catch {
     return iso.slice(0, 10);
   }
+}
+
+/* ── Paket-Konfigurator ───────────────────────────────────────── */
+function renderPaketKonfigurator(artikel) {
+  const konfigurator = document.getElementById('paket-konfigurator');
+  const varianteSelect = document.getElementById('select-variante');
+
+  if (!artikel || !istPaketArtikel(artikel)) {
+    konfigurator.style.display = 'none';
+    if (varianteSelect) varianteSelect.style.display = '';
+    paketKonfiguration = [];
+    return;
+  }
+
+  konfigurator.style.display = '';
+  if (varianteSelect) varianteSelect.style.display = 'none';
+
+  paketKonfiguration = artikel.paketKomponenten.map((k, i) => ({
+    komponentenIndex: i,
+    artikelNr:        k.optionen[0]?.artikelNr || '',
+    variante:         '',
+  }));
+
+  const ui = document.getElementById('paket-komponenten-ui');
+  setHTML(ui, html`${artikel.paketKomponenten.map((k, i) => {
+    const ersteOption = k.optionen[0]?.artikelNr || '';
+    const variantenFuerOption = artikelKatalog
+      .filter(a => a.artikelNr === ersteOption)
+      .map(a => String(a.variante || '').trim().toUpperCase())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'de'));
+
+    return html`
+      <div style="margin-bottom:10px">
+        <div style="font-size:.82rem;margin-bottom:4px">
+          <strong>${k.label}</strong>
+          ${raw(k.menge > 1 ? html` <span class="meta">(${k.menge}×)</span>` : '')}
+        </div>
+        <select class="pk-variante" data-idx="${i}" style="width:100%">
+          <option value="">— Größe / Variante wählen —</option>
+          ${variantenFuerOption.map(v => html`<option value="${v}">${v}</option>`)}
+        </select>
+      </div>`;
+  })}`);
+
+  ui.querySelectorAll('.pk-variante').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const idx = parseInt(sel.dataset.idx, 10);
+      if (paketKonfiguration[idx]) paketKonfiguration[idx].variante = sel.value;
+    });
+  });
 }
 
 /* ── Tabelle rendern ──────────────────────────────────────────── */
@@ -358,6 +415,8 @@ function waehleArtikel(artikel) {
     setHTML(varianteSelect, raw('<option value="">— keine Variante —</option>'));
     varianteSelect.disabled = true;
   }
+
+  renderPaketKonfigurator(gewaehltArtikel);
 }
 
 /* ── Wunsch eintragen ──────────────────────────────────────────── */
@@ -384,6 +443,13 @@ async function wunschHinzufuegen() {
   const mengeInput = document.getElementById('input-menge');
   const menge = parseInt(mengeInput.value, 10);
 
+  if (gewaehltArtikel && istPaketArtikel(gewaehltArtikel) && !paketKonfigurationVollstaendig()) {
+    const fehlerEl = document.getElementById('wunsch-fehler');
+    setHTML(fehlerEl, html`Bitte für alle Komponenten des Pakets eine Größe / Variante auswählen.`);
+    fehlerEl.style.display = '';
+    return;
+  }
+
   // Passendes Artikel-Objekt mit Variante finden (für korrekte ID)
   const artikelMitVariante = variante
     ? artikelKatalog.find(a => a.artikelNr === gewaehltArtikel.artikelNr && a.variante === variante)
@@ -395,6 +461,9 @@ async function wunschHinzufuegen() {
     variante:   variante,
     name:       gewaehltArtikel.name,
     menge,
+    paketKonfiguration: gewaehltArtikel && istPaketArtikel(gewaehltArtikel)
+      ? JSON.parse(JSON.stringify(paketKonfiguration))
+      : [],
   });
 
   const validierung = validateWunschEintrag(neuerWunsch);
@@ -442,6 +511,8 @@ async function wunschHinzufuegen() {
   setHTML(document.getElementById('select-variante'), raw('<option value="">— keine Variante —</option>'));
   document.getElementById('select-variante').disabled = true;
   gewaehltArtikel = null;
+  paketKonfiguration = [];
+  renderPaketKonfigurator(null);
 
   updateSyncBanner();
   toast('Wunsch eingetragen.', 'success');
@@ -488,6 +559,7 @@ async function init() {
     if (gewaehltArtikel && suchInput.value !== `${gewaehltArtikel.artikelNr} – ${gewaehltArtikel.name}`) {
       gewaehltArtikel = null;
       document.getElementById('artikel-ausgewaehlt').style.display = 'none';
+      renderPaketKonfigurator(null);
     }
     zeigeArtikelSuche(sucheArtikel(suchInput.value));
   });
