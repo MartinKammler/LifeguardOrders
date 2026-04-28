@@ -232,6 +232,12 @@
             <option value="">Variante wählen …</option>
           </select>
         </div>
+      <div id="paket-konfigurator" style="display:none" class="field span2">
+        <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:var(--bg)">
+          <div class="section-label" style="margin-bottom:10px">Paket konfigurieren</div>
+          <div id="paket-komponenten-ui"></div>
+        </div>
+      </div>
       <div class="field">
         <label for="inp-menge">Menge</label>
         <input type="number" id="inp-menge" min="1" value="1">
@@ -385,6 +391,21 @@ let sortierteArtikel = [];
 let artikelBasen    = [];
 let bearbeitenId = null; // ID des aktuell bearbeiteten Wunsches
 const LEERE_VARIANTE = '__OHNE_VARIANTE__';
+
+let paketKonfiguration = [];  // aktuelle Konfiguration wenn Paket gewählt
+
+function istPaketBasis(basisKey) {
+  if (!basisKey) return false;
+  return artikelListe.some(a => artikelBasisKey(a) === basisKey && a.istPaket === true);
+}
+
+function findePaketFuerBasis(basisKey) {
+  return artikelListe.find(a => artikelBasisKey(a) === basisKey && a.istPaket === true) || null;
+}
+
+function paketKonfigurationVollstaendig() {
+  return paketKonfiguration.every(k => k.variante !== '');
+}
 
 function darfBestellungSchreiben() {
   return darfAktion('bestellung-schreiben', getSession());
@@ -542,6 +563,88 @@ function findeArtikelZuAuswahl(basisKey, variante) {
   ) || null;
 }
 
+function renderPaketKonfigurator(basisKey) {
+  const konfigurator = document.getElementById('paket-konfigurator');
+  const varianteSelect = document.getElementById('sel-artikel-variante');
+  const paket = findePaketFuerBasis(basisKey);
+
+  if (!paket) {
+    konfigurator.style.display = 'none';
+    varianteSelect.style.display = '';
+    paketKonfiguration = [];
+    return;
+  }
+
+  konfigurator.style.display = '';
+  varianteSelect.style.display = 'none';
+
+  paketKonfiguration = paket.paketKomponenten.map((k, i) => ({
+    komponentenIndex: i,
+    artikelNr:        k.optionen[0]?.artikelNr || '',
+    variante:         '',
+  }));
+
+  const ui = document.getElementById('paket-komponenten-ui');
+  setHTML(ui, html`${paket.paketKomponenten.map((k, i) => {
+    const hatOptionen = k.optionen.length > 1;
+    const ersteOption = k.optionen[0]?.artikelNr || '';
+    const variantenFuerOption = artikelListe
+      .filter(a => a.artikelNr === ersteOption)
+      .map(a => String(a.variante || '').trim().toUpperCase())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'de'));
+
+    return html`
+      <div style="display:grid;grid-template-columns:${raw(hatOptionen ? '1fr 1fr' : '1fr')};gap:8px;margin-bottom:8px;align-items:end">
+        <div>
+          <label style="font-size:.78rem;color:var(--text-2)">${k.label} (${k.menge}×)</label>
+          ${raw(hatOptionen
+            ? html`<select class="pk-artikel" data-idx="${i}">
+                ${k.optionen.map(o => html`<option value="${o.artikelNr}">${o.name}</option>`)}
+              </select>`
+            : html`<input type="text" readonly value="${k.optionen[0]?.name || ''}" style="background:var(--bg);color:var(--text-2);cursor:default">`
+          )}
+        </div>
+        <div>
+          <label style="font-size:.78rem;color:var(--text-2)">Größe / Variante</label>
+          <select class="pk-variante" data-idx="${i}">
+            <option value="">— bitte wählen —</option>
+            ${variantenFuerOption.map(v => html`<option value="${v}">${v}</option>`)}
+          </select>
+        </div>
+      </div>`;
+  })}`);
+
+  // Varianten-Reload bei Option-Wechsel
+  ui.querySelectorAll('.pk-artikel').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const idx = parseInt(sel.dataset.idx, 10);
+      const neueArtikelNr = sel.value;
+      paketKonfiguration[idx].artikelNr = neueArtikelNr;
+      const neueVarianten = artikelListe
+        .filter(a => a.artikelNr === neueArtikelNr)
+        .map(a => String(a.variante || '').trim().toUpperCase())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, 'de'));
+      const varSel = ui.querySelectorAll('.pk-variante')[idx];
+      if (varSel) {
+        setHTML(varSel, html`
+          <option value="">— bitte wählen —</option>
+          ${neueVarianten.map(v => html`<option value="${v}">${v}</option>`)}
+        `);
+        paketKonfiguration[idx].variante = '';
+      }
+    });
+  });
+
+  ui.querySelectorAll('.pk-variante').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const idx = parseInt(sel.dataset.idx, 10);
+      paketKonfiguration[idx].variante = sel.value;
+    });
+  });
+}
+
 /* ── URL-Parameter ───────────────────────────────────────────── */
 function ladeUrlParam() {
   const params = new URLSearchParams(location.search);
@@ -572,6 +675,11 @@ function renderWunschliste() {
       <td>
         ${w.name}
         ${raw(html`<span class="${kostenmodusBadgeKlasse(w)}" style="font-size:.72rem;margin-left:4px;vertical-align:middle">${kostenmodusLabel(w)}</span>`)}
+        ${raw(w.paketKonfiguration?.length
+          ? html`<div class="aggregiert-mitglieder" style="margin-top:3px">
+              Paket: ${w.paketKonfiguration.map(k => `${k.artikelNr} ${k.variante}`).join(' · ')}
+            </div>`
+          : '')}
       </td>
       <td><span class="badge badge-blue">${w.variante || '–'}</span></td>
       <td style="text-align:right;white-space:nowrap">
@@ -712,6 +820,7 @@ function waehleArtikel(key) {
     document.getElementById('sel-artikel-variante').value = variante || LEERE_VARIANTE;
   }
   schliesseDropdown();
+  renderPaketKonfigurator(key);
 }
 
 function aktualisiereArtikelListe(suche) {
@@ -750,6 +859,7 @@ document.getElementById('inp-artikel-suche').addEventListener('input', e => {
   aktualisiereArtikelListe(e.target.value);
   document.getElementById('sel-artikel-basis').value = '';
   renderVariantenAuswahl('sel-artikel-variante', '');
+  renderPaketKonfigurator('');
 });
 
 document.getElementById('inp-artikel-suche').addEventListener('blur', () => {
@@ -824,6 +934,11 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
   const menge       = parseInt(document.getElementById('inp-menge-edit').value, 10);
   const kostenmodus = document.getElementById('sel-kostenmodus-edit').value;
 
+  if (istPaketBasis(basisKey)) {
+    toast('Paket-Wünsche müssen neu eingetragen werden. Bitte stornieren und erneut eintragen.', 'error');
+    return;
+  }
+
   const artikel = findeArtikelZuAuswahl(basisKey, variante);
   if (!artikel) {
     toast('Bitte einen gültigen Artikel und eine Variante auswählen.', 'error');
@@ -845,6 +960,7 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
       name:       artikel.name,
       menge,
       kostenmodus,
+      paketKonfiguration: [],
     };
   });
   const geaendert = neuerWunsch.find(w => w.id === bearbeitenId);
@@ -917,7 +1033,14 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
 
   fehlerEl.style.display = 'none';
 
-  const artikel = findeArtikelZuAuswahl(basisKey, variante);
+  if (istPaketBasis(basisKey) && !paketKonfigurationVollstaendig()) {
+    toast('Bitte für alle Paket-Komponenten eine Variante / Größe wählen.', 'error');
+    return;
+  }
+
+  const artikel = istPaketBasis(basisKey)
+    ? findePaketFuerBasis(basisKey)
+    : findeArtikelZuAuswahl(basisKey, variante);
   if (!artikel) {
     fehlerEl.textContent = 'Bitte einen Artikel und eine Variante auswählen.';
     fehlerEl.style.display = 'inline';
@@ -932,6 +1055,7 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
     name:       artikel.name,
     menge:      isNaN(menge) ? 1 : menge,
     kostenmodus: document.getElementById('sel-kostenmodus').value,
+    paketKonfiguration: istPaketBasis(basisKey) ? JSON.parse(JSON.stringify(paketKonfiguration)) : [],
   };
 
   const validierung = validiereWunsch(neuerWunsch);
@@ -952,6 +1076,8 @@ document.getElementById('btn-hinzufuegen').addEventListener('click', () => {
   schliesseDropdown();
   document.getElementById('inp-menge').value         = 1;
   document.getElementById('sel-kostenmodus').value   = KOSTENMODUS_NORMAL;
+  paketKonfiguration = [];
+  renderPaketKonfigurator('');
 });
 
 /* ── CSV kopieren ────────────────────────────────────────────── */

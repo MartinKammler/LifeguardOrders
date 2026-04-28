@@ -208,6 +208,41 @@ await test('Reihenfolge bleibt erhalten (Eingabereihenfolge, kein Sort)', () => 
   assertEqual(result[1].artikelNr, 'A001');
 });
 
+suite('mergeWuensche — Paket paketKonfiguration im Schlüssel');
+
+await test('gleiche Person+Artikel+Variante, aber unterschiedliche paketKonfiguration → NICHT zusammengeführt', () => {
+  const result = mergeWuensche([
+    {
+      id: 'p1', mitgliedId: 'martin', artikelNr: 'PKT001', variante: '', name: 'Paket A', menge: 1,
+      paketKonfiguration: [{ artikelNr: '18507110', variante: 'XL' }],
+    },
+    {
+      id: 'p2', mitgliedId: 'martin', artikelNr: 'PKT001', variante: '', name: 'Paket A', menge: 1,
+      paketKonfiguration: [{ artikelNr: '18507110', variante: 'L' }],
+    },
+  ]);
+  assertEqual(result.length, 2, 'Zwei Einträge erwartet – unterschiedliche paketKonfiguration darf nicht zusammengeführt werden');
+});
+
+await test('gleiche Person+Artikel+Variante+paketKonfiguration → werden zusammengeführt', () => {
+  const konfig = [{ artikelNr: '18507110', variante: 'XL' }];
+  const result = mergeWuensche([
+    { id: 'p1', mitgliedId: 'martin', artikelNr: 'PKT001', variante: '', name: 'Paket A', menge: 1, paketKonfiguration: konfig },
+    { id: 'p2', mitgliedId: 'martin', artikelNr: 'PKT001', variante: '', name: 'Paket A', menge: 2, paketKonfiguration: konfig },
+  ]);
+  assertEqual(result.length, 1, 'Identische paketKonfiguration → soll zusammengeführt werden');
+  assertEqual(result[0].menge, 3);
+});
+
+await test('Wunsch ohne paketKonfiguration und Wunsch mit leerem Array → werden zusammengeführt', () => {
+  const result = mergeWuensche([
+    { id: 'a', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 1 },
+    { id: 'b', mitgliedId: 'martin', artikelNr: 'A001', variante: 'M', name: 'Shirt', menge: 2, paketKonfiguration: [] },
+  ]);
+  assertEqual(result.length, 1, 'Kein paketKonfiguration vs. leeres Array → gelten als gleich');
+  assertEqual(result[0].menge, 3);
+});
+
 /* ── Tests: exportiereCSV ───────────────────────────────────── */
 
 suite('exportiereCSV — Grundfunktion');

@@ -51,6 +51,60 @@ function cloneData(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+let komponenten = [];   // Arbeits-Array für den Modal-Komponenten-Editor
+
+function renderKomponenten() {
+  const liste = document.getElementById('m-komponenten-liste');
+  if (!liste) return;
+  if (!komponenten.length) {
+    setHTML(liste, '<p class="text-sm" style="color:var(--text-2);margin:0">Noch keine Komponenten angelegt.</p>');
+    return;
+  }
+  setHTML(liste, html`${komponenten.map((k, i) => html`
+    <div style="display:grid;grid-template-columns:1fr 60px 110px auto;gap:6px;margin-bottom:6px;align-items:end">
+      <div>
+        <label style="font-size:.75rem;color:var(--text-2)">Bezeichnung</label>
+        <input type="text" class="k-label" data-idx="${i}" value="${k.label}" placeholder="z.B. T-Shirt JAKO Rot">
+      </div>
+      <div>
+        <label style="font-size:.75rem;color:var(--text-2)">Menge</label>
+        <input type="number" class="k-menge" data-idx="${i}" value="${k.menge}" min="1">
+      </div>
+      <div>
+        <label style="font-size:.75rem;color:var(--text-2)">Artikel-Nr.</label>
+        <input type="text" class="k-artikelnr" data-idx="${i}" value="${k.optionen[0]?.artikelNr || ''}" placeholder="18507110">
+      </div>
+      <div style="padding-top:18px">
+        <button type="button" class="btn btn-danger btn-sm" data-action="k-loeschen" data-idx="${i}">×</button>
+      </div>
+    </div>`)}
+  `);
+
+  liste.querySelectorAll('[data-action="k-loeschen"]').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.dataset.idx, 10);
+      komponenten.splice(idx, 1);
+      renderKomponenten();
+    });
+  });
+}
+
+function liesKomponentenAusDOM() {
+  const labels     = [...document.querySelectorAll('#m-komponenten-liste .k-label')];
+  const mengen     = [...document.querySelectorAll('#m-komponenten-liste .k-menge')];
+  const artikelNrs = [...document.querySelectorAll('#m-komponenten-liste .k-artikelnr')];
+  komponenten = labels.map((el, i) => {
+    const artikelNr = artikelNrs[i]?.value.trim() || '';
+    const label     = el.value.trim();
+    const menge     = parseInt(mengen[i]?.value, 10) || 1;
+    return {
+      label,
+      menge,
+      optionen: [{ artikelNr, name: label }],
+    };
+  });
+}
+
 function zeigeStatus(elId, text, art = 'info') {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -136,7 +190,7 @@ function renderKatalog() {
           <tr>
             <td class="artikel-nr">${a.artikelNr}</td>
             <td class="artikel-nr">${a.variante || '–'}</td>
-            <td>${a.name}</td>
+            <td>${a.name}${raw(a.istPaket ? ' <span class="badge badge-blue" style="font-size:.72rem;vertical-align:middle">Paket</span>' : '')}</td>
             <td class="preis">${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="foerder">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
@@ -185,7 +239,7 @@ function renderImportVorschau(geparst) {
           <tr>
             <td class="artikel-nr">${a.artikelNr}</td>
             <td class="artikel-nr">${a.variante || '–'}</td>
-            <td>${a.name}</td>
+            <td>${a.name}${raw(a.istPaket ? ' <span class="badge badge-blue" style="font-size:.72rem;vertical-align:middle">Paket</span>' : '')}</td>
             <td class="preis">${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="foerder">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
@@ -213,6 +267,11 @@ window.oeffneModal = function(id) {
   document.getElementById('m-lv').value            = a?.lvFoerderung  ?? 0;
   document.getElementById('m-og').value            = a?.ogFoerderung  ?? 0;
   document.getElementById('m-og-rest').checked     = a?.ogUebernimmtRest ?? false;
+  const istPaket = a?.istPaket ?? false;
+  document.getElementById('m-ist-paket').checked = istPaket;
+  komponenten = a?.paketKomponenten ? JSON.parse(JSON.stringify(a.paketKomponenten)) : [];
+  document.getElementById('m-paket-bereich').style.display = istPaket ? '' : 'none';
+  renderKomponenten();
   document.getElementById('modal-backdrop').classList.add('open');
 };
 
@@ -246,6 +305,20 @@ document.getElementById('modal-abbrechen').addEventListener('click', () => {
   document.getElementById('modal-backdrop').classList.remove('open');
 });
 
+document.getElementById('m-ist-paket').addEventListener('change', e => {
+  document.getElementById('m-paket-bereich').style.display = e.target.checked ? '' : 'none';
+});
+
+document.getElementById('btn-komponente-hinzufuegen').addEventListener('click', () => {
+  liesKomponentenAusDOM();
+  komponenten.push({ label: '', menge: 1, optionen: [{ artikelNr: '', name: '' }] });
+  renderKomponenten();
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#m-komponenten-liste .k-label');
+    if (inputs.length) inputs[inputs.length - 1].focus();
+  }, 50);
+});
+
 document.getElementById('modal-backdrop').addEventListener('click', e => {
   if (e.target === e.currentTarget)
     document.getElementById('modal-backdrop').classList.remove('open');
@@ -257,6 +330,8 @@ document.getElementById('modal-speichern').addEventListener('click', async () =>
     return;
   }
   const id = document.getElementById('modal-id').value;
+  liesKomponentenAusDOM();
+  const istPaket = document.getElementById('m-ist-paket').checked;
   const geaendert = {
     id:              id || uuid(),
     artikelNr:       document.getElementById('m-artikelnr').value.trim(),
@@ -267,6 +342,8 @@ document.getElementById('modal-speichern').addEventListener('click', async () =>
     lvFoerderung:    parseFloat(document.getElementById('m-lv').value) || 0,
     ogFoerderung:    parseFloat(document.getElementById('m-og').value) || 0,
     ogUebernimmtRest: document.getElementById('m-og-rest').checked,
+    istPaket,
+    paketKomponenten: istPaket ? [...komponenten] : [],
   };
 
   const validierung = validateArtikel(geaendert);
