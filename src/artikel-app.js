@@ -57,51 +57,125 @@ function renderKomponenten() {
   const liste = document.getElementById('m-komponenten-liste');
   if (!liste) return;
   if (!komponenten.length) {
-    setHTML(liste, '<p class="text-sm" style="color:var(--text-2);margin:0">Noch keine Komponenten angelegt.</p>');
+    setHTML(liste, raw('<p class="text-sm" style="color:var(--text-2);margin:0">Noch keine Komponenten angelegt.</p>'));
     return;
   }
+
   setHTML(liste, html`${komponenten.map((k, i) => html`
-    <div style="display:grid;grid-template-columns:1fr 60px 110px auto;gap:6px;margin-bottom:6px;align-items:end">
-      <div>
-        <label style="font-size:.75rem;color:var(--text-2)">Bezeichnung</label>
-        <input type="text" class="k-label" data-idx="${i}" value="${k.label}" placeholder="z.B. T-Shirt JAKO Rot">
+    <div class="k-block" data-idx="${i}" style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-bottom:8px">
+      <div style="display:grid;grid-template-columns:1fr 60px auto;gap:6px;align-items:end;margin-bottom:8px">
+        <div>
+          <label style="font-size:.75rem;color:var(--text-2)">Bezeichnung</label>
+          <input type="text" class="k-label" data-idx="${i}" value="${k.label}" placeholder="z.B. Bermudahose">
+        </div>
+        <div>
+          <label style="font-size:.75rem;color:var(--text-2)">Menge</label>
+          <input type="number" class="k-menge" data-idx="${i}" value="${k.menge}" min="1">
+        </div>
+        <div style="padding-top:18px">
+          <button type="button" class="btn btn-danger btn-sm" data-action="k-loeschen" data-idx="${i}">×</button>
+        </div>
       </div>
-      <div>
-        <label style="font-size:.75rem;color:var(--text-2)">Menge</label>
-        <input type="number" class="k-menge" data-idx="${i}" value="${k.menge}" min="1">
+      <div style="font-size:.75rem;color:var(--text-2);margin-bottom:4px">Artikel-Optionen (bei Wahlkomponente mehrere)</div>
+      <div class="k-optionen-liste" data-ki="${i}">
+        ${k.optionen.map((o, j) => html`
+          <div class="k-opt-row" style="display:grid;grid-template-columns:130px 1fr auto;gap:6px;margin-bottom:4px;align-items:center">
+            <div style="position:relative">
+              <input type="text" class="k-opt-nr" data-ki="${i}" data-oi="${j}"
+                     value="${o.artikelNr}" placeholder="Artikel-Nr." autocomplete="off">
+              <div class="k-opt-dd" data-ki="${i}" data-oi="${j}"
+                   style="display:none;position:absolute;z-index:300;background:var(--surface);border:1px solid var(--border);border-radius:6px;max-height:160px;overflow-y:auto;min-width:260px;box-shadow:0 4px 16px rgba(0,0,0,.3)"></div>
+            </div>
+            <input type="text" class="k-opt-name" data-ki="${i}" data-oi="${j}"
+                   value="${o.name}" placeholder="Bezeichnung (wird auto-befüllt)">
+            <button type="button" class="btn btn-ghost btn-sm" data-action="k-opt-del" data-ki="${i}" data-oi="${j}">×</button>
+          </div>`)}
       </div>
-      <div>
-        <label style="font-size:.75rem;color:var(--text-2)">Artikel-Nr.</label>
-        <input type="text" class="k-artikelnr" data-idx="${i}" value="${k.optionen[0]?.artikelNr || ''}" placeholder="18507110">
-      </div>
-      <div style="padding-top:18px">
-        <button type="button" class="btn btn-danger btn-sm" data-action="k-loeschen" data-idx="${i}">×</button>
-      </div>
+      <button type="button" class="btn btn-ghost btn-sm" data-action="k-opt-add" data-idx="${i}"
+              style="font-size:.78rem;margin-top:2px">+ Option hinzufügen</button>
     </div>`)}
   `);
 
   liste.querySelectorAll('[data-action="k-loeschen"]').forEach(el => {
     el.addEventListener('click', () => {
-      const idx = parseInt(el.dataset.idx, 10);
-      komponenten.splice(idx, 1);
+      liesKomponentenAusDOM();
+      komponenten.splice(parseInt(el.dataset.idx, 10), 1);
       renderKomponenten();
+    });
+  });
+
+  liste.querySelectorAll('[data-action="k-opt-del"]').forEach(el => {
+    el.addEventListener('click', () => {
+      liesKomponentenAusDOM();
+      const ki = parseInt(el.dataset.ki, 10);
+      const oi = parseInt(el.dataset.oi, 10);
+      if (komponenten[ki]?.optionen.length > 1) {
+        komponenten[ki].optionen.splice(oi, 1);
+        renderKomponenten();
+      }
+    });
+  });
+
+  liste.querySelectorAll('[data-action="k-opt-add"]').forEach(el => {
+    el.addEventListener('click', () => {
+      liesKomponentenAusDOM();
+      const ki = parseInt(el.dataset.idx, 10);
+      komponenten[ki]?.optionen.push({ artikelNr: '', name: '' });
+      renderKomponenten();
+      setTimeout(() => {
+        const nrs = liste.querySelectorAll(`.k-opt-nr[data-ki="${ki}"]`);
+        if (nrs.length) nrs[nrs.length - 1].focus();
+      }, 50);
+    });
+  });
+
+  liste.querySelectorAll('.k-opt-nr').forEach(input => {
+    const ki = input.dataset.ki;
+    const oi = input.dataset.oi;
+    const dd = liste.querySelector(`.k-opt-dd[data-ki="${ki}"][data-oi="${oi}"]`);
+
+    input.addEventListener('input', () => {
+      const q = input.value.trim().toLowerCase();
+      if (!q || !dd) { if (dd) dd.style.display = 'none'; return; }
+      const treffer = artikel
+        .filter(a => String(a.artikelNr).toLowerCase().includes(q) || String(a.name).toLowerCase().includes(q))
+        .slice(0, 8);
+      if (!treffer.length) { dd.style.display = 'none'; return; }
+      setHTML(dd, html`${treffer.map(a => html`
+        <div class="k-opt-hit" data-nr="${a.artikelNr}" data-name="${a.name}"
+             style="padding:6px 10px;cursor:pointer;font-size:.82rem;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text-2);margin-right:6px">${a.artikelNr}</span>${a.name}
+        </div>`)}`);
+      dd.style.display = '';
+      dd.querySelectorAll('.k-opt-hit').forEach(hit => {
+        hit.addEventListener('mousedown', e => {
+          e.preventDefault();
+          input.value = hit.dataset.nr;
+          const nameInput = liste.querySelector(`.k-opt-name[data-ki="${ki}"][data-oi="${oi}"]`);
+          if (nameInput && !nameInput.value.trim()) nameInput.value = hit.dataset.name;
+          dd.style.display = 'none';
+        });
+      });
+    });
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => { if (dd) dd.style.display = 'none'; }, 150);
     });
   });
 }
 
 function liesKomponentenAusDOM() {
-  const labels     = [...document.querySelectorAll('#m-komponenten-liste .k-label')];
-  const mengen     = [...document.querySelectorAll('#m-komponenten-liste .k-menge')];
-  const artikelNrs = [...document.querySelectorAll('#m-komponenten-liste .k-artikelnr')];
-  komponenten = labels.map((el, i) => {
-    const artikelNr = artikelNrs[i]?.value.trim() || '';
-    const label     = el.value.trim();
-    const menge     = parseInt(mengen[i]?.value, 10) || 1;
-    return {
-      label,
-      menge,
-      optionen: [{ artikelNr, name: label }],
-    };
+  const liste = document.getElementById('m-komponenten-liste');
+  if (!liste) return;
+  komponenten = [...liste.querySelectorAll('.k-block')].map(block => {
+    const ki    = parseInt(block.dataset.idx, 10);
+    const label = block.querySelector('.k-label')?.value.trim() || '';
+    const menge = parseInt(block.querySelector('.k-menge')?.value, 10) || 1;
+    const optionen = [...block.querySelectorAll('.k-opt-row')].map(row => ({
+      artikelNr: row.querySelector('.k-opt-nr')?.value.trim()   || '',
+      name:      row.querySelector('.k-opt-name')?.value.trim() || '',
+    })).filter(o => o.artikelNr);
+    return { label, menge, optionen: optionen.length ? optionen : [{ artikelNr: '', name: '' }] };
   });
 }
 
