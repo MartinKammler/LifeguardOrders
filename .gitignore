@@ -195,6 +195,9 @@ data/bestellungen.json
 tests/.tmp_test_*.mjs
 .tmp_boot_*.mjs
 
+# Worktrees
+.worktrees/
+
 # Node
 node_modules/
 
