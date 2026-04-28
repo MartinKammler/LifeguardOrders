@@ -199,7 +199,8 @@ const NICHT_VARIANTE = new Set(['Beschreibung', 'Produktdetails', 'Datenblätter
 const KOMPONENTE_RE = /Variante\s+(\d+)\s+x\s+(\d{6,})\s+(.+)/;
 
 function istPaketSeite(text) {
-  return /bestehend\s+aus:|Set\s+besteht\s+aus:/i.test(text);
+  return /bestehend\s+aus:|Set\s+besteht\s+aus:/i.test(text) ||
+         KOMPONENTE_RE.test(text);
 }
 
 function extractPaketKomponenten(text) {
