@@ -78,6 +78,7 @@ export function leseNcKonfiguration(storage = defaultStorage()) {
   return {
     url: einstellungen?.nc?.url || '',
     user: einstellungen?.nc?.user || '',
+    pass: einstellungen?.nc?.pass || '',
   };
 }
 
@@ -89,7 +90,7 @@ export function speichereNcKonfiguration(nc, storage = defaultStorage()) {
       ...(einstellungen.nc || {}),
       url: String(nc?.url || '').trim(),
       user: String(nc?.user || '').trim(),
-      pass: '',
+      pass: String(nc?.pass || ''),
     },
   });
 }

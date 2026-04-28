@@ -34,6 +34,7 @@ function readNc() {
     url: document.getElementById('nc-url').value.trim(),
     user: document.getElementById('nc-user').value.trim(),
     pass: document.getElementById('nc-pass').value,
+    merken: document.getElementById('nc-merken').checked,
   };
 }
 
@@ -64,14 +65,14 @@ function setMode(mode) {
 
 function persistMemberLoginSuccess(nc, user, lock) {
   sessionStorage.setItem(SESSION_KEY_NC_PASS, nc.pass);
-  speichereNcKonfiguration(nc);
+  speichereNcKonfiguration(nc.merken ? nc : { ...nc, pass: '' });
   setMemberSession(user, { lock });
   window.location.replace('mitglied.html');
 }
 
 function persistFunctionLoginSuccess(nc, user, actingPerson) {
   sessionStorage.setItem(SESSION_KEY_NC_PASS, nc.pass);
-  speichereNcKonfiguration(nc);
+  speichereNcKonfiguration(nc.merken ? nc : { ...nc, pass: '' });
   setFunctionSession(user, actingPerson);
   window.location.replace(getNextPath('index.html'));
 }
@@ -124,7 +125,7 @@ async function testeNextcloud() {
     return;
   }
 
-  speichereNcKonfiguration(nc);
+  speichereNcKonfiguration(nc.merken ? nc : { ...nc, pass: '' });
   setStatus('nc-status', '✓ Nextcloud-Verbindung erfolgreich getestet.', 'ok');
   if (aktiveAnsicht === 'function') {
     const acting = await ladeHandelndePersonen(client);
@@ -245,6 +246,10 @@ function prefill() {
   const nc = leseNcKonfiguration();
   document.getElementById('nc-url').value = nc.url;
   document.getElementById('nc-user').value = nc.user;
+  if (nc.pass) {
+    document.getElementById('nc-pass').value = nc.pass;
+    document.getElementById('nc-merken').checked = true;
+  }
   renderActingPersons([]);
   actingPersons = [];
 }

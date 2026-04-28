@@ -424,6 +424,7 @@ function baueArtikelPosition(position, wuensche, artikelListe, wunschVariante) {
     ogFoerderung: artikel?.ogFoerderung || 0,
     ogUebernimmtRest: !!artikel?.ogUebernimmtRest,
     foerderungGespeichert: !!artikel,
+    bundleKomponenten: position.bundleKomponenten?.length ? position.bundleKomponenten : undefined,
     typ: 'artikel',
     retoureMenge: 0,
     ogBestandMenge: 0,

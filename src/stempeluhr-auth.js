@@ -28,7 +28,7 @@ export function normalizeClockUser(user) {
 export function isValidClockUserListe(data) {
   return Array.isArray(data) && data.every(user => {
     const normalized = normalizeClockUser(user);
-    return !!normalized.id && !!normalized.name && !!normalized.pin;
+    return !!normalized.id && !!normalized.name;
   });
 }
 
@@ -54,12 +54,15 @@ export async function ladeStempeluhrBenutzer(client) {
   if (!remote.ok) {
     return { ok: false, error: remote.error || 'Stempeluhr-Benutzer konnten nicht geladen werden.' };
   }
-  if (!isValidClockUserListe(remote.data)) {
+  // LifeguardClock speichert als { version, exported, count, users: [...] }; plain Array ebenfalls akzeptiert
+  const raw = remote.data;
+  const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.users) ? raw.users : null);
+  if (!list || !isValidClockUserListe(list)) {
     return { ok: false, error: 'Stempeluhr-Benutzerdatei ist ungültig.' };
   }
   return {
     ok: true,
-    users: remote.data.map(normalizeClockUser),
+    users: list.map(normalizeClockUser),
     etag: remote.etag || '',
     lastModified: remote.lastModified || '',
   };

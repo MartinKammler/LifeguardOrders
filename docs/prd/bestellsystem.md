@@ -253,8 +253,11 @@ werden — der Parser versteht beide Formate.
     (Standard: 3 Stunden = 10 €).
 60. Als Admin möchte ich konfigurieren, welche Einsatztypen für die Stundenpflicht zählen.
 61. Als Admin möchte ich die Nextcloud-Zugangsdaten ändern können.
-62. Als Admin möchte ich lokal höchstens die Nextcloud-URL und den Benutzernamen als Login-Hilfe behalten,
-    nicht aber fachliche Daten oder vollständige Einstellungen dauerhaft im Browser speichern.
+62. Als Admin möchte ich wählen können, ob das Nextcloud-App-Passwort im Browser gespeichert wird
+    (Opt-in-Checkbox „Zugangsdaten im Browser speichern" auf der Login-Seite), damit ich es
+    nicht bei jedem Browser-Neustart neu eingeben muss.
+    URL und Benutzername werden immer als Login-Hilfe gespeichert.
+    Fachliche Daten oder vollständige Einstellungen werden nie dauerhaft im Browser gespeichert.
 
 ### Fehler- und Leerzustände
 
@@ -373,7 +376,7 @@ og{}           — alle OG-Stammdaten (Name, Adresse, IBAN, ...)
 stundenRate{}  — { stunden: 3, euro: 10 }
 einsatztypen[] — z.B. ["wachdienst", "sanitaetsdienst", "helfer", "verwaltung"]
 mitglieder[]   — [{ id, name }] — importiert aus Stempeluhr config.js
-nc{}           — { url, user } — pass wird nur in sessionStorage gehalten, nie gespeichert
+nc{}           — { url, user, pass } — pass wird nur gespeichert wenn „Zugangsdaten merken" aktiv ist; sonst leer (nur sessionStorage)
 ```
 
 **`benutzer.json`** *(geplante Mehrnutzer-Vorbereitung, nur Funktionskonten)*:
@@ -702,7 +705,7 @@ Alle Seitenmodule verwenden ausschließlich:
 - Offline oder ohne Remote-Verbindung: fachliche Daten werden nicht geladen; die App zeigt stattdessen einen klaren Verbindungsfehler
 - Pro Scope speichert `sync.js` zusätzlich Remote-Metadaten und Konfliktstatus
 - Konflikt-UX bietet zunächst nur: `Remote neu laden`, `lokale Kopie exportieren`, `Konflikt später lösen`
-- NC-Passwort wird nur in `sessionStorage` gehalten, nie in `localStorage` gespeichert
+- NC-Passwort wird standardmäßig nur in `sessionStorage` gehalten; per Opt-in-Checkbox („Zugangsdaten im Browser speichern") kann es zusätzlich in `localStorage` gespeichert werden
 
 ### Sicherheit
 

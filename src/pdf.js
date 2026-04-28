@@ -605,3 +605,167 @@ export async function druckePDF(rechnung, mitgliedName, einstellungen) {
   const dateiname = `${rechnung.nummer}_${sanitisiereDateiname(mitgliedName)}.pdf`;
   ladeDateiHerunter(pdfBytes, dateiname);
 }
+
+/**
+ * Erzeugt eine Bestellliste als PDF (pro Besteller: Artikeltabelle mit Menge, Kürzel und Retoure-Checkbox).
+ *
+ * @param {object}   bestellung
+ * @param {{ getMitgliedName?: (id: string) => string }} [opts]
+ */
+export async function druckeBestellliste(bestellung, opts = {}) {
+  const { getMitgliedName = id => id } = opts;
+
+  function kuerzel(kostenmodus) {
+    if (kostenmodus === 'og_mit_stunden')        return 'Wache';
+    if (kostenmodus === 'og_ohne_gegenleistung') return 'OG';
+    return '';
+  }
+
+  const bestellerMap = new Map();
+  for (const pos of (bestellung.positionen || [])) {
+    if (pos.typ !== 'artikel') continue;
+    for (const z of (pos.zuweisung || [])) {
+      if (!z.menge || z.menge <= 0) continue;
+      if (!bestellerMap.has(z.mitgliedId)) {
+        bestellerMap.set(z.mitgliedId, { name: getMitgliedName(z.mitgliedId), artikel: [] });
+      }
+      bestellerMap.get(z.mitgliedId).artikel.push({
+        menge:              z.menge,
+        name:               pos.name      || '',
+        variante:           pos.variante  || '',
+        artikelNr:          pos.artikelNr || '',
+        kuerzel:            kuerzel(z.kostenmodus),
+        bundleKomponenten:  pos.bundleKomponenten || [],
+      });
+    }
+  }
+
+  const besteller = [...bestellerMap.values()].sort((a, b) =>
+    (a.name || '').localeCompare(b.name || '', 'de')
+  );
+  if (!besteller.length) return;
+
+  const pdfDoc  = await PDFDocument.create();
+  const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const bold    = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const ML = mm(20);
+  const MT = mm(20);
+  const MB = mm(22);
+  const CW = PAGE_WIDTH_PT - mm(40);
+
+  const grey      = rgb(0.45, 0.45, 0.45);
+  const lightGrey = rgb(0.82, 0.82, 0.82);
+  const white     = rgb(1, 1, 1);
+
+  // Spalten: Menge | Artikel | Variante | DLRG-Nr. | Kürzel | R
+  const C_MENGE   = mm(12);
+  const C_ART     = mm(66);
+  const C_VAR     = mm(36);
+  const C_NR      = mm(29);
+  const C_KUERZEL = mm(14);
+  const C_R       = CW - C_MENGE - C_ART - C_VAR - C_NR - C_KUERZEL;
+
+  const X_ART     = ML + C_MENGE;
+  const X_VAR     = X_ART + C_ART;
+  const X_NR      = X_VAR + C_VAR;
+  const X_KUERZEL = X_NR  + C_NR;
+  const X_R_MID   = X_KUERZEL + C_KUERZEL + C_R / 2;
+
+  const TS    = 8.5;
+  const HS    = 11;
+  const ROW_H = 13;
+  const SUB_H = 10;   // Zeilenhöhe Bundlekomponenten
+  const BOX   = 6.5;
+
+  let page = pdfDoc.addPage([PAGE_WIDTH_PT, PAGE_HEIGHT_PT]);
+  let y = MT;
+
+  drawTextTopPt(page, 'Bestellliste', ML, y, { font: bold, size: 16 });
+  y += 16 * 1.5;
+
+  const bezeichnung = bestellung.bezeichnung || '';
+  const datum       = bestellung.datum ? formatDeDatum(bestellung.datum) : '';
+  const subtitle    = [bezeichnung, datum].filter(Boolean).join(' · ');
+  if (subtitle) {
+    drawTextTopPt(page, subtitle, ML, y, { font: regular, size: 9, color: grey });
+    y += 9 * 1.7;
+  }
+  y += 4;
+
+  function drawCheckbox(rowY) {
+    // rowY ist die Top-Koordinate der Zeile; Baseline liegt bei PAGE_HEIGHT_PT - rowY.
+    // Checkbox von Baseline aufwärts zeichnen, damit sie über der Trennlinie (rowY+3) bleibt.
+    page.drawRectangle({
+      x:           X_R_MID - BOX / 2,
+      y:           PAGE_HEIGHT_PT - rowY + 0.5,
+      width:       BOX,
+      height:      BOX,
+      borderColor: grey,
+      borderWidth: 0.7,
+      color:       white,
+    });
+  }
+
+  function drawTHead() {
+    drawTextTopPt(page, 'Menge',     ML + C_MENGE,  y, { font: bold, size: TS, align: 'right' });
+    drawTextTopPt(page, 'Artikel',   X_ART + 3,     y, { font: bold, size: TS });
+    drawTextTopPt(page, 'Variante',  X_VAR + 3,     y, { font: bold, size: TS });
+    drawTextTopPt(page, 'DLRG-Nr.', X_NR  + 3,     y, { font: bold, size: TS });
+    drawTextTopPt(page, 'Kürzel',   X_KUERZEL + 3, y, { font: bold, size: TS });
+    drawTextTopPt(page, 'R',         X_R_MID,       y, { font: bold, size: TS, align: 'center' });
+    drawLineTopPt(page, ML, y + 3, ML + CW, { thickness: 0.8, color: grey });
+    y += ROW_H;
+  }
+
+  for (const b of besteller) {
+    if (y + HS * 1.5 + ROW_H * 2 > PAGE_HEIGHT_PT - MB) {
+      page = pdfDoc.addPage([PAGE_WIDTH_PT, PAGE_HEIGHT_PT]);
+      y = MT;
+    }
+
+    drawTextTopPt(page, b.name, ML, y, { font: bold, size: HS });
+    y += HS * 1.5;
+    drawTHead();
+
+    const STS     = 7.5;
+    const INDENT  = X_ART + 6;
+    const subGrey = rgb(0.55, 0.55, 0.55);
+
+    for (const art of b.artikel) {
+      const subH = art.bundleKomponenten.length * SUB_H;
+      if (y + ROW_H + subH > PAGE_HEIGHT_PT - MB) {
+        page = pdfDoc.addPage([PAGE_WIDTH_PT, PAGE_HEIGHT_PT]);
+        y = MT;
+        drawTHead();
+      }
+
+      // Hauptzeile
+      drawTextTopPt(page, String(art.menge),                                        ML + C_MENGE, y, { font: regular, size: TS, align: 'right' });
+      drawTextTopPt(page, truncateText(art.name,      regular, TS, C_ART     - 6),  X_ART + 3,   y, { font: regular, size: TS });
+      drawTextTopPt(page, truncateText(art.variante,  regular, TS, C_VAR     - 6),  X_VAR + 3,   y, { font: regular, size: TS });
+      drawTextTopPt(page, truncateText(art.artikelNr, regular, TS, C_NR      - 6),  X_NR  + 3,   y, { font: regular, size: TS });
+      drawTextTopPt(page, truncateText(art.kuerzel,   regular, TS, C_KUERZEL - 3),  X_KUERZEL+3, y, { font: regular, size: TS });
+      drawCheckbox(y);
+
+      // Bundlekomponenten als eingerückte Unterzeilen
+      let subY = y + ROW_H;
+      for (const komp of art.bundleKomponenten) {
+        const label = [komp.name, komp.variante].filter(Boolean).join(' ');
+        const nr    = komp.artikelNr ? `  \u00b7 ${komp.artikelNr}` : '';
+        drawTextTopPt(page, truncateText(`+ ${label}${nr}`, regular, STS, CW - (INDENT - ML) - 4), INDENT, subY, { font: regular, size: STS, color: subGrey });
+        subY += SUB_H;
+      }
+
+      // Trennlinie: 3 pt unterhalb der letzten Zeile (Haupt- oder Sub-)
+      const lastRowTop = subY - (art.bundleKomponenten.length > 0 ? SUB_H : ROW_H);
+      drawLineTopPt(page, ML, lastRowTop + 3, ML + CW, { color: lightGrey });
+      y = subY;
+    }
+
+    y += 10;
+  }
+
+  const dateiname = `Bestellliste_${sanitisiereDateiname(bestellung.bezeichnung || 'Bestellung')}.pdf`;
+  ladeDateiHerunter(await pdfDoc.save(), dateiname);
+}

@@ -158,18 +158,28 @@ export function parseVerkaufsrechnung(text) {
     if (pendingHasPreis) {
       const { cleanName, variante } = extractVariante(pendingDesc);
       const entry = {
-        artikelNr:    pendingNr,
-        name:         cleanName,
+        artikelNr:          pendingNr,
+        name:               cleanName,
         variante,
-        menge:        pendingMenge,
-        einzelpreis:  pendingPreis,
-        bvFoerderung: 0,
-        lvFoerderung: 0,
-        _seite:       pendingSeite,
-        _zeile:       pendingZeile,
+        menge:              pendingMenge,
+        einzelpreis:        pendingPreis,
+        bvFoerderung:       0,
+        lvFoerderung:       0,
+        bundleKomponenten:  [],
+        _seite:             pendingSeite,
+        _zeile:             pendingZeile,
       };
       artikel.push(entry);
       letzterArtikel = entry;
+    } else if (letzterArtikel) {
+      // Bundlekomponente ohne Preis – am Elternartikel anhängen
+      const { cleanName, variante } = extractVariante(pendingDesc);
+      letzterArtikel.bundleKomponenten.push({
+        artikelNr: pendingNr,
+        name:      cleanName,
+        variante,
+        menge:     pendingMenge,
+      });
     }
     pendingNr       = null;
     pendingDesc     = '';

@@ -67,7 +67,7 @@ Phase 4 – Abschluss & Rechnungen:
 | Sprache | Vanilla JS (ES-Module), kein TypeScript, kein Framework |
 | Stil | HTML/CSS, kein Build-Schritt — direkt im Browser ausführbar |
 | Persistenz | JSON-Dateien auf Nextcloud via WebDAV (`/LifeguardOrders/`) |
-| Datenzugriff | WebDAV/Nextcloud ist für fachliche Daten zwingend; `localStorage` dient nur als Login-Hilfe, Sessiondaten und technische Marker |
+| Datenzugriff | WebDAV/Nextcloud ist für fachliche Daten zwingend; `localStorage` dient als Login-Hilfe (NC-URL, Benutzer, optional App-Passwort per Opt-in), Sessiondaten und technische Marker |
 | PDF | [pdf-lib](https://pdf-lib.js.org/) (lokal in `lib/`), Template-basiert (`Rechnung _Template.pdf`) |
 | XSS-Schutz | `html\`...\`` tagged template (auto-escaped), `raw()` nur für vertrauenswürdige Strings, `setHTML()` für alle DOM-Mutationen |
 | Tests | Node.js-Testrunner (`tests/run-html-tests.mjs`) + Regression (`tests/review-regression.mjs`) |

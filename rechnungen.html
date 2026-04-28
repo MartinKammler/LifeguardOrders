@@ -80,6 +80,7 @@
 
     <!-- Tabelle -->
     <div id="rechnungen-tabelle-container">
+      <p class="meta" id="lade-hinweis" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>
       <div class="hinweis hinweis-info" id="leer-hinweis" style="display:none">
         Noch keine Rechnungen vorhanden.
         Gehe zu einer abgeschlossenen Bestellung und erzeuge Rechnungen dort.
@@ -211,8 +212,10 @@ function renderTabelle() {
 
   aktualisiereStatistik(alle);
 
+  const ladeHinweis = document.getElementById('lade-hinweis');
   const leerHinweis = document.getElementById('leer-hinweis');
   const tabelle     = document.getElementById('rechnungen-tabelle');
+  if (ladeHinweis) ladeHinweis.style.display = 'none';
 
   if (!alle.length) {
     leerHinweis.style.display = '';
@@ -357,7 +360,6 @@ async function init() {
   einstellungen = einstellungenResult.data;
   mitglieder = einstellungen?.mitglieder || [];
 
-  setHTML(document.getElementById('rechnungen-tabelle-container'), '<p class="meta" style="padding:24px 0">Synchronisiere mit Nextcloud …</p>');
   const r = await hydrateJsonFromSync({
     scope: SYNC_SCOPE_B,
     client,

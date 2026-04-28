@@ -212,13 +212,16 @@
           <option value="artikel">Nach Artikel</option>
           <option value="besteller">Nach Besteller</option>
         </select>
+        <div id="anprobe-besteller-filter-wrap" style="display:none;margin-top:10px">
+          <label for="sel-anprobe-besteller-filter">Besteller filtern</label>
+          <select id="sel-anprobe-besteller-filter">
+            <option value="">Alle Besteller</option>
+          </select>
+        </div>
       </div>
-      <div class="field" id="anprobe-besteller-filter-wrap" style="display:none">
-        <label for="sel-anprobe-besteller-filter">Besteller filtern</label>
-        <select id="sel-anprobe-besteller-filter">
-          <option value="">Alle Besteller</option>
-        </select>
-      </div>
+    </div>
+    <div id="bestellliste-btn-wrap" style="display:none;margin-top:12px">
+      <button class="btn btn-ghost btn-sm" id="btn-bestellliste">Bestellliste als PDF</button>
     </div>
   </div>
 
@@ -365,7 +368,7 @@ import {
   kostenmodusLabel,
   leseKostenmodus,
 } from './src/kostenmodus.js';
-import { erstelleRechnungsDaten, druckePDF } from './src/pdf.js';
+import { erstelleRechnungsDaten, druckePDF, druckeBestellliste } from './src/pdf.js';
 import { html, raw, setHTML }               from './src/dom.js';
 import { auditAktion }                      from './src/audit.js';
 import { getSession }                       from './src/session.js';
@@ -1236,6 +1239,8 @@ function renderPositionenCard() {
     ansichtSelect.value = anprobeAnsicht;
   }
   renderAnprobeBestellerFilter(positionen);
+  const bestelllisteBtnWrap = document.getElementById('bestellliste-btn-wrap');
+  if (bestelllisteBtnWrap) bestelllisteBtnWrap.style.display = istAnprobe ? '' : 'none';
 
   document.getElementById('label-positionen').textContent = istAnprobe ? 'Anprobe / Verteilung' : 'Positionen';
 
@@ -2151,6 +2156,11 @@ document.getElementById('btn-wieder-oeffnen').addEventListener('click', async ()
   });
 
   location.href = `bestellung-sammeln.html?id=${encodeURIComponent(bestellung.id)}`;
+});
+
+document.getElementById('btn-bestellliste').addEventListener('click', () => {
+  druckeBestellliste(bestellung, { getMitgliedName: mitgliedName })
+    .catch(err => toast(err.message || 'Bestellliste konnte nicht erzeugt werden.', 'error'));
 });
 
 /* ── Init ────────────────────────────────────────────────────── */
