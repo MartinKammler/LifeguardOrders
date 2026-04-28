@@ -210,6 +210,77 @@ assert('isValidWuenscheListe: String → false', isValidWuenscheListe('foo') ===
 assert('isValidWuenscheListe: Objekt ohne id/mitgliedId → false', isValidWuenscheListe([{ foo: 'bar' }]) === false);
 assert('isValidWuenscheListe: Eintrag mit id aber ohne mitgliedId → false', isValidWuenscheListe([{ id: 'x' }]) === false);
 
+// ── Mini-Runner für Suite-Tests ──────────────────────────────────────
+const _suiteResults = [];
+let _currentSuite = '';
+function suite(name) { _currentSuite = name; }
+async function test(name, fn) {
+  try { await fn(); _suiteResults.push({ suite: _currentSuite, name, ok: true }); }
+  catch (e) { _suiteResults.push({ suite: _currentSuite, name, ok: false, err: e.message }); }
+}
+function assertEqual(a, b, msg) {
+  if (a !== b) throw new Error((msg || '') + ` — erwartet: ${JSON.stringify(b)}, bekommen: ${JSON.stringify(a)}`);
+}
+function assertNew(cond, msg) {
+  if (!cond) throw new Error(msg || 'Assertion fehlgeschlagen');
+}
+
+// ── erstelleWunsch – paketKonfiguration ─────────────────────────────
+suite('erstelleWunsch – paketKonfiguration');
+
+await test('paketKonfiguration wird übernommen wenn angegeben', async () => {
+  const konfig = [{ komponentenIndex: 0, artikelNr: '18507110', variante: 'XL' }];
+  const w = erstelleWunsch({ mitgliedId: 'm1', artikelNr: '29509870', name: 'Paket', menge: 1, paketKonfiguration: konfig });
+  assertNew(Array.isArray(w.paketKonfiguration), 'paketKonfiguration soll Array sein');
+  assertEqual(w.paketKonfiguration.length, 1);
+  assertEqual(w.paketKonfiguration[0].variante, 'XL');
+});
+
+await test('paketKonfiguration default ist leeres Array', async () => {
+  const w = erstelleWunsch({ mitgliedId: 'm1', artikelNr: '29509870', name: 'Paket', menge: 1 });
+  assertNew(Array.isArray(w.paketKonfiguration), 'paketKonfiguration soll Array sein');
+  assertEqual(w.paketKonfiguration.length, 0);
+});
+
+await test('paketKonfiguration mit leerem Array bleibt leer', async () => {
+  const w = erstelleWunsch({ mitgliedId: 'm1', artikelNr: '123', name: 'X', menge: 1, paketKonfiguration: [] });
+  assertEqual(w.paketKonfiguration.length, 0);
+});
+
+// ── normalizeWunsch – paketKonfiguration ────────────────────────────
+suite('normalizeWunsch – paketKonfiguration');
+
+await test('normalizeWunsch erhält vorhandene paketKonfiguration', async () => {
+  const konfig = [{ komponentenIndex: 0, artikelNr: '18507110', variante: 'L' }];
+  const w = normalizeWunsch({ id: 'x', mitgliedId: 'm1', artikelNr: '123', name: 'P', menge: 1, status: 'offen', paketKonfiguration: konfig });
+  assertNew(Array.isArray(w.paketKonfiguration));
+  assertEqual(w.paketKonfiguration[0].variante, 'L');
+});
+
+await test('normalizeWunsch setzt paketKonfiguration auf [] wenn Feld fehlt', async () => {
+  const w = normalizeWunsch({ id: 'x', mitgliedId: 'm1', artikelNr: '123', name: 'P', menge: 1, status: 'offen' });
+  assertNew(Array.isArray(w.paketKonfiguration));
+  assertEqual(w.paketKonfiguration.length, 0);
+});
+
+await test('normalizeWunsch setzt paketKonfiguration auf [] wenn Feld kein Array ist', async () => {
+  const w = normalizeWunsch({ id: 'x', mitgliedId: 'm1', artikelNr: '123', name: 'P', menge: 1, status: 'offen', paketKonfiguration: null });
+  assertNew(Array.isArray(w.paketKonfiguration));
+  assertEqual(w.paketKonfiguration.length, 0);
+});
+
+// ── Suite-Ergebnisse in Ausgabe schreiben ────────────────────────────
+let _lastSuite = '';
+_suiteResults.forEach(r => {
+  if (r.suite !== _lastSuite) {
+    document.getElementById('out').textContent += `\n── ${r.suite} ──\n`;
+    _lastSuite = r.suite;
+  }
+  const icon = r.ok ? '✅' : '❌';
+  document.getElementById('out').textContent += `${icon} ${r.name}${r.ok ? '' : '\n   ✗ ' + r.err}\n`;
+  r.ok ? ok++ : fail++;
+});
+
 // ── Zusammenfassung ─────────────────────────────────────────────────
 document.getElementById('out').textContent += `\n${ok}/${ok + fail} Tests bestanden — ${fail} fehlgeschlagen`;
 </script></body></html>
