@@ -75,6 +75,26 @@ export function validatePosition(p) {
   return OK;
 }
 
+function validatePaketKomponenten(komponenten) {
+  if (!Array.isArray(komponenten)) return err('paketKomponenten muss ein Array sein');
+  for (let i = 0; i < komponenten.length; i++) {
+    const k = komponenten[i];
+    if (!k || typeof k !== 'object') return err(`paketKomponenten[${i}] muss ein Objekt sein`);
+    if (!k.label || !String(k.label).trim())
+      return err(`paketKomponenten[${i}]: label darf nicht leer sein`);
+    if (!Number.isInteger(k.menge) || k.menge < 1)
+      return err(`paketKomponenten[${i}]: menge muss eine positive ganze Zahl sein`);
+    if (!Array.isArray(k.optionen) || k.optionen.length === 0)
+      return err(`paketKomponenten[${i}]: optionen muss ein nicht-leeres Array sein`);
+    for (let j = 0; j < k.optionen.length; j++) {
+      const o = k.optionen[j];
+      if (!o || !String(o.artikelNr || '').trim())
+        return err(`paketKomponenten[${i}].optionen[${j}]: artikelNr darf nicht leer sein`);
+    }
+  }
+  return OK;
+}
+
 export function validateArtikel(a) {
   if (!a || typeof a !== 'object') return err('artikel muss ein Objekt sein');
   if (leer(a.artikelNr)) return err('artikelNr darf nicht leer sein');
@@ -83,6 +103,10 @@ export function validateArtikel(a) {
   if (a.bvFoerderung != null && !istNichtNegativeZahl(a.bvFoerderung)) return err('bvFoerderung darf nicht negativ sein');
   if (a.lvFoerderung != null && !istNichtNegativeZahl(a.lvFoerderung)) return err('lvFoerderung darf nicht negativ sein');
   if (a.ogFoerderung != null && !istNichtNegativeZahl(a.ogFoerderung)) return err('ogFoerderung darf nicht negativ sein');
+  if (a.istPaket) {
+    const kv = validatePaketKomponenten(a.paketKomponenten ?? []);
+    if (!kv.ok) return kv;
+  }
   return OK;
 }
 

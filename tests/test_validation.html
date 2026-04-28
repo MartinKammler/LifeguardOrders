@@ -68,5 +68,61 @@ const listenFehler = validateListe([
 assert('validateListe: meldet Fehler in ungültiger Liste', listenFehler.ok === false);
 assert('validateListe: liefert Index des fehlerhaften Eintrags', listenFehler.index === 1);
 
+// validateArtikel – Paket
+assert('validateArtikel (Paket): leere paketKomponenten ist gültig', validateArtikel({
+  artikelNr: '29509870', name: 'Basispaket', einzelpreis: 41.50,
+  istPaket: true, paketKomponenten: []
+}).ok === true);
+
+assert('validateArtikel (Paket): gültige Komponente ist gültig', validateArtikel({
+  artikelNr: '29509870', name: 'Basispaket', einzelpreis: 41.50,
+  istPaket: true,
+  paketKomponenten: [{ label: 'Shirt', menge: 1, optionen: [{ artikelNr: '18507110', name: 'Shirt' }] }]
+}).ok === true);
+
+assert('validateArtikel (Paket): Komponente ohne label ist ungültig', (function() {
+  const r = validateArtikel({
+    artikelNr: '29509870', name: 'Basispaket', einzelpreis: 41.50,
+    istPaket: true,
+    paketKomponenten: [{ label: '', menge: 1, optionen: [{ artikelNr: '18507110', name: 'Shirt' }] }]
+  });
+  return !r.ok && r.fehler.includes('label');
+})());
+
+assert('validateArtikel (Paket): Komponente mit menge 0 ist ungültig', (function() {
+  const r = validateArtikel({
+    artikelNr: '29509870', name: 'Basispaket', einzelpreis: 41.50,
+    istPaket: true,
+    paketKomponenten: [{ label: 'Shirt', menge: 0, optionen: [{ artikelNr: '18507110', name: 'Shirt' }] }]
+  });
+  return !r.ok && r.fehler.includes('menge');
+})());
+
+assert('validateArtikel (Paket): Komponente mit leerer optionen-Liste ist ungültig', (function() {
+  const r = validateArtikel({
+    artikelNr: '29509870', name: 'Basispaket', einzelpreis: 41.50,
+    istPaket: true,
+    paketKomponenten: [{ label: 'Shirt', menge: 1, optionen: [] }]
+  });
+  return !r.ok && r.fehler.includes('optionen');
+})());
+
+assert('validateArtikel (Paket): Option ohne artikelNr ist ungültig', (function() {
+  const r = validateArtikel({
+    artikelNr: '29509870', name: 'Basispaket', einzelpreis: 41.50,
+    istPaket: true,
+    paketKomponenten: [{ label: 'Shirt', menge: 1, optionen: [{ artikelNr: '', name: 'Shirt' }] }]
+  });
+  return !r.ok && r.fehler.includes('artikelNr');
+})());
+
+assert('validateArtikel: istPaket:false braucht keine paketKomponenten', validateArtikel({
+  artikelNr: '12345678', name: 'Shirt', einzelpreis: 14.50, istPaket: false
+}).ok === true);
+
+assert('validateArtikel: ohne istPaket-Feld braucht keine paketKomponenten', validateArtikel({
+  artikelNr: '12345678', name: 'Shirt', einzelpreis: 14.50
+}).ok === true);
+
 document.getElementById('out').textContent += `\n${ok} passed, ${fail} failed`;
 </script></body></html>
