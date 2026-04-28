@@ -934,6 +934,11 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
   const menge       = parseInt(document.getElementById('inp-menge-edit').value, 10);
   const kostenmodus = document.getElementById('sel-kostenmodus-edit').value;
 
+  if (istPaketBasis(basisKey)) {
+    toast('Paket-Wünsche müssen neu eingetragen werden. Bitte stornieren und erneut eintragen.', 'error');
+    return;
+  }
+
   const artikel = findeArtikelZuAuswahl(basisKey, variante);
   if (!artikel) {
     toast('Bitte einen gültigen Artikel und eine Variante auswählen.', 'error');
@@ -955,6 +960,7 @@ document.getElementById('btn-bearbeiten-speichern').addEventListener('click', ()
       name:       artikel.name,
       menge,
       kostenmodus,
+      paketKonfiguration: [],
     };
   });
   const geaendert = neuerWunsch.find(w => w.id === bearbeitenId);

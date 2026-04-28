@@ -123,7 +123,10 @@ export function mergeWuensche(wuensche) {
 
   for (const w of wuensche) {
     const kostenmodus = leseKostenmodus(w);
-    const key = `${w.mitgliedId}\x00${w.artikelNr}\x00${w.variante}\x00${kostenmodus}`;
+    const paketKey = Array.isArray(w.paketKonfiguration) && w.paketKonfiguration.length
+      ? JSON.stringify(w.paketKonfiguration)
+      : '';
+    const key = `${w.mitgliedId}\x00${w.artikelNr}\x00${w.variante}\x00${kostenmodus}\x00${paketKey}`;
     if (map.has(key)) {
       map.get(key).menge += w.menge;
     } else {
