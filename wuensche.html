@@ -141,7 +141,7 @@ function istPaketArtikel(artikel) {
 }
 
 function paketKonfigurationVollstaendig() {
-  return paketKonfiguration.length === 0 || paketKonfiguration.every(k => k.variante !== '');
+  return paketKonfiguration.every(k => k.variante !== '');
 }
 
 /* ── Session prüfen ──────────────────────────────────────────── */
@@ -444,16 +444,10 @@ async function wunschHinzufuegen() {
   const menge = parseInt(mengeInput.value, 10);
 
   if (gewaehltArtikel && istPaketArtikel(gewaehltArtikel) && !paketKonfigurationVollstaendig()) {
-    const fehlerEl = document.getElementById('wunsch-fehler');
-    setHTML(fehlerEl, html`Bitte für alle Komponenten des Pakets eine Größe / Variante auswählen.`);
-    fehlerEl.style.display = '';
+    setHTML(fehlerDiv, raw('Bitte für alle Komponenten des Pakets eine Größe / Variante auswählen.'));
+    fehlerDiv.style.display = '';
     return;
   }
-
-  // Passendes Artikel-Objekt mit Variante finden (für korrekte ID)
-  const artikelMitVariante = variante
-    ? artikelKatalog.find(a => a.artikelNr === gewaehltArtikel.artikelNr && a.variante === variante)
-    : gewaehltArtikel;
 
   const neuerWunsch = erstelleWunsch({
     mitgliedId: mitgliedId(),
