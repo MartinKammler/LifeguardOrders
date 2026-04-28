@@ -171,7 +171,7 @@ function parseMultilineFormat(text) {
 
 /* ── Produktseiten-Format (DLRG-Materialstelle Artikeldetail) ── */
 /*
- * Beispiel-Inhalt:
+ * Normaler Artikel:
  *   T-Shirt »DLRG Ausbildung« JAKO, Rot
  *   Artikelnummer: 18507110
  *       XS S M L XL XXL 3XL 4XL 5XL 6XL
@@ -179,23 +179,57 @@ function parseMultilineFormat(text) {
  *   Mittelverwendung Bundesverband 26: -4,60 €
  *   01_Mittelverwendung LV Baden 26: -4,95 €
  *
- * Gibt einen Artikel pro Größe zurück. Artikel ohne Größenzeile: ein Eintrag, variante: ''.
+ * Paket/Set (erkennbar an "bestehend aus:" / "Set besteht aus:"):
+ *   Ausbilder Basispaket 2.0 -rot -
+ *   Artikelnummer: 29509870
+ *   bestehend aus:
+ *   Set besteht aus:
+ *       Variante 1 x 18507110 T-Shirt »DLRG Ausbildung« JAKO, Rot
+ *   Dein Preis: 41,50 €
+ *   Mittelverwendung Bundesverband 26: -16,50 €
+ *
+ * Normaler Artikel → ein Eintrag pro Größe (variante = Größe).
+ * Paket → ein Eintrag (variante: ''), istPaket: true, paketKomponenten[].
  */
 
 // Zeilen, die NICHT als Varianten-Zeile zählen
 const NICHT_VARIANTE = new Set(['Beschreibung', 'Produktdetails', 'Datenblätter']);
+
+// "Variante N x XXXXXXXX Name" — Komponenten-Zeile in Paket-Seiten
+const KOMPONENTE_RE = /Variante\s+(\d+)\s+x\s+(\d{6,})\s+(.+)/;
+
+function istPaketSeite(text) {
+  return /bestehend\s+aus:|Set\s+besteht\s+aus:/i.test(text);
+}
+
+function extractPaketKomponenten(text) {
+  const komponenten = [];
+  for (const zeile of text.split('\n')) {
+    const m = zeile.match(KOMPONENTE_RE);
+    if (!m) continue;
+    const menge     = parseInt(m[1], 10);
+    const artikelNr = m[2];
+    const name      = m[3].trim();
+    if (menge > 0 && artikelNr) {
+      komponenten.push({
+        label:   name,
+        menge,
+        optionen: [{ artikelNr, name }],
+      });
+    }
+  }
+  return komponenten;
+}
 
 /**
  * Sucht die Varianten-Zeile strukturell:
  * eingerückte Zeile mit ≥ 2 Tokens zwischen "Artikelnummer:" und "Beschreibung".
  */
 function parseVarianten(text) {
-  // Bereich zwischen Artikelnummer-Zeile und erster "Beschreibung"-Zeile
   const bereichMatch = text.match(/Artikelnummer:\s*\d+[^\n]*\n([\s\S]*?)(?=\n\s*Beschreibung)/);
   if (!bereichMatch) return [];
 
   for (const zeile of bereichMatch[1].split('\n')) {
-    // Muss eingerückt sein (≥ 2 führende Leerzeichen oder Tab)
     if (!/^[ \t]{2,}/.test(zeile)) continue;
     const tokens = zeile.trim().split(/\s+/).filter(Boolean);
     if (tokens.length >= 2 && !tokens.some(t => NICHT_VARIANTE.has(t))) {
@@ -222,36 +256,44 @@ function parseProduktseite(text) {
   const preisMatch = text.match(/(?:Dein Preis|Preis ab):\s*\n?\s*(-?\d+[,\.]\d+)\s*€/);
   const einzelpreis = preisMatch ? parsePreis(preisMatch[1] + ' €') : 0;
 
-  // BV-Förderung: "Mittelverwendung Bundesverband..."
+  // BV-Förderung
   const bvMatch = text.match(/Mittelverwendung Bundesverband[^:\n]*:\s*\n?\s*(-?\d+[,\.]\d+)\s*€/);
   const bvFoerderung = bvMatch ? parsePreis(bvMatch[1] + ' €') : 0;
 
-  // LV-Förderung: "Mittelverwendung LV..." (ggf. mit Präfix wie "01_")
+  // LV-Förderung (ggf. mit Präfix wie "01_")
   const lvMatch = text.match(/\d*_?Mittelverwendung LV[^:\n]*:\s*\n?\s*(-?\d+[,\.]\d+)\s*€/);
   const lvFoerderung = lvMatch ? parsePreis(lvMatch[1] + ' €') : 0;
 
-  // Größen: eine Zeile pro Größe zurückgeben
+  const leer = { ogKosten: [], fehler: [], warnings: [], errors: [] };
+
+  // ── Paket ────────────────────────────────────────────────────
+  if (istPaketSeite(text)) {
+    return {
+      ...leer,
+      artikel: [{
+        artikelNr, name, variante: '', menge: 1,
+        einzelpreis, bvFoerderung, lvFoerderung,
+        istPaket: true,
+        paketKomponenten: extractPaketKomponenten(text),
+      }],
+    };
+  }
+
+  // ── Normaler Artikel: eine Zeile pro Größe ───────────────────
   const groessen = parseVarianten(text);
 
   if (groessen.length === 0) {
-    // Kein Größen-Selector → ein generischer Eintrag
     return {
+      ...leer,
       artikel: [{ artikelNr, name, variante: '', menge: 1, einzelpreis, bvFoerderung, lvFoerderung }],
-      ogKosten: [],
-      fehler: [],
-      warnings: [],
-      errors: [],
     };
   }
 
   return {
+    ...leer,
     artikel: groessen.map(g => ({
       artikelNr, name, variante: g, menge: 1, einzelpreis, bvFoerderung, lvFoerderung,
     })),
-    ogKosten: [],
-    fehler: [],
-    warnings: [],
-    errors: [],
   };
 }
 

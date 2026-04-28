@@ -74,6 +74,7 @@
         <select id="select-variante" disabled>
           <option value="">— keine Variante —</option>
         </select>
+        <input type="text" id="input-variante-frei" placeholder="Variante (optional)" autocomplete="off" style="display:none">
       </div>
       <div class="form-group">
         <label for="input-menge">Menge</label>
@@ -128,18 +129,6 @@ let client          = null;
 let session         = null;
 let artikelKatalog  = [];
 let gewaehltArtikel = null;
-
-/* ── Session prüfen ──────────────────────────────────────────── */
-session = getSession();
-if (!session || !isMemberSession(session)) {
-  const container = document.querySelector('.container');
-  setHTML(container, html`
-    <div class="hinweis hinweis-warn" style="margin-top:32px">
-      <strong>Kein Zugriff.</strong> Diese Seite ist nur für Mitglieder zugänglich.
-      <br><a href="login.html" style="margin-top:8px;display:inline-block">Zum Login</a>
-    </div>`);
-  return;
-}
 
 /* ── Hilfsfunktionen ─────────────────────────────────────────── */
 function mitgliedId() {
@@ -331,12 +320,41 @@ function zeigeArtikelSuche(treffer) {
   });
 }
 
+function zeigeVarianteKatalog(artikelNr) {
+  const varianteSelect = document.getElementById('select-variante');
+  const varianteFrei   = document.getElementById('input-variante-frei');
+  const varianten = artikelKatalog
+    .filter(a => a.artikelNr === artikelNr && a.variante)
+    .map(a => a.variante);
+
+  varianteFrei.style.display = 'none';
+  varianteFrei.value = '';
+  if (varianten.length) {
+    setHTML(varianteSelect, html`
+      <option value="">— Variante wählen —</option>
+      ${varianten.map(v => html`<option value="${v}">${v}</option>`)}`);
+    varianteSelect.disabled = false;
+    varianteSelect.style.display = '';
+  } else {
+    setHTML(varianteSelect, raw('<option value="">— keine Variante —</option>'));
+    varianteSelect.disabled = true;
+    varianteSelect.style.display = '';
+  }
+}
+
+function zeigeVarianteFrei() {
+  const varianteSelect = document.getElementById('select-variante');
+  const varianteFrei   = document.getElementById('input-variante-frei');
+  varianteSelect.style.display = 'none';
+  varianteSelect.disabled = true;
+  varianteFrei.style.display = '';
+}
+
 function waehleArtikel(artikel) {
   gewaehltArtikel = artikel;
-  const input = document.getElementById('input-artikel-suche');
-  const box   = document.getElementById('search-results');
+  const input   = document.getElementById('input-artikel-suche');
+  const box     = document.getElementById('search-results');
   const hinweis = document.getElementById('artikel-ausgewaehlt');
-  const varianteSelect = document.getElementById('select-variante');
 
   input.value = `${artikel.artikelNr} – ${artikel.name}`;
   box.style.display = 'none';
@@ -344,20 +362,7 @@ function waehleArtikel(artikel) {
   setHTML(hinweis, html`Ausgewählt: <strong>${artikel.artikelNr}</strong> ${artikel.name}`);
   hinweis.style.display = '';
 
-  // Varianten befüllen
-  const varianten = artikelKatalog
-    .filter(a => a.artikelNr === artikel.artikelNr && a.variante)
-    .map(a => a.variante);
-
-  if (varianten.length) {
-    setHTML(varianteSelect, html`
-      <option value="">— Variante wählen —</option>
-      ${varianten.map(v => html`<option value="${v}">${v}</option>`)}`);
-    varianteSelect.disabled = false;
-  } else {
-    setHTML(varianteSelect, raw('<option value="">— keine Variante —</option>'));
-    varianteSelect.disabled = true;
-  }
+  zeigeVarianteKatalog(artikel.artikelNr);
 }
 
 /* ── Wunsch eintragen ──────────────────────────────────────────── */
@@ -365,35 +370,44 @@ async function wunschHinzufuegen() {
   const fehlerDiv = document.getElementById('wunsch-fehler');
   fehlerDiv.style.display = 'none';
 
-  if (!gewaehltArtikel) {
-    setHTML(fehlerDiv, raw('Bitte einen Artikel aus der Suche auswählen.'));
+  const suchInput      = document.getElementById('input-artikel-suche');
+  const varianteSelect = document.getElementById('select-variante');
+  const varianteFrei   = document.getElementById('input-variante-frei');
+  const eingabeText    = suchInput.value.trim();
+
+  if (!eingabeText) {
+    setHTML(fehlerDiv, raw('Bitte Artikel eingeben.'));
     fehlerDiv.style.display = '';
     return;
   }
 
-  const varianteSelect = document.getElementById('select-variante');
-  const variante = varianteSelect.disabled ? '' : varianteSelect.value;
+  let artikelNr, artikelName, variante;
 
-  // Wenn Varianten vorhanden sind, muss eine gewählt werden
-  if (!varianteSelect.disabled && !variante) {
-    setHTML(fehlerDiv, raw('Bitte eine Variante auswählen.'));
-    fehlerDiv.style.display = '';
-    return;
+  if (gewaehltArtikel) {
+    // Aus Katalog gewählt
+    artikelNr   = gewaehltArtikel.artikelNr;
+    artikelName = gewaehltArtikel.name;
+    variante    = varianteSelect.style.display === 'none' ? '' : (varianteSelect.disabled ? '' : varianteSelect.value);
+    if (!varianteSelect.disabled && varianteSelect.style.display !== 'none' && !variante) {
+      setHTML(fehlerDiv, raw('Bitte eine Variante auswählen.'));
+      fehlerDiv.style.display = '';
+      return;
+    }
+  } else {
+    // Freitext
+    artikelNr   = eingabeText;
+    artikelName = eingabeText;
+    variante    = varianteFrei.value.trim();
   }
 
   const mengeInput = document.getElementById('input-menge');
   const menge = parseInt(mengeInput.value, 10);
 
-  // Passendes Artikel-Objekt mit Variante finden (für korrekte ID)
-  const artikelMitVariante = variante
-    ? artikelKatalog.find(a => a.artikelNr === gewaehltArtikel.artikelNr && a.variante === variante)
-    : gewaehltArtikel;
-
   const neuerWunsch = erstelleWunsch({
     mitgliedId: mitgliedId(),
-    artikelNr:  gewaehltArtikel.artikelNr,
-    variante:   variante,
-    name:       gewaehltArtikel.name,
+    artikelNr,
+    variante,
+    name:       artikelName,
     menge,
   });
 
@@ -441,6 +455,9 @@ async function wunschHinzufuegen() {
   document.getElementById('artikel-ausgewaehlt').style.display = 'none';
   setHTML(document.getElementById('select-variante'), raw('<option value="">— keine Variante —</option>'));
   document.getElementById('select-variante').disabled = true;
+  document.getElementById('select-variante').style.display = '';
+  document.getElementById('input-variante-frei').style.display = 'none';
+  document.getElementById('input-variante-frei').value = '';
   gewaehltArtikel = null;
 
   updateSyncBanner();
@@ -450,8 +467,9 @@ async function wunschHinzufuegen() {
 
 /* ── Init ─────────────────────────────────────────────────────── */
 async function init() {
-  client = createClientFromLocalNc();
+  session = getSession();
 
+  client = createClientFromLocalNc();
   setHTML(document.getElementById('wunschliste-container'),
     raw('<p class="meta" style="padding:16px 0">Synchronisiere mit Nextcloud …</p>'));
   const [wunschResult, artikelResult] = await Promise.all([
@@ -488,6 +506,9 @@ async function init() {
     if (gewaehltArtikel && suchInput.value !== `${gewaehltArtikel.artikelNr} – ${gewaehltArtikel.name}`) {
       gewaehltArtikel = null;
       document.getElementById('artikel-ausgewaehlt').style.display = 'none';
+    }
+    if (!gewaehltArtikel) {
+      zeigeVarianteFrei();
     }
     zeigeArtikelSuche(sucheArtikel(suchInput.value));
   });

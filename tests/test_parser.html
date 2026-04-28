@@ -414,6 +414,152 @@ await test('parseBestellung: leerer Text → errors enthält Hinweis', () => {
   assert(parseBestellung('').errors.length > 0);
 });
 
+/* ── Produktdetailseite – normaler Artikel mit Größen ────────── */
+
+const PROD_TSHIRT = `T-Shirt »DLRG Ausbildung« JAKO, Rot
+Artikelnummer: 18507110
+    XS S M L XL XXL 3XL 4XL 5XL 6XL
+Beschreibung
+Dein Preis: 14,50 €
+Mittelverwendung Bundesverband 26: -4,60 €
+01_Mittelverwendung LV Baden 26: -4,95 €`;
+
+suite('Produktdetailseite – normaler Artikel mit Größen');
+
+await test('liefert je Größe einen Eintrag', () => {
+  assertEqual(parseBestellung(PROD_TSHIRT).artikel.length, 10);
+});
+await test('Artikel-Nr. korrekt', () => {
+  assertEqual(parseBestellung(PROD_TSHIRT).artikel[0].artikelNr, '18507110');
+});
+await test('Name korrekt', () => {
+  assertEqual(parseBestellung(PROD_TSHIRT).artikel[0].name, 'T-Shirt »DLRG Ausbildung« JAKO, Rot');
+});
+await test('Einzelpreis korrekt', () => {
+  assertEqual(parseBestellung(PROD_TSHIRT).artikel[0].einzelpreis, 14.50);
+});
+await test('BV-Förderung korrekt', () => {
+  assertEqual(parseBestellung(PROD_TSHIRT).artikel[0].bvFoerderung, 4.60);
+});
+await test('LV-Förderung korrekt', () => {
+  assertEqual(parseBestellung(PROD_TSHIRT).artikel[0].lvFoerderung, 4.95);
+});
+await test('Varianten korrekt (erste Größe = XS)', () => {
+  assertEqual(parseBestellung(PROD_TSHIRT).artikel[0].variante, 'XS');
+});
+await test('Varianten korrekt (letzte Größe = 6XL)', () => {
+  const r = parseBestellung(PROD_TSHIRT);
+  assertEqual(r.artikel[r.artikel.length - 1].variante, '6XL');
+});
+await test('kein istPaket-Flag bei normalem Artikel', () => {
+  assert(!parseBestellung(PROD_TSHIRT).artikel[0].istPaket);
+});
+await test('Menge ist 1 je Größe', () => {
+  assertEqual(parseBestellung(PROD_TSHIRT).artikel[0].menge, 1);
+});
+
+/* ── Produktdetailseite – Artikel ohne Größen ───────────────── */
+
+const PROD_KEIN_GROESSEN = `Stoffabzeichen DSA Bronze
+Artikelnummer: 12201521
+Beschreibung
+Dein Preis: 2,20 €`;
+
+suite('Produktdetailseite – Artikel ohne Größenzeile');
+
+await test('liefert genau einen Eintrag', () => {
+  assertEqual(parseBestellung(PROD_KEIN_GROESSEN).artikel.length, 1);
+});
+await test('variante ist leer', () => {
+  assertEqual(parseBestellung(PROD_KEIN_GROESSEN).artikel[0].variante, '');
+});
+await test('Einzelpreis korrekt', () => {
+  assertEqual(parseBestellung(PROD_KEIN_GROESSEN).artikel[0].einzelpreis, 2.20);
+});
+await test('BV 0 wenn nicht vorhanden', () => {
+  assertEqual(parseBestellung(PROD_KEIN_GROESSEN).artikel[0].bvFoerderung, 0);
+});
+
+/* ── Produktdetailseite – Paket ─────────────────────────────── */
+
+const PROD_PAKET = `Ausbilder Basispaket 2.0 -rot -
+Artikelnummer: 29509870
+bestehend aus:
+Set besteht aus:
+    Variante 1 x 18507110 T-Shirt »DLRG Ausbildung« JAKO, Rot
+Dein Preis: 41,50 €
+Mittelverwendung Bundesverband 26: -16,50 €`;
+
+suite('Produktdetailseite – Paket');
+
+await test('liefert genau einen Eintrag', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel.length, 1);
+});
+await test('istPaket ist true', () => {
+  assert(parseBestellung(PROD_PAKET).artikel[0].istPaket === true);
+});
+await test('Artikel-Nr. korrekt', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].artikelNr, '29509870');
+});
+await test('Name korrekt', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].name, 'Ausbilder Basispaket 2.0 -rot -');
+});
+await test('Einzelpreis korrekt', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].einzelpreis, 41.50);
+});
+await test('BV-Förderung korrekt', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].bvFoerderung, 16.50);
+});
+await test('variante ist leer', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].variante, '');
+});
+await test('menge ist 1', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].menge, 1);
+});
+await test('paketKomponenten ist Array', () => {
+  assert(Array.isArray(parseBestellung(PROD_PAKET).artikel[0].paketKomponenten));
+});
+await test('paketKomponenten hat eine Komponente', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].paketKomponenten.length, 1);
+});
+await test('Komponente: menge korrekt', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].paketKomponenten[0].menge, 1);
+});
+await test('Komponente: optionen enthält artikelNr', () => {
+  assertEqual(parseBestellung(PROD_PAKET).artikel[0].paketKomponenten[0].optionen[0].artikelNr, '18507110');
+});
+await test('Komponente: label korrekt', () => {
+  const k = parseBestellung(PROD_PAKET).artikel[0].paketKomponenten[0];
+  assert(k.label.includes('T-Shirt'));
+});
+await test('keine Größen-Varianten bei Paket', () => {
+  assert(!parseBestellung(PROD_PAKET).artikel[0].paketKomponenten[0].varianten);
+});
+await test('kein Fehler bei Paket', () => {
+  assertEqual(parseBestellung(PROD_PAKET).fehler.length, 0);
+});
+
+/* ── Paket mit mehreren Komponenten ────────────────────────── */
+
+const PROD_PAKET_MULTI = `Testpaket mit 2 Komponenten
+Artikelnummer: 99999999
+bestehend aus:
+    Variante 2 x 18507110 T-Shirt »DLRG Ausbildung« JAKO, Rot
+    Variante 1 x 29510012 Einsatzhose Damen mit Reflex 2.0
+Dein Preis: 100,00 €`;
+
+suite('Produktdetailseite – Paket mit mehreren Komponenten');
+
+await test('paketKomponenten hat zwei Einträge', () => {
+  assertEqual(parseBestellung(PROD_PAKET_MULTI).artikel[0].paketKomponenten.length, 2);
+});
+await test('erste Komponente: menge 2', () => {
+  assertEqual(parseBestellung(PROD_PAKET_MULTI).artikel[0].paketKomponenten[0].menge, 2);
+});
+await test('zweite Komponente: artikelNr korrekt', () => {
+  assertEqual(parseBestellung(PROD_PAKET_MULTI).artikel[0].paketKomponenten[1].optionen[0].artikelNr, '29510012');
+});
+
 /* ── Render ─────────────────────────────────────────────────── */
 const out = document.getElementById('output');
 let html = '';
