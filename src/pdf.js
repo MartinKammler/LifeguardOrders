@@ -292,27 +292,45 @@ async function erzeugePdfBytes(rechnung, mitgliedName, einstellungen) {
   function drawFooter(page, layout) {
     const paymentY = layout.paymentY;
     const paymentX = mm(25);
-    const faellig = new Date(rechnung.datum);
-    faellig.setDate(faellig.getDate() + 30);
 
-    drawTextTopPt(page, `Bitte überweisen Sie ${eur(rechnung.gesamtbetrag)} bis zum ${formatDeDatum(faellig.toISOString().slice(0, 10))} auf:`, paymentX, paymentY, {
-      font: helveticaBold,
-      size: 8.5,
-      maxWidth: X_RIGHT - paymentX,
-    });
-    if (og.iban) {
-      drawTextTopPt(page, `IBAN: ${og.iban}`, paymentX, paymentY + 16, { font: helvetica, size: 8.5, color: grey });
+    if (runde(rechnung.gesamtbetrag) <= 0) {
+      drawTextTopPt(page, 'Dein Eigenanteil für diese Bestellung beträgt 0,00 €.', paymentX, paymentY, {
+        font: helveticaBold,
+        size: 9,
+        maxWidth: X_RIGHT - paymentX,
+      });
+      drawTextTopPt(page,
+        'Vielen Dank für deinen Einsatz und deine Mitarbeit in unserer Ortsgruppe – ' +
+        'wir freuen uns auf viele weitere gemeinsame Aktionen mit dir!',
+        paymentX, paymentY + 16, {
+        font: helvetica,
+        size: 9,
+        color: grey,
+        maxWidth: X_RIGHT - paymentX,
+      });
+    } else {
+      const faellig = new Date(rechnung.datum);
+      faellig.setDate(faellig.getDate() + 30);
+
+      drawTextTopPt(page, `Bitte überweisen Sie ${eur(rechnung.gesamtbetrag)} bis zum ${formatDeDatum(faellig.toISOString().slice(0, 10))} auf:`, paymentX, paymentY, {
+        font: helveticaBold,
+        size: 8.5,
+        maxWidth: X_RIGHT - paymentX,
+      });
+      if (og.iban) {
+        drawTextTopPt(page, `IBAN: ${og.iban}`, paymentX, paymentY + 16, { font: helvetica, size: 8.5, color: grey });
+      }
+      if (og.bic) {
+        drawTextTopPt(page, `BIC: ${og.bic}`, paymentX, paymentY + 30, { font: helvetica, size: 8.5, color: grey });
+      }
+      if (og.bank) {
+        drawTextTopPt(page, `Bank: ${og.bank}`, paymentX, paymentY + 44, { font: helvetica, size: 8.5, color: grey });
+      }
+      drawTextTopPt(page, truncateText(`Verwendungszweck: ${rechnung.nummer} ${mitgliedName}`, helveticaBold, 8.5, X_RIGHT - paymentX), paymentX, paymentY + 58, {
+        font: helveticaBold,
+        size: 8.5,
+      });
     }
-    if (og.bic) {
-      drawTextTopPt(page, `BIC: ${og.bic}`, paymentX, paymentY + 30, { font: helvetica, size: 8.5, color: grey });
-    }
-    if (og.bank) {
-      drawTextTopPt(page, `Bank: ${og.bank}`, paymentX, paymentY + 44, { font: helvetica, size: 8.5, color: grey });
-    }
-    drawTextTopPt(page, truncateText(`Verwendungszweck: ${rechnung.nummer} ${mitgliedName}`, helveticaBold, 8.5, X_RIGHT - paymentX), paymentX, paymentY + 58, {
-      font: helveticaBold,
-      size: 8.5,
-    });
 
     const grussY = layout.grussY;
     drawTextTopPt(page, 'Mit freundlichen Grüßen', paymentX, grussY, {
