@@ -314,7 +314,7 @@ function renderImportVorschau(geparst) {
             <td class="artikel-nr">${a.artikelNr}</td>
             <td class="artikel-nr">${a.variante || '–'}</td>
             <td>${a.name}${raw(a.istPaket ? ' <span class="badge badge-blue" style="font-size:.72rem;vertical-align:middle">Paket</span>' : '')}</td>
-            <td class="preis">${eur(a.einzelpreis)}</td>
+            <td class="preis"${raw(a.einzelpreis === 0 ? ' style="color:var(--amber)"' : '')}>${eur(a.einzelpreis)}</td>
             <td class="foerder">${a.bvFoerderung ? eur(a.bvFoerderung) : '–'}</td>
             <td class="foerder">${a.lvFoerderung ? eur(a.lvFoerderung) : '–'}</td>
             <td>${a.menge}</td>
@@ -322,6 +322,12 @@ function renderImportVorschau(geparst) {
       </tbody>
     </table>
     ${ogZeilen}
+    ${geparst.warnings.length
+      ? raw(html`<div class="hinweis hinweis-warn" style="margin-top:8px;font-size:.82rem">
+          <strong>Preiswarnung${geparst.warnings.length > 1 ? 'en' : ''}:</strong>
+          ${geparst.warnings.map(w => html`<div style="margin-top:4px">${w}</div>`)}
+        </div>`)
+      : raw('')}
     ${geparst.fehler.length
       ? raw(html`<p class="text-sm" style="margin-top:8px;color:var(--amber)">${geparst.fehler.length} Zeile(n) nicht erkannt.</p>`)
       : raw('')}`);

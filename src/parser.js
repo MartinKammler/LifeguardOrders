@@ -309,10 +309,19 @@ function parseProduktseite(text) {
  */
 export function parseBestellung(text) {
   if (!text || !text.trim()) return { artikel: [], ogKosten: [], fehler: [], warnings: [], errors: ['Kein Text übergeben'] };
+
+  let result;
   // Produktdetailseite: enthält "Artikelnummer: XXXXXXXX"
-  if (/Artikelnummer:\s*\d+/.test(text)) return parseProduktseite(text);
+  if (/Artikelnummer:\s*\d+/.test(text))             result = parseProduktseite(text);
   // Auftragsbestätigung mehrzeilig: Preis-Zeilen allein
-  if (/^\s*-?\d+[,\.]\d+\s*€\s*$/m.test(text)) return parseMultilineFormat(text);
+  else if (/^\s*-?\d+[,\.]\d+\s*€\s*$/m.test(text)) result = parseMultilineFormat(text);
   // Tab-Format: alle Spalten auf einer Zeile durch \t getrennt
-  return parseTabFormat(text);
+  else                                               result = parseTabFormat(text);
+
+  for (const a of result.artikel) {
+    if (a.einzelpreis === 0) {
+      result.warnings.push(`${a.artikelNr} „${a.name}": Preis nicht erkannt (0,00 €) – bitte manuell prüfen.`);
+    }
+  }
+  return result;
 }

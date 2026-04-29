@@ -414,6 +414,20 @@ await test('parseBestellung: leerer Text → errors enthält Hinweis', () => {
   assert(parseBestellung('').errors.length > 0);
 });
 
+await test('Artikel mit Preis → keine Preiswarnung', () => {
+  const r = parseBestellung(TEXT_NORMAL);
+  assertEqual(r.warnings.length, 0);
+});
+
+const TEXT_PREIS_NULL = `Nr.\tArtikel Nr.\tArtikel\tBestellte Menge\tEinzelpreis\tGesamtbetrag exkl. MwSt.\tSumme
+1\t12201521\tStoffabzeichen DSA Bronze\t3\t\t0,00 €\t0,00 €`;
+
+await test('Artikel mit nicht erkennbarem Preis → Preiswarnung', () => {
+  const r = parseBestellung(TEXT_PREIS_NULL);
+  assert(r.warnings.length > 0, 'Erwartet mindestens eine Warnung');
+  assert(r.warnings[0].includes('12201521'), 'Warnung nennt die Artikel-Nr.');
+});
+
 /* ── Produktdetailseite – normaler Artikel mit Größen ────────── */
 
 const PROD_TSHIRT = `T-Shirt »DLRG Ausbildung« JAKO, Rot
